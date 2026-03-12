@@ -1,0 +1,3 @@
+# PII detection patterns - one extended regex per line
+192\.168\.0\.
+\+1[0-9]{10}
