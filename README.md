@@ -111,14 +111,15 @@ The scope is massive. I don't know if one person builds all of this. But the arc
 
 ## Hardware
 
-What I have today:
+Developed against:
 
-- **SDR:** RTL-SDR Blog V4 (R828D, 500kHz-1766MHz, 1PPM TCXO) + ANT500
-- **Mesh:** 3x Lilygo T-Echo, 2x T-Deck Plus, RAK2245 Pi gateway, WisBlock station
-- **Radio:** 4x Baofeng (UV-5RM Plus x2, BF-F8HP, UV-5R), Yaesu FTM-510DR (50W mobile)
-- **Compute:** Home server (Ubuntu 24.04), Getac V110 (field), Raspberry Pi 4 (gateway)
+- **SDR:** RTL-SDR Blog V4, HackRF One
+- **Mesh:** Lilygo T-Echo, T-Deck Plus, RAK Pi HAT gateway, WisBlock
+- **Radio:** Baofeng HTs (UV-5R series), Yaesu mobile (FTM-510DR), Yaesu HF (FT-891)
+- **Compute:** Linux server, ruggedized field laptop, Raspberry Pi
+- **Proximity:** nRF52840 (BLE), Proxmark3 (NFC/RFID), WiFi monitor mode adapters
 
-What's planned: HackRF One, Yaesu FT-891 (HF 100W), amateur radio license, GMRS repeater, solar mesh nodes, WiFi monitor mode adapter, nRF52840 (BLE), Proxmark3 (NFC/RFID).
+Hardware support is additive — if it speaks serial, USB, or IP, it can be integrated.
 
 ---
 
