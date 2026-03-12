@@ -1,76 +1,135 @@
 # Akroasis
 
-*ἀκρόασις — attentive reception*
-
-RF intelligence, mesh networking, and communications sovereignty. Rust-first, no compromise.
+*ἀκρόασις - attentive reception*
 
 ---
 
-## Philosophy
+I keep coming back to the same problem - every tool I use for radio, mesh networking, spectrum monitoring, network security, or communications is a separate thing. Separate interfaces, separate data models, separate mental contexts. A mesh node goes offline while frequency activity spikes nearby and my network IDS fires an alert. Three tools. Three windows. No one connecting the dots.
 
-Akroasis is the act of listening — not passive hearing but disciplined, attentive reception. The kind of listening that brings understanding to what is received.
+Akroasis is the attempt to fix that.
 
-This is a communications sovereignty and RF intelligence platform. Every protocol it touches is owned, understood, and controlled by the operator. No cloud dependencies. No subscription services. No trust in infrastructure you don't hold. Grid-up or grid-down, the system works.
+One system. One signal model. Every domain produces typed signals into the same pipeline. Radio anomalies correlate with network threats correlate with proximity intelligence correlate with OSINT. The convergence is where the intelligence lives - not in any single domain but in the relationships between them.
 
-**Security first. Privacy first. Sovereignty first.**
+17 crates. 10 capability domains. Rust from the ground up.
 
-Standalone by design. Runs without an LLM, without internet, without anything but the hardware in front of you. Plugs into [Aletheia](https://github.com/forkwright/aletheia) when the full stack is available — an agent gains awareness of RF spectrum, mesh topology, network defense, and communications sovereignty. But Aletheia is an upgrade, not a requirement.
+---
+
+## What It Does
+
+| Domain | Crate | What |
+|--------|-------|------|
+| **Radio Management** | syntonia | Frequency plans, channel programming, serial protocols - clean-room CHIRP replacement. Programs Baofeng UV-5R family and Yaesu FTM-510DR directly. |
+| **Mesh Networking** | kerykeion | Full Meshtastic protocol stack. Node management, topology awareness, message routing. Delay-tolerant networking - messages survive hours-long network partitions. PACE communications with automated failover. |
+| **SDR / Reception** | dektis | Spectrum monitoring, FM/AM/SSB demodulation, protocol decoding (APRS, ADS-B, P25). Jamming detection, direction finding, emitter fingerprinting. The electromagnetic environment as a contested space. |
+| **Proximity Intelligence** | engys | WiFi, BLE, Zigbee, Z-Wave, NFC, RFID. Everything broadcasting within range - every phone, beacon, smart lock, tracker. Presence analytics, rogue device detection, counter-surveillance input. |
+| **Network Defense** | aspis | Full IDS/IPS - Suricata and Zeek orchestration with active response. CAN bus security for vehicle networks. IoT device monitoring. |
+| **OSINT** | skopos | Feed aggregation, threat intelligence (STIX/TAXII), asset discovery, web scraping, dark web monitoring. All collection routed through anonymization infrastructure. |
+| **Offensive Security** | peira | Penetration testing, vulnerability scanning, wireless security testing. Every operation scope-locked with full audit trail. |
+| **Signal Intelligence** | semaino + ichneutes | Signal aggregation, convergence detection, anomaly baselines (Welford's algorithm), entity correlation, focal point synthesis, threat scoring. Forensic timeline reconstruction across all domains. |
+| **Automation** | praxis | Event-driven triggers, named playbooks, PACE communications, operational state machines. The layer that turns awareness into action - not just monitoring, responding. |
+| **Navigation** | chorografia | RF propagation modeling, infrastructure dependency graphs, cascade analysis. Vehicle and foot navigation with offline OSM maps. Military planning overlays. Space weather integration for HF propagation prediction. |
+| **Knowledge** | pinax | Offline knowledge repository - frequency databases, protocol specs, equipment manuals, topo maps, emergency procedures, vulnerability databases. Compressed, indexed, searchable. When the internet dies, the knowledge survives. |
+| **Privacy** | lethe | VPN/proxy management, anonymization, metadata scrubbing, IMSI catcher detection, continuous OPSEC scoring. The etymological complement to [Aletheia](https://github.com/forkwright/aletheia) - same root (λήθη), opposite directions. |
+| **Interface** | opsis | TUI (ratatui), native app (Tauri), web UI (Axum over Tailscale). Spectrum waterfall, mesh topology, intelligence dashboard, map display, after-action replay. |
+
+Foundation crates: **koinon** (shared types, signal model, entity index, temporal engine), **kryphos** (encryption, key management, credential vault, identity segregation).
+
+---
 
 ## Architecture
 
-14 crates. 7 capability domains. One shared signal model.
-
 ```
-akroasis/
-├── Cargo.toml                # Workspace root
-├── crates/
-│   ├── akroasis/             # Binary — CLI entrypoint
-│   │
-│   │  ── Foundation ──
-│   ├── koinon/               # Commons — signal model, entity index, temporal engine
-│   ├── kryphos/              # Encryption — key management, forward secrecy
-│   ├── lethe/                # Privacy — VPN, proxy, anonymization, DNS filtering
-│   │
-│   │  ── Collection ──
-│   ├── syntonia/             # Radio management — serial protocols, frequency plans
-│   ├── kerykeion/            # Mesh networking — Meshtastic, topology, routing
-│   ├── dektis/               # SDR reception — I/Q pipeline, spectrum, demodulation
-│   ├── aspis/                # Network defense — IDS/IPS, Suricata/Zeek, active response
-│   ├── skopos/               # OSINT — feeds, recon, asset discovery, threat intel
-│   ├── peira/                # Offensive security — pentesting, vuln scanning, probing
-│   │
-│   │  ── Processing ──
-│   ├── semaino/              # Signal aggregation — convergence, anomaly baselines
-│   ├── ichneutes/            # Intelligence analysis — entity correlation, threat scoring
-│   │
-│   │  ── Model + Interface ──
-│   ├── chorografia/          # Geographic model — RF coverage, cascade analysis
-│   └── opsis/                # Frontend — TUI, native app (Tauri), web UI
-└── docs/
-    └── gnomon.md             # Name registry and rationale
+                Collection                    Processing              Action
+          ┌─────────────────┐          ┌──────────────────┐    ┌─────────────┐
+          │ syntonia (radio) │          │ semaino          │    │ praxis      │
+          │ kerykeion (mesh) │  typed   │ (aggregation,    │    │ (playbooks, │
+          │ dektis (SDR/EW)  │ signals  │  convergence,    │    │  triggers,  │
+          │ engys (proximity)├────────►│  anomaly          ├───►│  PACE,      │
+          │ aspis (defense)  │         │  baselines)       │    │  state      │
+          │ skopos (OSINT)   │         │                   │    │  machines)  │
+          │ peira (offense)  │         │ ichneutes         │    │             │
+          └────────┬─────────┘         │ (correlation,     │    └──────┬──────┘
+                   │                   │  focal points,    │           │
+          ┌────────▼─────────┐         │  threat scoring)  │    ┌──────▼──────┐
+          │ koinon           │         └──────────────────┘    │ opsis       │
+          │ (signal model,   │                                  │ (TUI, app,  │
+          │  entity index,   │         ┌──────────────────┐    │  web UI)    │
+          │  temporal engine)│         │ chorografia      │    └─────────────┘
+          │                  │         │ (geo, nav, RF    │
+          │ kryphos          │         │  propagation)    │
+          │ (crypto, keys,   │         │                  │
+          │  credentials)    │         │ pinax            │
+          │                  │         │ (offline maps,   │
+          │ lethe            │         │  specs, manuals) │
+          │ (privacy, VPN,   │         └──────────────────┘
+          │  OPSEC)          │
+          └──────────────────┘
 ```
 
-## Domains
-
-| Domain | Crate(s) | Capability |
-|--------|----------|-----------|
-| **Radio Management** | `syntonia` | Frequency plans, channel programming, radio profiles — clean-room CHIRP replacement |
-| **Mesh Networking** | `kerykeion` | Meshtastic protocol stack, node management, topology awareness, message routing |
-| **SDR / Reception** | `dektis` | Spectrum monitoring, signal demodulation, scanner mode, I/Q recording |
-| **Signal Intelligence** | `semaino` + `ichneutes` | Signal fusion, convergence detection, entity correlation, focal points, threat scoring |
-| **Network Defense** | `aspis` | Full IDS/IPS — Suricata/Zeek orchestration, active response, flow analysis |
-| **OSINT** | `skopos` | Feed aggregation, threat intel (STIX/TAXII), asset discovery, dark web monitoring |
-| **Offensive Security** | `peira` | Penetration testing, vulnerability scanning, RF security, scope-locked with audit trail |
-| **Communications** | `kryphos` | Encrypted messaging, email, Winlink, protocol bridges |
-| **Privacy** | `lethe` | VPN/proxy management, DNS filtering, anonymization, metadata scrubbing, identity segregation |
-| **Geographic** | `chorografia` | RF coverage modeling, infrastructure dependency graph, cascade analysis |
-| **Interface** | `opsis` | TUI (ratatui), native app (Tauri), web UI (Axum over Tailscale) |
-
-## Status
-
-Scaffolded. Research phase. Not yet under active development — Aletheia cutover comes first.
+Every collection crate produces typed `GeoSignal` objects into koinon. Semaino aggregates domain-agnostically. Ichneutes analyzes domain-agnostically. Praxis acts. Opsis displays. Add a domain, add a crate - signals flow automatically.
 
 ---
 
-*Named via [gnomon](https://github.com/forkwright/aletheia/blob/main/docs/gnomon.md) — the system of names that reveal essential natures.*
-*Lethe (λήθη) is the etymological complement to Aletheia (ἀ-λήθεια). Same root, opposite directions. Unconcealment for understanding. Concealment for sovereignty.*
+## Design Constraints
+
+- **Standalone.** Runs without internet, without an LLM, without anything but the hardware in front of you. Grid-down capable.
+- **Sovereignty.** Every protocol owned. No cloud dependencies, no subscriptions, no external trust.
+- **Security default.** Encrypted by default. Unencrypted is the opt-in.
+- **Auditable.** Tamper-evident logging with hash chains. Every action recorded. Evidence packaging with chain of custody.
+- **NixOS.** Reproducible builds, systemd hardening, declarative deployment from day one.
+
+---
+
+## Technical
+
+| | |
+|---|---|
+| Language | Rust (edition 2024, MSRV 1.85) |
+| Errors | snafu (context wrapping, not thiserror) |
+| Async | tokio, native async traits |
+| SDR runtime | FutureSDR (async block graph) |
+| FFT | rustfft + realfft |
+| SDR hardware | rtl-sdr-rs (RTL-SDR V4), soapysdr (multi-hardware) |
+| Mesh | Clean-room Meshtastic (prost protobuf, not official crate) |
+| IDS/IPS | Suricata + Zeek orchestration |
+| Maps | OSM vector tiles, SRTM elevation |
+| Search | tantivy (full-text indexing) |
+| TUI | ratatui |
+| Desktop | Tauri |
+| Web | Axum |
+| License | AGPL-3.0-or-later |
+
+---
+
+## Status
+
+Scaffolded. Research phase complete for radio protocols, Meshtastic, SDR ecosystem. Architecture finalized. Not yet under active development - [Aletheia](https://github.com/forkwright/aletheia) cutover comes first.
+
+The scope is massive. I don't know if one person builds all of this. But the architecture makes each domain independent - a crate with clear boundaries, producing typed signals into the shared model. The pieces don't need to arrive simultaneously. They just need to speak the same language when they do.
+
+---
+
+## Hardware
+
+What I have today:
+
+- **SDR:** RTL-SDR Blog V4 (R828D, 500kHz-1766MHz, 1PPM TCXO) + ANT500
+- **Mesh:** 3x Lilygo T-Echo, 2x T-Deck Plus, RAK2245 Pi gateway, WisBlock station
+- **Radio:** 4x Baofeng (UV-5RM Plus x2, BF-F8HP, UV-5R), Yaesu FTM-510DR (50W mobile)
+- **Compute:** Home server (worker-node), Getac V110 (field), Raspberry Pi 4 (gateway)
+
+What's planned: HackRF One, Yaesu FT-891 (HF 100W), amateur radio license, GMRS repeater, solar mesh nodes, WiFi monitor mode adapter, nRF52840 (BLE), Proxmark3 (NFC/RFID).
+
+---
+
+## Name
+
+ἀκρόασις - from Aristotle's Physics, "Physike Akroasis" - learning through attentive reception. Not passive hearing but the disciplined act of listening that brings understanding to what is received.
+
+Names follow [gnomon](https://github.com/forkwright/aletheia/blob/main/docs/gnomon.md) - the naming philosophy where each name reveals its essential nature across four layers of reading.
+
+**Lethe** (λήθη) and **Aletheia** (ἀ-λήθεια) share the same root. One unconceals truth. The other conceals the operator. Same word, opposite directions. I keep thinking about that pairing - two systems built by the same person, one for understanding and one for sovereignty, and the Greek already knew they were the same thing.
+
+---
+
+*See [docs/gnomon.md](docs/gnomon.md) for the complete name registry.*
