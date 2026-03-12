@@ -54,3 +54,12 @@ clap = { version = "4", features = ["derive"] }
 
 # Configuration
 figment = { version = "0.10", features = ["toml", "env"] }
+
+# Hashing
+blake3 = "1"
+
+# Binary serialization
+ciborium = "0.2"
+
+# Testing
+tempfile = "3"
