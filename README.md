@@ -116,7 +116,7 @@ What I have today:
 - **SDR:** RTL-SDR Blog V4 (R828D, 500kHz-1766MHz, 1PPM TCXO) + ANT500
 - **Mesh:** 3x Lilygo T-Echo, 2x T-Deck Plus, RAK2245 Pi gateway, WisBlock station
 - **Radio:** 4x Baofeng (UV-5RM Plus x2, BF-F8HP, UV-5R), Yaesu FTM-510DR (50W mobile)
-- **Compute:** Home server (worker-node), Getac V110 (field), Raspberry Pi 4 (gateway)
+- **Compute:** Home server (Ubuntu 24.04), Getac V110 (field), Raspberry Pi 4 (gateway)
 
 What's planned: HackRF One, Yaesu FT-891 (HF 100W), amateur radio license, GMRS repeater, solar mesh nodes, WiFi monitor mode adapter, nRF52840 (BLE), Proxmark3 (NFC/RFID).
 
