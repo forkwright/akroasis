@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  commitlint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Validate conventional commits
+        run: |
+          TYPES="feat|fix|refactor|chore|docs|test|ci|perf|style|build|revert"
+          failed=0
+          while IFS= read -r msg; do
+            echo "$msg" | grep -qE "^Merge " && continue
+            if ! echo "$msg" | grep -qE "^($TYPES)(\(.+\))?: .+"; then
+              echo "::error::Bad commit message: $msg"
+              echo "  Expected: <type>(<scope>): <description>"
+              failed=1
+            fi
+          done < <(git log --format='%s' origin/main..HEAD)
+          exit $failed
+
+  pii-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Scan for PII patterns
+        run: |
+          if [ ! -f .github/pii-patterns.txt ]; then
+            echo "No PII patterns file — skipping"
+            exit 0
+          fi
+          PATTERNS=$(grep -v '^#' .github/pii-patterns.txt | grep -v '^$' | paste -sd'|')
+          HITS=$(grep -rnE "$PATTERNS" \
+            --include='*.rs' --include='*.json' \
+            --include='*.md' --include='*.yaml' --include='*.yml' --include='*.toml' \
+            . | grep -v 'pii-patterns' | \
+            grep -v 'target/' | \
+            grep -v 'node_modules/' || true)
+          if [ -n "$HITS" ]; then
+            echo "::error::PII patterns detected in tracked files:"
+            echo "$HITS"
+            exit 1
+          fi
+          echo "No PII patterns found."

@@ -1,0 +1,22 @@
+title = "Akroasis gitleaks config"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "anthropic-api-key"
+description = "Anthropic API key"
+regex = '''sk-ant-[a-zA-Z0-9_-]{90,}'''
+tags = ["key", "anthropic"]
+
+[[rules]]
+id = "phone-number"
+description = "Phone number (US format)"
+regex = '''\+1[0-9]{10}'''
+tags = ["pii", "phone"]
+
+[allowlist]
+paths = [
+  '''vendor/''',
+  '''\.gitleaks\.toml''',
+]
