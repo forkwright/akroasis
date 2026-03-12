@@ -7,8 +7,16 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 
+[[bin]]
+name = "akroasis"
+path = "src/main.rs"
+
 [dependencies]
 clap = { workspace = true }
+figment = { workspace = true }
+koinon = { path = "../koinon" }
+serde = { workspace = true }
+snafu = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
