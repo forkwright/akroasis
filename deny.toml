@@ -2,28 +2,26 @@
 # https://embarkstudios.github.io/cargo-deny/
 
 [advisories]
-ignore = []
+ignore = [
+    # No unfixable advisories at this time.
+]
 
 [licenses]
 allow = [
     "MIT",
     "Apache-2.0",
-    "AGPL-3.0-or-later",
-    "AGPL-3.0-only",
+    "AGPL-3.0-only",    # Akroasis's own license
     "BSD-2-Clause",
-    "BSD-3-Clause",
-    "ISC",
     "Zlib",
     "Unicode-3.0",
     "BSL-1.0",
     "CC0-1.0",
-    "0BSD",
-    "MPL-2.0",
-    "CDLA-Permissive-2.0",
-    "OpenSSL",
 ]
 confidence-threshold = 0.8
 
 [bans]
-multiple-versions = "warn"
+multiple-versions = "deny"
 wildcards = "allow"
+skip = [
+    # No unavoidable duplicate versions at this time.
+]
