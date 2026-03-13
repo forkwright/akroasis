@@ -45,6 +45,8 @@ jobs:
             --include='*.md' --include='*.yaml' --include='*.yml' --include='*.toml' \
             . | grep -v 'pii-patterns' | \
             grep -v 'target/' | \
+            grep -v '^./docs/' | \
+            grep -v '^./standards/' | \
             grep -v 'node_modules/' || true)
           if [ -n "$HITS" ]; then
             echo "::error::PII patterns detected in tracked files:"

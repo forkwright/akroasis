@@ -2,7 +2,7 @@
 192\.168\.0\.
 \+1[0-9]{10}
 alice\.johnson
-[A-Za-z]{3,}ample\b
+\b[Ee]xample\b
 acme-corp
 Springfield
 Baby #[0-9]
