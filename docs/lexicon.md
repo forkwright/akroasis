@@ -1,8 +1,7 @@
 # Akroasis — Lexicon
 
-
-
-All names follow the [gnomon](gnomon.md) naming philosophy.
+*Living registry. Updated as crates are added or renamed.*
+*For the naming methodology and construction system, see [gnomon.md](gnomon.md).*
 
 ---
 
