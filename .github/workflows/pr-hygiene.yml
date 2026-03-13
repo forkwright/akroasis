@@ -32,29 +32,27 @@ jobs:
             console.log(`PR has ${fileCount} files with ${totalChanges} total line changes`);
 
             if (totalChanges > 500 || fileCount > 30) {
-              const body = [
-                '\u26a0\ufe0f **Large PR detected** \u2014 ' + fileCount + ' files, ' + totalChanges + ' lines changed.',
-                '',
-                'Consider splitting into smaller PRs for easier review. Not a blocker, just a signal.',
-              ].join('\n');
-
-              const { data: comments } = await github.rest.issues.listComments({
+              // Check if we already commented
+              const comments = await github.rest.issues.listComments({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 issue_number: context.issue.number,
               });
-
-              const existing = comments.find(c =>
-                c.user.login === 'github-actions[bot]' &&
-                c.body.includes('Large PR detected')
+              const alreadyCommented = comments.data.some(c =>
+                c.body?.includes('Large PR detected')
               );
+              if (alreadyCommented) return;
 
-              if (!existing) {
-                await github.rest.issues.createComment({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  issue_number: context.issue.number,
-                  body,
-                });
-              }
+              const body = [
+                `⚠️ **Large PR detected** — ${fileCount} files, ${totalChanges} lines changed.`,
+                '',
+                'Consider splitting into smaller PRs for easier review. Not a blocker, just a signal.',
+              ].join('\n');
+
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
             }
