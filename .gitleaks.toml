@@ -15,6 +15,18 @@ description = "Phone number (US format)"
 regex = '''\+1[0-9]{10}'''
 tags = ["pii", "phone"]
 
+[[rules]]
+id = "signal-cli-password"
+description = "Signal CLI registration password"
+regex = '''signal-cli.*password["\s:=]+[^\s"]{8,}'''
+tags = ["password", "signal"]
+
+[[rules]]
+id = "jwt-secret"
+description = "JWT secret or token"
+regex = '''eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}'''
+tags = ["token", "jwt"]
+
 [allowlist]
 paths = [
   '''vendor/''',

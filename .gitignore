@@ -1,7 +1,64 @@
-/target
+# Cargo build output
+/target/
 **/*.rs.bk
+.cargo/
+
+# Secrets
+*.env
+**/credentials.json
+**/credentials.yaml
+**/credentials.yml
+**/secrets*
+**/*.key
+**/*.pem
+**/api-key
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
 *.swp
 *.swo
-.env
-.DS_Store
+*~
+.vscode/
+.idea/
+
+# Large/binary
+*.pdf
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.svg
+*.mp3
+*.mp4
+*.zip
+*.tar.gz
+
+# Cache/logs
+__pycache__/
+.venv/
+node_modules/
+
+# Syncthing
+.stfolder/
+.stignore
+.stversions/
+
+# Ephemeral state
+.planning/
+**/.task/
+**/.taskrc
+**/heartbeat-state.json
+*sync-conflict*
+
+# Financial data
+**/*relay*.csv
+**/*transaction*.csv
+
+# Backups
+*.bak
+
+# Claude Code local state
 .claude/
