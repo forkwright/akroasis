@@ -6,7 +6,7 @@ on:
   push:
     branches: [main]
   schedule:
-    - cron: "0 10 * * 1"
+    - cron: "0 10 * * 1" # Monday 04:00 CST
   workflow_dispatch:
 
 concurrency:
@@ -19,9 +19,11 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
-      - run: cargo install cargo-audit --locked 2>/dev/null || true
-      - name: Audit Rust dependencies
-        run: cargo audit
+      - run: cargo install cargo-audit --locked
+      - name: Run cargo-audit
+        run: |
+          IGNORES=$(grep -oP 'id = "\K[^"]+' deny.toml | sed 's/^/--ignore /' | tr '\n' ' ')
+          cargo audit $IGNORES
 
   cargo-deny:
     runs-on: ubuntu-latest
@@ -40,3 +42,14 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITLEAKS_CONFIG: .gitleaks.toml
+
+  secret-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: TruffleHog secret scan
+        uses: trufflesecurity/trufflehog@v3.93.7
+        with:
+          extra_args: --only-verified

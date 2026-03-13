@@ -2,7 +2,7 @@ name: Nightly
 
 on:
   schedule:
-    - cron: "0 8 * * *"
+    - cron: "0 8 * * *" # 02:00 CST
   workflow_dispatch:
 
 jobs:
@@ -10,18 +10,25 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
+
       - uses: Swatinem/rust-cache@v2
+
       - name: Format
         run: cargo fmt --workspace -- --check
+
       - name: Clippy (all features)
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+
       - name: Test (default features)
         run: cargo test --workspace
+
       - name: Test (all features)
         run: cargo test --workspace --all-features
+
       - name: Audit dependencies
         run: |
           cargo install cargo-audit --locked 2>/dev/null || true

@@ -17,6 +17,19 @@ jobs:
         uses: dependabot/fetch-metadata@v2
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Wait for CI checks to pass
+        if: >-
+          steps.metadata.outputs.update-type == 'version-update:semver-patch' ||
+          (steps.metadata.outputs.update-type == 'version-update:semver-minor' &&
+           steps.metadata.outputs.dependency-type == 'direct:development')
+        run: |
+          if ! gh pr checks "$PR_URL" --watch --interval 30 --required; then
+            echo "Required CI checks did not pass — skipping auto-merge"
+            exit 0
+          fi
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Auto-merge patch updates
         if: steps.metadata.outputs.update-type == 'version-update:semver-patch'
         run: gh pr merge --squash "$PR_URL"
