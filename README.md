@@ -101,6 +101,12 @@ Every collection crate produces typed `GeoSignal` objects into koinon. Semaino a
 
 ---
 
+## Documentation
+
+- [standards/STANDARDS.md](standards/STANDARDS.md) — Coding standards (universal + per-language)
+- [docs/gnomon.md](docs/gnomon.md) — Naming methodology
+- [docs/lexicon.md](docs/lexicon.md) — Project name registry
+
 ## Status
 
 Scaffolded. Research phase complete for radio protocols, Meshtastic, SDR ecosystem. Architecture finalized. Not yet under active development - [Aletheia](https://github.com/forkwright/aletheia) cutover comes first.

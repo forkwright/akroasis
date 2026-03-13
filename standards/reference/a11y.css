@@ -1,0 +1,37 @@
+/* Reference styles for accessibility.
+   Standards: TYPESCRIPT.md > Accessibility */
+
+/* Focus-visible styles */
+button:focus-visible,
+input:focus-visible,
+[role="slider"]:focus-visible {
+    outline: 3px solid var(--focus-color, #4a9eff);
+    outline-offset: 2px;
+}
+
+@media (forced-colors: active) {
+    button:focus-visible,
+    input:focus-visible,
+    [role="slider"]:focus-visible {
+        outline: 3px solid Highlight;
+    }
+}
+
+/* Screen-reader-only utility */
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border-width: 0;
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+    .waveform-visualizer { animation: none; }
+    .track-transition { transition: opacity 100ms linear; }
+}

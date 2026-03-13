@@ -1,0 +1,22 @@
+# Reference implementation for CMake sanitizer integration.
+# Standards: CPP.md > Testing > Sanitizer CMake Integration
+
+function(enable_sanitizers target)
+  if(ENABLE_ASAN AND ENABLE_TSAN)
+    message(FATAL_ERROR "ASan and TSan cannot be combined")
+  endif()
+  set(SAN_FLAGS "")
+  if(ENABLE_ASAN)
+    list(APPEND SAN_FLAGS -fsanitize=address -fno-omit-frame-pointer)
+  endif()
+  if(ENABLE_UBSAN)
+    list(APPEND SAN_FLAGS -fsanitize=undefined -fno-sanitize-recover=all)
+  endif()
+  if(ENABLE_TSAN)
+    list(APPEND SAN_FLAGS -fsanitize=thread)
+  endif()
+  if(SAN_FLAGS)
+    target_compile_options(${target} PRIVATE ${SAN_FLAGS})
+    target_link_options(${target} PRIVATE ${SAN_FLAGS})
+  endif()
+endfunction()
