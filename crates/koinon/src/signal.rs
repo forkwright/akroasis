@@ -483,7 +483,7 @@ mod tests {
     #[test]
     fn network_dns_query_constructs_and_matches() {
         let kind = SignalKind::Network(NetworkDetail::DnsQuery {
-            domain: "example.com".into(),
+            domain: "test.local".into(),
         });
         assert!(matches!(
             kind,
@@ -506,7 +506,7 @@ mod tests {
     #[test]
     fn proximity_wifi_constructs_and_matches() {
         let kind = SignalKind::Proximity(ProximityDetail::Wifi {
-            ssid: Some("example-net".into()),
+            ssid: Some("corp-net".into()),
             bssid: [0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF],
             rssi: -65,
             channel: 6,
@@ -593,7 +593,7 @@ mod tests {
     #[test]
     fn osint_feed_item_constructs_and_matches() {
         let kind = SignalKind::Osint(OsintDetail::FeedItem {
-            source: "threatfeed.example".into(),
+            source: "threatfeed.test".into(),
             title: "APT-42 IOC update".into(),
         });
         assert!(matches!(
@@ -758,7 +758,7 @@ mod tests {
     fn signal_kind_osint_serde_roundtrip() {
         let kind = SignalKind::Osint(OsintDetail::ThreatIndicator {
             indicator_type: "domain".into(),
-            value: "evil.example.test".into(),
+            value: "evil.test.invalid".into(),
         });
         let json = serde_json::to_string(&kind).expect("serialize");
         let back: SignalKind = serde_json::from_str(&json).expect("deserialize");

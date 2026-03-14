@@ -154,7 +154,7 @@ mod tests {
     #[test]
     fn entity_serde_roundtrip_with_attributes() {
         let mut e = Entity::new(EntityKind::Organization);
-        e.set_attribute("url", serde_json::json!("https://example.com"));
+        e.set_attribute("url", serde_json::json!("https://corp.test"));
         e.set_attribute("active", serde_json::json!(true));
         let json = serde_json::to_string(&e).expect("serialize");
         let back: Entity = serde_json::from_str(&json).expect("deserialize");
