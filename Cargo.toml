@@ -61,8 +61,11 @@ blake3 = "1"
 # Binary serialization
 ciborium = "0.2"
 
+# CSV
+csv = "1"
+
 # TOML serialization
-toml = "0.8"
+toml = { version = "0.8", features = ["preserve_order"] }
 
 # Serial
 serialport = "4"

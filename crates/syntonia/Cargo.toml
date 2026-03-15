@@ -1,30 +1,23 @@
 [package]
 name = "syntonia"
-description = "Radio-agnostic channel and frequency plan data model with hardware detection"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-repository.workspace = true
 
 [dependencies]
 koinon = { path = "../koinon" }
-compact_str = { workspace = true }
-nusb = "0.1"
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
-serialport = "4"
-snafu = { workspace = true }
 toml = { workspace = true }
+csv = { workspace = true }
+snafu = { workspace = true }
+compact_str = { workspace = true }
 tracing = { workspace = true }
-serialport = { workspace = true, optional = true }
-
-[features]
-hardware-serial = ["serialport"]
 
 [dev-dependencies]
 proptest = "1"
-tempfile.workspace = true
+tempfile = { workspace = true }
 
 [lints]
 workspace = true

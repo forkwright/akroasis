@@ -73,7 +73,7 @@ impl<'de> Deserialize<'de> for CtcssTone {
 ///
 /// Wraps one of the 104 standard DCS codes. Construction validates
 /// against the known code set.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
 pub struct DcsCode(u16);
 
 impl DcsCode {
@@ -93,7 +93,7 @@ impl DcsCode {
 
     /// Returns the raw DCS code number.
     #[must_use]
-    pub const fn code(&self) -> u16 {
+    pub const fn as_code(&self) -> u16 {
         self.0
     }
 }
@@ -182,7 +182,7 @@ mod tests {
     #[test]
     fn dcs_code_value_preserved() {
         let code = DcsCode::new(23).unwrap();
-        assert_eq!(code.code(), 23);
+        assert_eq!(code.as_code(), 23);
     }
 
     #[test]
