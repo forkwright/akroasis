@@ -3,6 +3,9 @@
 //! RF intelligence, communications sovereignty, and operational awareness.
 //! 17 crates. 10 capability domains. One shared signal model.
 
+mod cli;
+mod radio;
+
 use std::path::PathBuf;
 
 use clap::Parser;
@@ -12,6 +15,8 @@ use figment::{
 };
 use serde::Deserialize;
 use snafu::{ResultExt, Snafu};
+
+use cli::{Cli, Command};
 
 /// Top-level application errors.
 #[derive(Debug, Snafu)]
@@ -23,6 +28,10 @@ enum Error {
         #[snafu(source(from(figment::Error, Box::new)))]
         source: Box<figment::Error>,
     },
+
+    /// A radio operation failed.
+    #[snafu(display("{source}"))]
+    Radio { source: radio::errors::RadioError },
 }
 
 /// Application configuration loaded from TOML file and environment overrides.
@@ -47,64 +56,34 @@ fn load_config() -> Result<Config, Error> {
         .context(ConfigSnafu)
 }
 
-#[allow(clippy::doc_markdown)]
-#[derive(Parser)]
-#[command(name = "akroasis", version, about = "ἀκρόασις — attentive reception")]
-enum Cli {
-    /// Radio management — frequency plans, programming, vehicle telemetry
-    Radio,
-    /// Mesh networking — Meshtastic, topology, DTN, PACE communications
-    Mesh,
-    /// SDR reception — spectrum, demodulation, EW detection
-    Sdr,
-    /// Proximity — WiFi, BLE, Zigbee, NFC/RFID monitoring
-    Proximity,
-    /// Network defense — IDS/IPS, CAN bus, IoT security
-    Shield,
-    /// OSINT — feeds, recon, asset discovery, threat intel
-    Watch,
-    /// Offensive security — pentesting, vulnerability assessment
-    Test,
-    /// Signal intelligence — aggregation, correlation, focal points
-    Intel,
-    /// Automation — playbooks, PACE, state machines, triggers
-    Auto,
-    /// Navigation — vehicle/foot routing, military planning, maps
-    Nav,
-    /// Knowledge — offline references, frequency databases, manuals
-    Know,
-    /// Communications — encrypted messaging, key management
-    Comms,
-    /// Privacy — VPN, anonymization, OPSEC assessment
-    Privacy,
-    /// Serve the Akroasis daemon
-    Serve,
-}
-
-fn dispatch(cli: &Cli) {
-    match cli {
-        Cli::Radio => println!("syntonia — radio management (not yet implemented)"),
-        Cli::Mesh => println!("kerykeion — mesh networking (not yet implemented)"),
-        Cli::Sdr => println!("dektis — SDR reception (not yet implemented)"),
-        Cli::Proximity => println!("engys — proximity intelligence (not yet implemented)"),
-        Cli::Shield => println!("aspis — network defense (not yet implemented)"),
-        Cli::Watch => println!("skopos — OSINT collection (not yet implemented)"),
-        Cli::Test => println!("peira — offensive security (not yet implemented)"),
-        Cli::Intel => println!("semaino + ichneutes — intelligence (not yet implemented)"),
-        Cli::Auto => println!("praxis — automation (not yet implemented)"),
-        Cli::Nav => println!("chorografia — navigation (not yet implemented)"),
-        Cli::Know => println!("pinax — knowledge repository (not yet implemented)"),
-        Cli::Comms => println!("kryphos — communications (not yet implemented)"),
-        Cli::Privacy => println!("lethe — privacy (not yet implemented)"),
-        Cli::Serve => println!("daemon mode (not yet implemented)"),
+fn dispatch(command: &Command) -> Result<(), Error> {
+    match command {
+        Command::Radio(args) => {
+            radio::dispatch(&args.command).context(RadioSnafu)?;
+        }
+        Command::Mesh => println!("kerykeion — mesh networking (not yet implemented)"),
+        Command::Sdr => println!("dektis — SDR reception (not yet implemented)"),
+        Command::Proximity => println!("engys — proximity intelligence (not yet implemented)"),
+        Command::Shield => println!("aspis — network defense (not yet implemented)"),
+        Command::Watch => println!("skopos — OSINT collection (not yet implemented)"),
+        Command::Test => println!("peira — offensive security (not yet implemented)"),
+        Command::Intel => {
+            println!("semaino + ichneutes — intelligence (not yet implemented)");
+        }
+        Command::Auto => println!("praxis — automation (not yet implemented)"),
+        Command::Nav => println!("chorografia — navigation (not yet implemented)"),
+        Command::Know => println!("pinax — knowledge repository (not yet implemented)"),
+        Command::Comms => println!("kryphos — communications (not yet implemented)"),
+        Command::Privacy => println!("lethe — privacy (not yet implemented)"),
+        Command::Serve => println!("daemon mode (not yet implemented)"),
     }
+    Ok(())
 }
 
 fn run() -> Result<(), Error> {
     let _config = load_config()?;
     let cli = Cli::parse();
-    dispatch(&cli);
-    Ok(())
+    dispatch(&cli.command)
 }
 
 fn main() {
