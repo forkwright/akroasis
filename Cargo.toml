@@ -61,5 +61,8 @@ blake3 = "1"
 # Binary serialization
 ciborium = "0.2"
 
+# TOML serialization
+toml = "0.8"
+
 # Testing
 tempfile = "3"

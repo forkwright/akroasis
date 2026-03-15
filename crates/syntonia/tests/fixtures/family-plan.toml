@@ -1,0 +1,130 @@
+name = "Family Plan"
+radio_model = "Baofeng UV-5R"
+created = "2026-03-15T00:00:00Z"
+
+[[channels]]
+index = 0
+name = "CALL"
+rx_freq = 146520000
+bandwidth = "Wide"
+power = "High"
+scan = "Include"
+busy_lock = false
+offset = "None"
+tone = "None"
+
+[[channels]]
+index = 1
+name = "RPT-1"
+rx_freq = 146940000
+tx_freq = 146340000
+bandwidth = "Wide"
+power = "High"
+scan = "Include"
+busy_lock = false
+
+[channels.offset]
+Minus = 600000
+
+[channels.tone]
+Ctcss = 100.0
+
+[[channels]]
+index = 2
+name = "RPT-2"
+rx_freq = 147120000
+tx_freq = 147720000
+bandwidth = "Wide"
+power = "High"
+scan = "Include"
+busy_lock = false
+
+[channels.offset]
+Plus = 600000
+
+[channels.tone]
+Ctcss = 131.8
+
+[[channels]]
+index = 3
+name = "SIMP-1"
+rx_freq = 146550000
+bandwidth = "Wide"
+power = "Low"
+scan = "Include"
+busy_lock = false
+offset = "None"
+tone = "None"
+
+[[channels]]
+index = 4
+name = "SIMP-2"
+rx_freq = 146580000
+bandwidth = "Wide"
+power = "Low"
+scan = "Include"
+busy_lock = false
+offset = "None"
+tone = "None"
+
+[[channels]]
+index = 5
+name = "UHF-1"
+rx_freq = 446000000
+bandwidth = "Narrow"
+power = "High"
+scan = "Include"
+busy_lock = false
+offset = "None"
+tone = "None"
+
+[[channels]]
+index = 6
+name = "UHF-2"
+rx_freq = 446500000
+bandwidth = "Narrow"
+power = "High"
+scan = "Include"
+busy_lock = true
+offset = "None"
+
+[channels.tone]
+Dcs = [23, "Normal"]
+
+[[channels]]
+index = 7
+name = "WX"
+rx_freq = 162550000
+bandwidth = "Wide"
+power = "Low"
+scan = "Skip"
+busy_lock = false
+offset = "None"
+tone = "None"
+
+[[channels]]
+index = 8
+name = "RPT-3"
+rx_freq = 443500000
+tx_freq = 448500000
+bandwidth = "Wide"
+power = "High"
+scan = "Include"
+busy_lock = false
+
+[channels.offset]
+Plus = 5000000
+
+[channels.tone]
+Ctcss = 94.8
+
+[[channels]]
+index = 9
+name = "EMRG"
+rx_freq = 146520000
+bandwidth = "Wide"
+power = "High"
+scan = "Skip"
+busy_lock = false
+offset = "None"
+tone = "None"
