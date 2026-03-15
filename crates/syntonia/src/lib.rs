@@ -12,6 +12,7 @@
 //! - [`ToneMode`], [`CtcssTone`], [`DcsCode`] — squelch tone configuration
 //! - [`RadioConstraints`] — radio-specific limits for validation
 
+pub mod baofeng;
 pub mod channel;
 pub mod error;
 pub mod plan;

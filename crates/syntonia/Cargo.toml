@@ -1,5 +1,6 @@
 [package]
 name = "syntonia"
+description = "Radio-agnostic channel and frequency plan data model"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
