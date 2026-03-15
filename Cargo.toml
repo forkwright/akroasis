@@ -64,5 +64,8 @@ ciborium = "0.2"
 # TOML serialization
 toml = "0.8"
 
+# Serial
+serialport = "4"
+
 # Testing
 tempfile = "3"
