@@ -1,405 +1,637 @@
-//! Variant-aware EEPROM channel codec for the UV-5R family.
+//! Channel encode/decode codec for the Baofeng UV-5R EEPROM format.
 //!
-//! Decodes and encodes 16-byte channel records from/to the radio-agnostic
-//! [`Channel`] type, using the variant's [`VariantConfig`] for power mapping.
+//! Translates between raw EEPROM bytes in a [`MemoryImage`] and the typed
+//! [`Channel`] / [`FrequencyPlan`] data model.
 
 use koinon::Frequency;
-use snafu::Snafu;
 
 use crate::channel::Channel;
+use crate::error::ChannelIndexOutOfRangeSnafu;
+use crate::plan::FrequencyPlan;
 use crate::tone::ToneMode;
 use crate::types::{Bandwidth, FrequencyOffset, PowerLevel, ScanMode};
 
-use super::variant::VariantConfig;
+use super::bcd::{lbcd4_decode, lbcd4_encode};
+use super::image::MemoryImage;
+use super::memmap::{
+    CHANNEL_BASE, CHANNEL_COUNT, CHANNEL_STRIDE, NAME_BASE, NAME_LENGTH, NAME_STRIDE,
+};
+use super::tone_codec::{decode_tone, encode_tone};
 
-/// Size of a single channel record in the EEPROM image.
-pub const CHANNEL_RECORD_SIZE: usize = 16;
-
-/// Byte offset of the power/bandwidth/scan flags byte within a channel record.
-const FLAGS_OFFSET: usize = 14;
-
-/// Bit mask for the 2-bit power field within the flags byte (bits 1:0).
-const POWER_MASK: u8 = 0x03;
-
-/// Bit position of the bandwidth flag within the flags byte.
-const BANDWIDTH_BIT: u8 = 2;
-
-/// Bit position of the scan-skip flag within the flags byte.
-const SCAN_SKIP_BIT: u8 = 3;
-
-/// Bit position of the busy-lock flag within the flags byte.
-const BUSY_LOCK_BIT: u8 = 4;
-
-// ── Errors ───────────────────────────────────────────────────────────────────
-
-/// Errors from channel codec operations.
-#[derive(Debug, Snafu)]
-#[snafu(visibility(pub(crate)))]
-#[non_exhaustive]
-pub enum CodecError {
-    /// The channel record is too short to decode.
-    #[snafu(display(
-        "channel record too short: expected {CHANNEL_RECORD_SIZE} bytes, got {actual}"
-    ))]
-    RecordTooShort {
-        /// Actual size of the record.
-        actual: usize,
-    },
-
-    /// The power bits in the EEPROM do not map to a known power level.
-    #[snafu(display("unknown power bits {bits:#04X} for variant {variant}"))]
-    UnknownPowerBits {
-        /// The raw 2-bit value.
-        bits: u8,
-        /// Variant name for context.
-        variant: String,
-    },
-
-    /// The power level is not supported by this variant.
-    #[snafu(display("power level {level:?} not supported by variant {variant}"))]
-    UnsupportedPowerLevel {
-        /// The requested power level.
-        level: PowerLevel,
-        /// Variant name for context.
-        variant: String,
-    },
+/// Extracts the power level from byte 14 of the channel structure.
+///
+/// Bits [1:0]: 0 = High, 1 = Low, 2 = Mid.
+#[must_use]
+pub const fn power_from_bits(byte14: u8) -> PowerLevel {
+    match byte14 & 0x03 {
+        1 => PowerLevel::Low,
+        2 => PowerLevel::Mid,
+        _ => PowerLevel::High, // 0 and 3 (undocumented) both map to high
+    }
 }
 
-// ── Decode ───────────────────────────────────────────────────────────────────
+/// Encodes a power level into the low 2 bits for byte 14.
+#[must_use]
+pub const fn power_to_bits(power: PowerLevel) -> u8 {
+    match power {
+        PowerLevel::High => 0,
+        PowerLevel::Low => 1,
+        PowerLevel::Mid => 2,
+    }
+}
 
-/// Decode a single channel from a 16-byte EEPROM record.
+/// Extracts the bandwidth from byte 15 of the channel structure.
 ///
-/// Uses the variant config to interpret the 2-bit power field correctly.
+/// Bit 6: 1 = Wide, 0 = Narrow.
+#[must_use]
+pub const fn bandwidth_from_bit(byte15: u8) -> Bandwidth {
+    if byte15 & 0x40 != 0 {
+        Bandwidth::Wide
+    } else {
+        Bandwidth::Narrow
+    }
+}
+
+/// Extracts the scan mode from byte 15 of the channel structure.
 ///
-/// # EEPROM channel record layout (16 bytes)
+/// Bit 2: 1 = Include, 0 = Skip.
+#[must_use]
+pub const fn scan_from_bit(byte15: u8) -> ScanMode {
+    if byte15 & 0x04 != 0 {
+        ScanMode::Include
+    } else {
+        ScanMode::Skip
+    }
+}
+
+/// Extracts the busy channel lockout flag from byte 15 of the channel structure.
 ///
-/// | Offset | Size | Field |
-/// |--------|------|-------|
-/// | 0–3    | 4    | RX frequency (BCD, MHz × 10) |
-/// | 4–7    | 4    | TX offset (BCD, MHz × 10) |
-/// | 8      | 1    | RX tone index |
-/// | 9      | 1    | TX tone index |
-/// | 10     | 1    | Signal / scramble |
-/// | 11–13  | 3    | Reserved |
-/// | 14     | 1    | Flags: power(1:0), bandwidth(2), scan(3), busy-lock(4) |
-/// | 15     | 1    | Step / pad |
+/// Bit 3: 1 = enabled.
+#[must_use]
+pub const fn bcl_from_bit(byte15: u8) -> bool {
+    byte15 & 0x08 != 0
+}
+
+/// Decodes the channel name from the name region of the EEPROM.
+fn decode_name(image: &MemoryImage, index: u8) -> crate::error::Result<String> {
+    let offset = usize::from(NAME_BASE) + usize::from(index) * usize::from(NAME_STRIDE);
+    let name_bytes = image.slice(offset, NAME_LENGTH)?;
+    let name: String = name_bytes
+        .iter()
+        .take_while(|&&b| b != 0xFF && b != 0x00)
+        .map(|&b| char::from(b))
+        .collect();
+    Ok(name)
+}
+
+/// Encodes a channel name into the name region of the EEPROM.
+#[allow(clippy::indexing_slicing)] // i is bounded by NAME_LENGTH (7) < buf.len() (16)
+fn encode_name(image: &mut MemoryImage, index: u8, name: &str) -> crate::error::Result<()> {
+    let offset = usize::from(NAME_BASE) + usize::from(index) * usize::from(NAME_STRIDE);
+    let mut buf = [0xFFu8; 16]; // full 16-byte name slot
+    for (i, byte) in name.bytes().take(NAME_LENGTH).enumerate() {
+        buf[i] = byte;
+    }
+    image.write(offset, &buf)
+}
+
+/// Computes the frequency offset between RX and TX.
+const fn compute_offset(rx_hz: u64, tx_hz: u64) -> FrequencyOffset {
+    if tx_hz == rx_hz {
+        FrequencyOffset::None
+    } else if tx_hz > rx_hz {
+        FrequencyOffset::Plus(Frequency::hz(tx_hz - rx_hz))
+    } else {
+        FrequencyOffset::Minus(Frequency::hz(rx_hz - tx_hz))
+    }
+}
+
+/// Decodes a single channel from the EEPROM image.
+///
+/// Returns `Ok(None)` if the channel slot is empty (first byte == 0xFF).
 ///
 /// # Errors
 ///
-/// Returns [`CodecError::RecordTooShort`] if the slice is too small, or
-/// [`CodecError::UnknownPowerBits`] if the power field doesn't map to a
-/// known level.
-pub fn decode_channel(
-    index: u16,
-    record: &[u8],
-    config: &VariantConfig,
-) -> Result<Channel, CodecError> {
-    if record.len() < CHANNEL_RECORD_SIZE {
-        return RecordTooShortSnafu {
-            actual: record.len(),
+/// Returns an error if the channel index is out of range or the EEPROM
+/// data contains invalid encodings (bad BCD, unknown tone value, etc.).
+#[allow(clippy::indexing_slicing)] // data is always 16 bytes from slice()
+pub fn decode_channel(image: &MemoryImage, index: u8) -> crate::error::Result<Option<Channel>> {
+    snafu::ensure!(
+        index < CHANNEL_COUNT,
+        ChannelIndexOutOfRangeSnafu {
+            index,
+            max: CHANNEL_COUNT
         }
-        .fail();
+    );
+
+    let ch_offset = usize::from(CHANNEL_BASE) + usize::from(index) * usize::from(CHANNEL_STRIDE);
+    let data = image.slice(ch_offset, 16)?;
+
+    // Empty channel: first byte of rxfreq == 0xFF
+    if data[0] == 0xFF {
+        return Ok(None);
     }
 
-    let rx_bytes: [u8; 4] = record
-        .get(..4)
-        .and_then(|s| <[u8; 4]>::try_from(s).ok())
-        .ok_or(CodecError::RecordTooShort {
-            actual: record.len(),
-        })?;
-    let tx_bytes: [u8; 4] = record
-        .get(4..8)
-        .and_then(|s| <[u8; 4]>::try_from(s).ok())
-        .ok_or(CodecError::RecordTooShort {
-            actual: record.len(),
-        })?;
-    let rx_freq = decode_bcd_freq(rx_bytes);
-    let tx_offset = decode_bcd_freq(tx_bytes);
+    // RX frequency (bytes 0..4)
+    let rx_bcd: [u8; 4] = [data[0], data[1], data[2], data[3]];
+    let rx_hz = lbcd4_decode(rx_bcd)?.ok_or(crate::error::Error::EmptyFrequency)?;
 
-    let flags = *record.get(FLAGS_OFFSET).ok_or(CodecError::RecordTooShort {
-        actual: record.len(),
-    })?;
-    let power_bits = flags & POWER_MASK;
-    let power = config
-        .power_from_bits(power_bits)
-        .ok_or_else(|| CodecError::UnknownPowerBits {
-            bits: power_bits,
-            variant: config.variant.to_string(),
-        })?;
+    // TX frequency (bytes 4..8)
+    let tx_bcd: [u8; 4] = [data[4], data[5], data[6], data[7]];
+    let tx_decoded = lbcd4_decode(tx_bcd)?;
 
-    let bandwidth = if flags & (1 << BANDWIDTH_BIT) != 0 {
-        Bandwidth::Narrow
-    } else {
-        Bandwidth::Wide
+    // Determine TX freq and offset
+    let (tx_freq, offset) = match tx_decoded {
+        None => (None, FrequencyOffset::None), // TX disabled
+        Some(tx_hz) if tx_hz == rx_hz => (None, FrequencyOffset::None), // simplex
+        Some(tx_hz) => (Some(Frequency::hz(tx_hz)), compute_offset(rx_hz, tx_hz)),
     };
 
-    let scan = if flags & (1 << SCAN_SKIP_BIT) != 0 {
-        ScanMode::Skip
-    } else {
-        ScanMode::Include
-    };
+    // TX tone (bytes 10..12, little-endian u16)
+    // WHY: The UV-5R stores RX and TX tones separately. We use the TX tone
+    // as the channel's tone mode because it's the primary one users configure.
+    let txtone_raw = u16::from_le_bytes([data[10], data[11]]);
+    let tone = decode_tone(txtone_raw)?;
 
-    let busy_lock = flags & (1 << BUSY_LOCK_BIT) != 0;
+    // Power level (byte 14, bits 1:0)
+    let power = power_from_bits(data[14]);
 
-    let (offset, tx_freq) = if tx_offset.as_hz() == 0 {
-        (FrequencyOffset::None, None)
-    } else {
-        // WHY: TX offset is stored as an absolute value — direction determined
-        // by a separate direction bit, but for simplicity we store as Plus.
-        (FrequencyOffset::Plus(tx_offset), Some(rx_freq + tx_offset))
-    };
+    // Bandwidth (byte 15, bit 6)
+    let bandwidth = bandwidth_from_bit(data[15]);
 
-    Ok(Channel {
-        index,
-        name: String::new(),
-        rx_freq,
+    // Scan mode (byte 15, bit 2)
+    let scan = scan_from_bit(data[15]);
+
+    // Busy channel lockout (byte 15, bit 3)
+    let busy_lock = bcl_from_bit(data[15]);
+
+    // Channel name
+    let name = decode_name(image, index)?;
+
+    Ok(Some(Channel {
+        index: u16::from(index),
+        name,
+        rx_freq: Frequency::hz(rx_hz),
         tx_freq,
         offset,
-        tone: ToneMode::None,
+        tone,
         power,
         bandwidth,
         scan,
         busy_lock,
-    })
+    }))
 }
 
-/// Encode a channel into a 16-byte EEPROM record.
+/// Encodes a single channel into the EEPROM image.
+///
+/// Writes both the channel data region and the name region.
 ///
 /// # Errors
 ///
-/// Returns [`CodecError::UnsupportedPowerLevel`] if the channel's power level
-/// cannot be represented by this variant.
+/// Returns an error if the channel index is out of range or encoding fails.
 pub fn encode_channel(
     channel: &Channel,
-    config: &VariantConfig,
-) -> Result<[u8; CHANNEL_RECORD_SIZE], CodecError> {
-    let mut record = [0u8; CHANNEL_RECORD_SIZE];
+    image: &mut MemoryImage,
+    index: u8,
+) -> crate::error::Result<()> {
+    snafu::ensure!(
+        index < CHANNEL_COUNT,
+        ChannelIndexOutOfRangeSnafu {
+            index,
+            max: CHANNEL_COUNT
+        }
+    );
 
-    let mut rx_buf = [0u8; 4];
-    encode_bcd_freq(channel.rx_freq, &mut rx_buf);
-    record[..4].copy_from_slice(&rx_buf);
+    let ch_offset = usize::from(CHANNEL_BASE) + usize::from(index) * usize::from(CHANNEL_STRIDE);
 
-    let tx_offset = match channel.offset {
-        FrequencyOffset::None => Frequency::hz(0),
-        FrequencyOffset::Plus(f) | FrequencyOffset::Minus(f) | FrequencyOffset::Split(f) => f,
+    let mut data = [0u8; 16];
+
+    // RX frequency (bytes 0..4)
+    let rx_bcd = lbcd4_encode(channel.rx_freq.as_hz())?;
+    data[0..4].copy_from_slice(&rx_bcd);
+
+    // TX frequency (bytes 4..8)
+    let tx_hz = channel
+        .tx_freq
+        .map_or(channel.rx_freq.as_hz(), |f| f.as_hz());
+    let tx_bcd = lbcd4_encode(tx_hz)?;
+    data[4..8].copy_from_slice(&tx_bcd);
+
+    // RX tone (bytes 8..10) — store same as TX tone for now
+    let tone_raw = encode_tone(&channel.tone)?;
+    data[8..10].copy_from_slice(&tone_raw.to_le_bytes());
+
+    // TX tone (bytes 10..12)
+    data[10..12].copy_from_slice(&tone_raw.to_le_bytes());
+
+    // Byte 12: isuhf(1), unused(3), scode(4)
+    let is_uhf = if channel.rx_freq.as_hz() >= 400_000_000 {
+        0x80
+    } else {
+        0x00
     };
-    let mut tx_buf = [0u8; 4];
-    encode_bcd_freq(tx_offset, &mut tx_buf);
-    record[4..8].copy_from_slice(&tx_buf);
+    data[12] = is_uhf;
 
-    let power_bits =
-        config
-            .bits_from_power(channel.power)
-            .ok_or_else(|| CodecError::UnsupportedPowerLevel {
-                level: channel.power,
-                variant: config.variant.to_string(),
-            })?;
+    // Byte 13: unknown(7), txtoneicon(1)
+    data[13] = u8::from(channel.tone != ToneMode::None);
 
-    let mut flags = power_bits & POWER_MASK;
-    if channel.bandwidth == Bandwidth::Narrow {
-        flags |= 1 << BANDWIDTH_BIT;
-    }
-    if channel.scan == ScanMode::Skip {
-        flags |= 1 << SCAN_SKIP_BIT;
-    }
-    if channel.busy_lock {
-        flags |= 1 << BUSY_LOCK_BIT;
-    }
-    record[FLAGS_OFFSET] = flags;
+    // Byte 14: mailicon(3), unknown(3), lowpower(2)
+    data[14] = power_to_bits(channel.power);
 
-    Ok(record)
+    // Byte 15: unknown(1), wide(1), unknown(2), bcl(1), scan(1), pttid(2)
+    let wide_bit: u8 = match channel.bandwidth {
+        Bandwidth::Wide => 0x40,
+        _ => 0x00,
+    };
+    let scan_bit: u8 = match channel.scan {
+        ScanMode::Include => 0x04,
+        _ => 0x00,
+    };
+    let bcl_bit = if channel.busy_lock { 0x08 } else { 0x00 };
+    data[15] = wide_bit | bcl_bit | scan_bit;
+
+    image.write(ch_offset, &data)?;
+
+    // Write channel name
+    encode_name(image, index, &channel.name)?;
+
+    Ok(())
 }
 
-// ── BCD frequency helpers ────────────────────────────────────────────────────
+/// Clears a channel slot by filling both the channel data and name regions with `0xFF`.
+///
+/// # Errors
+///
+/// Returns an error if the index is out of range or the write fails.
+pub fn clear_channel(image: &mut MemoryImage, index: u8) -> crate::error::Result<()> {
+    snafu::ensure!(
+        index < CHANNEL_COUNT,
+        ChannelIndexOutOfRangeSnafu {
+            index,
+            max: CHANNEL_COUNT
+        }
+    );
 
-/// Decode a 4-byte BCD-encoded frequency (units of 10 Hz).
-fn decode_bcd_freq(bytes: [u8; 4]) -> Frequency {
-    let mut val: u64 = 0;
-    for b in bytes {
-        val = val * 100 + u64::from(b >> 4) * 10 + u64::from(b & 0x0F);
-    }
-    // BCD value is in units of 10 Hz
-    Frequency::hz(val * 10)
+    let ch_offset = usize::from(CHANNEL_BASE) + usize::from(index) * usize::from(CHANNEL_STRIDE);
+    image.write(ch_offset, &[0xFF; 16])?;
+
+    let name_offset = usize::from(NAME_BASE) + usize::from(index) * usize::from(NAME_STRIDE);
+    image.write(name_offset, &[0xFF; 16])?;
+
+    Ok(())
 }
 
-/// Encode a frequency into 4 bytes of BCD (units of 10 Hz).
-fn encode_bcd_freq(freq: Frequency, out: &mut [u8; 4]) {
-    let mut val = freq.as_hz() / 10;
-    for byte in out.iter_mut().rev() {
-        let lo = (val % 10) as u8;
-        val /= 10;
-        let hi = (val % 10) as u8;
-        val /= 10;
-        *byte = (hi << 4) | lo;
+/// Decodes all non-empty channels from the EEPROM image into a [`FrequencyPlan`].
+///
+/// # Errors
+///
+/// Returns an error if any channel contains invalid data.
+pub fn decode_all_channels(image: &MemoryImage) -> crate::error::Result<FrequencyPlan> {
+    let mut channels = Vec::new();
+    for i in 0..CHANNEL_COUNT {
+        if let Some(ch) = decode_channel(image, i)? {
+            channels.push(ch);
+        }
     }
+    Ok(FrequencyPlan {
+        name: String::new(),
+        radio_model: Some("Baofeng UV-5R".to_string()),
+        channels,
+        created: None,
+    })
 }
 
-// ── Tests ────────────────────────────────────────────────────────────────────
+/// Encodes all channels from a [`FrequencyPlan`] into the EEPROM image.
+///
+/// First clears all 128 channel slots, then writes each channel from the plan.
+///
+/// # Errors
+///
+/// Returns an error if any channel encoding fails.
+pub fn encode_all_channels(
+    plan: &FrequencyPlan,
+    image: &mut MemoryImage,
+) -> crate::error::Result<()> {
+    // Clear all slots first
+    for i in 0..CHANNEL_COUNT {
+        clear_channel(image, i)?;
+    }
+    // Write each channel
+    for channel in &plan.channels {
+        #[allow(clippy::cast_possible_truncation)] // index validated by CHANNEL_COUNT
+        let index = channel.index as u8;
+        encode_channel(channel, image, index)?;
+    }
+    Ok(())
+}
 
 #[cfg(test)]
-#[allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::indexing_slicing,
-    clippy::missing_docs_in_private_items
-)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::indexing_slicing)]
 mod tests {
     use super::*;
-    use crate::baofeng::variant::{bf_f8hp_config, uv5r_config};
+    use crate::tone::{CtcssTone, DcsCode, DcsPolarity};
 
-    fn make_record(rx_freq: Frequency, power_bits: u8) -> [u8; CHANNEL_RECORD_SIZE] {
-        let mut record = [0u8; CHANNEL_RECORD_SIZE];
-        let rx_out: &mut [u8; 4] = (&mut record[..4]).try_into().unwrap();
-        encode_bcd_freq(rx_freq, rx_out);
-        record[FLAGS_OFFSET] = power_bits & POWER_MASK;
-        record
-    }
+    /// Builds a test EEPROM image with known channels.
+    fn build_test_image() -> MemoryImage {
+        let mut image = MemoryImage::blank();
 
-    #[test]
-    fn decode_uv5r_high_power() {
-        let config = uv5r_config();
-        let record = make_record(Frequency::hz(146_520_000), 0);
-        let ch = decode_channel(0, &record, &config).unwrap();
-        assert_eq!(ch.power, PowerLevel::High);
-        assert_eq!(ch.rx_freq, Frequency::hz(146_520_000));
-    }
-
-    #[test]
-    fn decode_uv5r_low_power() {
-        let config = uv5r_config();
-        let record = make_record(Frequency::hz(446_000_000), 1);
-        let ch = decode_channel(0, &record, &config).unwrap();
-        assert_eq!(ch.power, PowerLevel::Low);
-    }
-
-    #[test]
-    fn decode_uv5r_mid_bits_treated_as_high() {
-        let config = uv5r_config();
-        let record = make_record(Frequency::hz(146_520_000), 2);
-        let ch = decode_channel(0, &record, &config).unwrap();
-        assert_eq!(ch.power, PowerLevel::High);
-    }
-
-    #[test]
-    fn decode_f8hp_high_power() {
-        let config = bf_f8hp_config();
-        let record = make_record(Frequency::hz(146_520_000), 0);
-        let ch = decode_channel(0, &record, &config).unwrap();
-        assert_eq!(ch.power, PowerLevel::High);
-    }
-
-    #[test]
-    fn decode_f8hp_mid_power() {
-        let config = bf_f8hp_config();
-        let record = make_record(Frequency::hz(146_520_000), 2);
-        let ch = decode_channel(0, &record, &config).unwrap();
-        assert_eq!(ch.power, PowerLevel::Mid);
-    }
-
-    #[test]
-    fn decode_f8hp_low_power() {
-        let config = bf_f8hp_config();
-        let record = make_record(Frequency::hz(146_520_000), 1);
-        let ch = decode_channel(0, &record, &config).unwrap();
-        assert_eq!(ch.power, PowerLevel::Low);
-    }
-
-    #[test]
-    fn encode_decode_roundtrip_uv5r() {
-        let config = uv5r_config();
-        for level in [PowerLevel::High, PowerLevel::Low] {
-            let ch = Channel {
-                index: 5,
-                name: String::new(),
-                rx_freq: Frequency::hz(146_520_000),
-                tx_freq: None,
-                offset: FrequencyOffset::None,
-                tone: ToneMode::None,
-                power: level,
-                bandwidth: Bandwidth::Wide,
-                scan: ScanMode::Include,
-                busy_lock: false,
-            };
-            let record = encode_channel(&ch, &config).unwrap();
-            let decoded = decode_channel(5, &record, &config).unwrap();
-            assert_eq!(decoded.power, level);
-            assert_eq!(decoded.rx_freq, ch.rx_freq);
-            assert_eq!(decoded.bandwidth, ch.bandwidth);
-            assert_eq!(decoded.scan, ch.scan);
-            assert_eq!(decoded.busy_lock, ch.busy_lock);
-        }
-    }
-
-    #[test]
-    fn encode_decode_roundtrip_f8hp() {
-        let config = bf_f8hp_config();
-        for level in [PowerLevel::High, PowerLevel::Mid, PowerLevel::Low] {
-            let ch = Channel {
-                index: 10,
-                name: String::new(),
-                rx_freq: Frequency::hz(446_000_000),
-                tx_freq: None,
-                offset: FrequencyOffset::None,
-                tone: ToneMode::None,
-                power: level,
-                bandwidth: Bandwidth::Narrow,
-                scan: ScanMode::Skip,
-                busy_lock: true,
-            };
-            let record = encode_channel(&ch, &config).unwrap();
-            let decoded = decode_channel(10, &record, &config).unwrap();
-            assert_eq!(decoded.power, level);
-            assert_eq!(decoded.rx_freq, ch.rx_freq);
-            assert_eq!(decoded.bandwidth, Bandwidth::Narrow);
-            assert_eq!(decoded.scan, ScanMode::Skip);
-            assert!(decoded.busy_lock);
-        }
-    }
-
-    #[test]
-    fn record_too_short_returns_error() {
-        let config = uv5r_config();
-        let short = [0u8; 8];
-        let err = decode_channel(0, &short, &config);
-        assert!(matches!(err, Err(CodecError::RecordTooShort { actual: 8 })));
-    }
-
-    #[test]
-    fn bcd_frequency_roundtrip() {
-        let freqs = [
-            Frequency::hz(146_520_000),
-            Frequency::hz(446_000_000),
-            Frequency::hz(136_000_000),
-            Frequency::hz(520_000_000),
+        // Channel 0: 146.520 MHz simplex, no tone, high power, wide
+        // 146520000 / 10 = 14652000, BCD: 14|65|20|00, LE: [00,20,65,14]
+        let ch0_data: [u8; 16] = [
+            0x00, 0x20, 0x65, 0x14, // rxfreq: 146.520 MHz
+            0x00, 0x20, 0x65, 0x14, // txfreq: 146.520 MHz (simplex)
+            0x00, 0x00, // rxtone: none
+            0x00, 0x00, // txtone: none
+            0x00, // byte12: VHF
+            0x00, // byte13
+            0x00, // byte14: high power (0)
+            0x44, // byte15: wide(0x40) | scan(0x04)
         ];
-        for freq in freqs {
-            let mut buf = [0u8; 4];
-            encode_bcd_freq(freq, &mut buf);
-            let decoded = decode_bcd_freq(buf);
-            assert_eq!(decoded, freq, "BCD roundtrip failed for {freq}");
-        }
+        image.write(0x0000, &ch0_data).unwrap();
+        image
+            .write(
+                0x1000,
+                b"CALL\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF",
+            )
+            .unwrap();
+
+        // Channel 1: 147.060 MHz, +0.600 offset, CTCSS 100.0 Hz, high power, wide
+        // rx: 147060000/10 = 14706000, BCD: 14|70|60|00, LE: [00,60,70,14]
+        // tx: 147660000/10 = 14766000, BCD: 14|76|60|00, LE: [00,60,76,14]
+        let ch1_data: [u8; 16] = [
+            0x00, 0x60, 0x70, 0x14, // rxfreq: 147.060 MHz
+            0x00, 0x60, 0x76, 0x14, // txfreq: 147.660 MHz (+600 kHz)
+            0xE8, 0x03, // rxtone: 1000 = CTCSS 100.0 Hz
+            0xE8, 0x03, // txtone: 1000 = CTCSS 100.0 Hz
+            0x00, // byte12: VHF
+            0x01, // byte13: txtoneicon
+            0x00, // byte14: high power (0)
+            0x44, // byte15: wide(0x40) | scan(0x04)
+        ];
+        image.write(0x0010, &ch1_data).unwrap();
+        image
+            .write(
+                0x1010,
+                &[
+                    b'R', b'P', b'T', 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+                    0xFF, 0xFF, 0xFF,
+                ],
+            )
+            .unwrap();
+
+        // Channel 2: 446.000 MHz, DCS 023 normal, low power, narrow
+        // 446000000/10 = 44600000, BCD: 44|60|00|00, LE: [00,00,60,44]
+        let ch2_data: [u8; 16] = [
+            0x00, 0x00, 0x60, 0x44, // rxfreq: 446.000 MHz
+            0x00, 0x00, 0x60, 0x44, // txfreq: 446.000 MHz (simplex)
+            0x01, 0x00, // rxtone: DCS 023 normal (index 1)
+            0x01, 0x00, // txtone: DCS 023 normal (index 1)
+            0x80, // byte12: UHF
+            0x01, // byte13: txtoneicon
+            0x01, // byte14: low power (1)
+            0x08, // byte15: narrow(0) | bcl(0x08)
+        ];
+        image.write(0x0020, &ch2_data).unwrap();
+        image
+            .write(0x1020, b"UHF-CH\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF")
+            .unwrap();
+
+        // Channels 3..127 are already 0xFF (blank image)
+        image
     }
 
     #[test]
-    fn flags_byte_encodes_all_fields() {
-        let config = bf_f8hp_config();
+    fn decode_channel_0_simplex() {
+        let image = build_test_image();
+        let ch = decode_channel(&image, 0).unwrap().unwrap();
+        assert_eq!(ch.index, 0);
+        assert_eq!(ch.name, "CALL");
+        assert_eq!(ch.rx_freq, Frequency::hz(146_520_000));
+        assert!(ch.tx_freq.is_none());
+        assert_eq!(ch.offset, FrequencyOffset::None);
+        assert_eq!(ch.tone, ToneMode::None);
+        assert_eq!(ch.power, PowerLevel::High);
+        assert_eq!(ch.bandwidth, Bandwidth::Wide);
+        assert_eq!(ch.scan, ScanMode::Include);
+        assert!(!ch.busy_lock);
+    }
+
+    #[test]
+    fn decode_channel_1_repeater() {
+        let image = build_test_image();
+        let ch = decode_channel(&image, 1).unwrap().unwrap();
+        assert_eq!(ch.index, 1);
+        assert_eq!(ch.name, "RPT");
+        assert_eq!(ch.rx_freq, Frequency::hz(147_060_000));
+        assert_eq!(ch.tx_freq, Some(Frequency::hz(147_660_000)));
+        assert_eq!(ch.offset, FrequencyOffset::Plus(Frequency::khz(600)));
+        assert_eq!(ch.tone, ToneMode::Ctcss(CtcssTone::new(100.0).unwrap()));
+        assert_eq!(ch.power, PowerLevel::High);
+        assert_eq!(ch.bandwidth, Bandwidth::Wide);
+    }
+
+    #[test]
+    fn decode_channel_2_dcs() {
+        let image = build_test_image();
+        let ch = decode_channel(&image, 2).unwrap().unwrap();
+        assert_eq!(ch.index, 2);
+        assert_eq!(ch.name, "UHF-CH");
+        assert_eq!(ch.rx_freq, Frequency::hz(446_000_000));
+        assert_eq!(
+            ch.tone,
+            ToneMode::Dcs(DcsCode::new(23).unwrap(), DcsPolarity::Normal)
+        );
+        assert_eq!(ch.power, PowerLevel::Low);
+        assert_eq!(ch.bandwidth, Bandwidth::Narrow);
+        assert!(ch.busy_lock);
+    }
+
+    #[test]
+    fn decode_empty_channel_returns_none() {
+        let image = build_test_image();
+        assert!(decode_channel(&image, 3).unwrap().is_none());
+        assert!(decode_channel(&image, 127).unwrap().is_none());
+    }
+
+    #[test]
+    fn channel_index_out_of_range() {
+        let image = build_test_image();
+        assert!(decode_channel(&image, 128).is_err());
+    }
+
+    #[test]
+    fn encode_then_decode_roundtrip() {
+        let original = Channel {
+            index: 5,
+            name: "TEST".to_string(),
+            rx_freq: Frequency::hz(146_520_000),
+            tx_freq: None,
+            offset: FrequencyOffset::None,
+            tone: ToneMode::Ctcss(CtcssTone::new(100.0).unwrap()),
+            power: PowerLevel::High,
+            bandwidth: Bandwidth::Wide,
+            scan: ScanMode::Include,
+            busy_lock: false,
+        };
+
+        let mut image = MemoryImage::blank();
+        encode_channel(&original, &mut image, 5).unwrap();
+        let decoded = decode_channel(&image, 5).unwrap().unwrap();
+
+        assert_eq!(decoded.index, original.index);
+        assert_eq!(decoded.name, original.name);
+        assert_eq!(decoded.rx_freq, original.rx_freq);
+        assert_eq!(decoded.tone, original.tone);
+        assert_eq!(decoded.power, original.power);
+        assert_eq!(decoded.bandwidth, original.bandwidth);
+        assert_eq!(decoded.scan, original.scan);
+        assert_eq!(decoded.busy_lock, original.busy_lock);
+    }
+
+    #[test]
+    fn decode_encode_byte_level_roundtrip() {
+        let image = build_test_image();
+
+        // Decode channel 0
+        let ch = decode_channel(&image, 0).unwrap().unwrap();
+
+        // Encode into a fresh image
+        let mut new_image = MemoryImage::blank();
+        encode_channel(&ch, &mut new_image, 0).unwrap();
+
+        // Compare the raw channel data bytes
+        let original_bytes = image.slice(0x0000, 16).unwrap();
+        let new_bytes = new_image.slice(0x0000, 16).unwrap();
+        assert_eq!(
+            original_bytes, new_bytes,
+            "channel 0 data bytes differ after roundtrip"
+        );
+
+        // Compare the raw name bytes
+        let original_name = image.slice(0x1000, 16).unwrap();
+        let new_name = new_image.slice(0x1000, 16).unwrap();
+        assert_eq!(
+            original_name, new_name,
+            "channel 0 name bytes differ after roundtrip"
+        );
+    }
+
+    #[test]
+    fn name_padding_with_0xff() {
+        let mut image = MemoryImage::blank();
         let ch = Channel {
             index: 0,
-            name: String::new(),
+            name: "AB".to_string(),
             rx_freq: Frequency::hz(146_520_000),
             tx_freq: None,
             offset: FrequencyOffset::None,
             tone: ToneMode::None,
-            power: PowerLevel::Mid,
-            bandwidth: Bandwidth::Narrow,
-            scan: ScanMode::Skip,
-            busy_lock: true,
+            power: PowerLevel::High,
+            bandwidth: Bandwidth::Wide,
+            scan: ScanMode::Include,
+            busy_lock: false,
         };
-        let record = encode_channel(&ch, &config).unwrap();
-        let flags = record[FLAGS_OFFSET];
-        assert_eq!(flags & POWER_MASK, 2); // Mid
-        assert_ne!(flags & (1 << BANDWIDTH_BIT), 0); // Narrow
-        assert_ne!(flags & (1 << SCAN_SKIP_BIT), 0); // Skip
-        assert_ne!(flags & (1 << BUSY_LOCK_BIT), 0); // Busy lock
+        encode_channel(&ch, &mut image, 0).unwrap();
+
+        let name_bytes = image.slice(0x1000, 7).unwrap();
+        assert_eq!(name_bytes[0], b'A');
+        assert_eq!(name_bytes[1], b'B');
+        for &byte in &name_bytes[2..] {
+            assert_eq!(byte, 0xFF, "unused name bytes must be 0xFF");
+        }
+    }
+
+    #[test]
+    fn power_bits_high() {
+        assert_eq!(power_from_bits(0x00), PowerLevel::High);
+        assert_eq!(power_to_bits(PowerLevel::High), 0);
+    }
+
+    #[test]
+    fn power_bits_low() {
+        assert_eq!(power_from_bits(0x01), PowerLevel::Low);
+        assert_eq!(power_to_bits(PowerLevel::Low), 1);
+    }
+
+    #[test]
+    fn power_bits_mid() {
+        assert_eq!(power_from_bits(0x02), PowerLevel::Mid);
+        assert_eq!(power_to_bits(PowerLevel::Mid), 2);
+    }
+
+    #[test]
+    fn bandwidth_bit_wide() {
+        assert_eq!(bandwidth_from_bit(0x40), Bandwidth::Wide);
+    }
+
+    #[test]
+    fn bandwidth_bit_narrow() {
+        assert_eq!(bandwidth_from_bit(0x00), Bandwidth::Narrow);
+    }
+
+    #[test]
+    fn scan_bit_include() {
+        assert_eq!(scan_from_bit(0x04), ScanMode::Include);
+    }
+
+    #[test]
+    fn scan_bit_skip() {
+        assert_eq!(scan_from_bit(0x00), ScanMode::Skip);
+    }
+
+    #[test]
+    fn bcl_bit_enabled() {
+        assert!(bcl_from_bit(0x08));
+    }
+
+    #[test]
+    fn bcl_bit_disabled() {
+        assert!(!bcl_from_bit(0x00));
+    }
+
+    #[test]
+    fn clear_channel_fills_with_0xff() {
+        let mut image = build_test_image();
+        clear_channel(&mut image, 0).unwrap();
+
+        // Verify channel data is 0xFF
+        let data = image.slice(0x0000, 16).unwrap();
+        assert!(data.iter().all(|&b| b == 0xFF));
+
+        // Verify name data is 0xFF
+        let name = image.slice(0x1000, 16).unwrap();
+        assert!(name.iter().all(|&b| b == 0xFF));
+
+        // Verify it now decodes as empty
+        assert!(decode_channel(&image, 0).unwrap().is_none());
+    }
+
+    #[test]
+    fn decode_all_channels_count() {
+        let image = build_test_image();
+        let plan = decode_all_channels(&image).unwrap();
+        assert_eq!(plan.channel_count(), 3);
+        assert_eq!(plan.radio_model.as_deref(), Some("Baofeng UV-5R"));
+    }
+
+    #[test]
+    fn encode_decode_all_channels_roundtrip() {
+        let image = build_test_image();
+        let plan = decode_all_channels(&image).unwrap();
+
+        let mut new_image = MemoryImage::blank();
+        encode_all_channels(&plan, &mut new_image).unwrap();
+
+        let restored = decode_all_channels(&new_image).unwrap();
+        assert_eq!(plan.channel_count(), restored.channel_count());
+
+        for (original, decoded) in plan.channels.iter().zip(restored.channels.iter()) {
+            assert_eq!(original.index, decoded.index);
+            assert_eq!(original.name, decoded.name);
+            assert_eq!(original.rx_freq, decoded.rx_freq);
+            assert_eq!(original.tone, decoded.tone);
+            assert_eq!(original.power, decoded.power);
+            assert_eq!(original.bandwidth, decoded.bandwidth);
+        }
     }
 }
