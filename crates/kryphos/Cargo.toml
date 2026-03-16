@@ -1,0 +1,22 @@
+[package]
+name = "kryphos"
+description = "κρυφός — hidden, secret. Vault cryptography: key derivation, authenticated encryption, and secret storage."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+argon2 = { version = "0.5", features = ["std"] }
+chacha20poly1305 = { version = "0.10", features = ["std"] }
+getrandom = { version = "0.2", features = ["std"] }
+snafu = { workspace = true }
+subtle = "2"
+zeroize = { version = "1", features = ["derive"] }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+[lints]
+workspace = true
