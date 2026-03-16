@@ -20,6 +20,7 @@ pub mod channel;
 pub mod error;
 pub mod hardware;
 pub mod plan;
+pub mod serial;
 pub mod tone;
 pub mod types;
 pub mod validate;
