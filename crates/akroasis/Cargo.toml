@@ -13,13 +13,21 @@ path = "src/main.rs"
 
 [dependencies]
 clap = { workspace = true }
+comfy-table = "7"
+dialoguer = "0.11"
 figment = { workspace = true }
+indicatif = "0.17"
 koinon = { path = "../koinon" }
 serde = { workspace = true }
+serde_json = { workspace = true }
 snafu = { workspace = true }
+syntonia = { path = "../syntonia" }
 tokio = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
 
 [lints]
 workspace = true

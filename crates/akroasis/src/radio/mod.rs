@@ -1,0 +1,314 @@
+//! Radio management CLI — detect, read, program, export, import.
+
+pub mod detect;
+pub mod errors;
+pub mod export;
+pub mod import;
+pub mod program;
+pub mod progress;
+pub mod read;
+
+use std::path::PathBuf;
+
+use clap::Subcommand;
+use syntonia::{Channel, RadioConstraints};
+
+use self::errors::RadioError;
+
+/// Radio subcommands.
+#[derive(Subcommand)]
+pub enum RadioCommand {
+    /// Detect connected radios
+    Detect,
+
+    /// Read channels from radio
+    Read {
+        /// Serial port (e.g. /dev/ttyUSB0). Auto-detects if omitted.
+        #[arg(long)]
+        port: Option<String>,
+    },
+
+    /// Program radio with frequency plan
+    Program {
+        /// Serial port. Auto-detects if omitted.
+        #[arg(long)]
+        port: Option<String>,
+
+        /// Frequency plan file (.toml or .json)
+        #[arg(long)]
+        plan: PathBuf,
+    },
+
+    /// Export channels from radio to file
+    Export {
+        /// Serial port. Auto-detects if omitted.
+        #[arg(long)]
+        port: Option<String>,
+
+        /// Output format
+        #[arg(long, value_enum)]
+        format: ExportFormat,
+
+        /// Output file (stdout if omitted)
+        #[arg(long, short)]
+        output: Option<PathBuf>,
+    },
+
+    /// Import and display a frequency plan from file
+    Import {
+        /// Input file (.toml, .json, .csv, or .img)
+        file: PathBuf,
+    },
+}
+
+/// Supported export formats.
+#[derive(clap::ValueEnum, Clone, Debug)]
+pub enum ExportFormat {
+    Toml,
+    Json,
+    Csv,
+    ChirpCsv,
+}
+
+// ---------------------------------------------------------------------------
+// Radio variant model
+// ---------------------------------------------------------------------------
+
+/// Known radio variants.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)]
+pub enum RadioVariant {
+    Uv5r,
+    BfF8hp,
+    Uv5rmPlus,
+}
+
+impl RadioVariant {
+    /// Human-readable display name.
+    pub const fn display_name(self) -> &'static str {
+        match self {
+            Self::Uv5r => "Baofeng UV-5R",
+            Self::BfF8hp => "Baofeng BF-F8HP",
+            Self::Uv5rmPlus => "Baofeng UV-5RM Plus",
+        }
+    }
+
+    /// Returns radio-specific validation constraints.
+    pub fn constraints(self) -> RadioConstraints {
+        match self {
+            Self::Uv5r | Self::Uv5rmPlus => syntonia::baofeng_uv5r_constraints(),
+            Self::BfF8hp => syntonia::baofeng_f8hp_constraints(),
+        }
+    }
+
+    /// Maximum number of channels for this variant.
+    pub fn max_channels(self) -> u16 {
+        self.constraints().max_channels
+    }
+}
+
+impl std::fmt::Display for RadioVariant {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.display_name())
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Detected radio descriptor
+// ---------------------------------------------------------------------------
+
+/// A radio discovered during hardware detection.
+#[derive(Debug, Clone)]
+pub struct DetectedRadio {
+    pub variant: RadioVariant,
+    pub port: String,
+    pub firmware: String,
+    pub warnings: Vec<String>,
+}
+
+// ---------------------------------------------------------------------------
+// Hardware abstraction (trait-based for testability)
+// ---------------------------------------------------------------------------
+
+/// Abstraction over radio hardware detection and connection.
+pub trait Hardware {
+    fn detect_radios(&self) -> Result<Vec<DetectedRadio>, RadioError>;
+    fn open(&self, port: &str) -> Result<Box<dyn Session>, RadioError>;
+}
+
+/// An open connection to a radio.
+pub trait Session {
+    fn variant(&self) -> RadioVariant;
+    fn download_image(&mut self, on_block: &dyn Fn(u16, u16)) -> Result<Vec<u8>, RadioError>;
+    fn upload_image(&mut self, data: &[u8], on_block: &dyn Fn(u16, u16)) -> Result<(), RadioError>;
+    fn decode_channels(&self, image: &[u8]) -> Result<Vec<Channel>, RadioError>;
+    fn encode_channels(&self, channels: &[Channel]) -> Result<Vec<u8>, RadioError>;
+}
+
+// ---------------------------------------------------------------------------
+// Stub hardware (returns errors until P1-02..P1-06 are implemented)
+// ---------------------------------------------------------------------------
+
+pub struct StubHardware;
+
+impl Hardware for StubHardware {
+    fn detect_radios(&self) -> Result<Vec<DetectedRadio>, RadioError> {
+        Err(RadioError::HardwareNotAvailable)
+    }
+
+    fn open(&self, _port: &str) -> Result<Box<dyn Session>, RadioError> {
+        Err(RadioError::HardwareNotAvailable)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Port resolution helper
+// ---------------------------------------------------------------------------
+
+/// Resolves the target radio from an explicit port or auto-detection.
+pub fn resolve_target(port: Option<&str>, hw: &dyn Hardware) -> Result<DetectedRadio, RadioError> {
+    if let Some(port) = port {
+        let mut radios = hw.detect_radios()?;
+        radios.iter().position(|r| r.port == port).map_or_else(
+            || {
+                // WHY: Port was given explicitly but detection didn't find it.
+                // Fall back to opening directly — the user knows what they're doing.
+                Ok(DetectedRadio {
+                    variant: RadioVariant::Uv5r,
+                    port: port.to_string(),
+                    firmware: String::new(),
+                    warnings: Vec::new(),
+                })
+            },
+            |idx| Ok(radios.swap_remove(idx)),
+        )
+    } else {
+        let radios = hw.detect_radios()?;
+        match radios.len() {
+            0 => Err(RadioError::NoRadioDetected),
+            1 => Ok(radios.into_iter().next().unwrap_or_else(|| {
+                // SAFETY: We just verified len() == 1
+                unreachable!()
+            })),
+            _ => Err(RadioError::MultipleRadiosDetected),
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Dispatch
+// ---------------------------------------------------------------------------
+
+/// Dispatches a radio subcommand.
+pub fn dispatch(cmd: &RadioCommand) -> Result<(), RadioError> {
+    dispatch_with(cmd, &StubHardware)
+}
+
+/// Dispatches with a specific hardware backend (for testing).
+pub fn dispatch_with(cmd: &RadioCommand, hw: &dyn Hardware) -> Result<(), RadioError> {
+    match cmd {
+        RadioCommand::Detect => detect::run(hw),
+        RadioCommand::Read { port } => read::run(port.as_deref(), hw),
+        RadioCommand::Program { port, plan } => program::run(port.as_deref(), plan, hw),
+        RadioCommand::Export {
+            port,
+            format,
+            output,
+        } => export::run(port.as_deref(), format, output.as_deref(), hw),
+        RadioCommand::Import { file } => import::run(file),
+    }
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    clippy::panic
+)]
+mod tests {
+    use clap::Parser;
+
+    use super::*;
+
+    // Wrapper to test subcommand parsing via clap.
+    #[derive(Parser)]
+    struct TestCli {
+        #[command(subcommand)]
+        command: RadioCommand,
+    }
+
+    fn parse(args: &[&str]) -> RadioCommand {
+        TestCli::parse_from(std::iter::once("test").chain(args.iter().copied())).command
+    }
+
+    #[test]
+    fn parse_detect() {
+        let cmd = parse(&["detect"]);
+        assert!(matches!(cmd, RadioCommand::Detect));
+    }
+
+    #[test]
+    fn parse_read_with_port() {
+        let cmd = parse(&["read", "--port", "/dev/ttyUSB0"]);
+        match cmd {
+            RadioCommand::Read { port } => {
+                assert_eq!(port.as_deref(), Some("/dev/ttyUSB0"));
+            }
+            _ => panic!("expected Read"),
+        }
+    }
+
+    #[test]
+    fn parse_program_with_both_args() {
+        let cmd = parse(&[
+            "program",
+            "--port",
+            "/dev/ttyUSB0",
+            "--plan",
+            "channels.toml",
+        ]);
+        match cmd {
+            RadioCommand::Program { port, plan } => {
+                assert_eq!(port.as_deref(), Some("/dev/ttyUSB0"));
+                assert_eq!(plan, PathBuf::from("channels.toml"));
+            }
+            _ => panic!("expected Program"),
+        }
+    }
+
+    #[test]
+    fn parse_export_format_and_output() {
+        let cmd = parse(&["export", "--format", "json", "--output", "out.json"]);
+        match cmd {
+            RadioCommand::Export {
+                port,
+                format,
+                output,
+            } => {
+                assert!(port.is_none());
+                assert!(matches!(format, ExportFormat::Json));
+                assert_eq!(output, Some(PathBuf::from("out.json")));
+            }
+            _ => panic!("expected Export"),
+        }
+    }
+
+    #[test]
+    fn parse_import_file() {
+        let cmd = parse(&["import", "channels.csv"]);
+        match cmd {
+            RadioCommand::Import { file } => {
+                assert_eq!(file, PathBuf::from("channels.csv"));
+            }
+            _ => panic!("expected Import"),
+        }
+    }
+
+    #[test]
+    fn parse_missing_required_args_fails() {
+        // `program` requires --plan
+        let result = TestCli::try_parse_from(["test", "program"]);
+        assert!(result.is_err());
+    }
+}
