@@ -1,12 +1,9 @@
-//! Syntonia — radio-agnostic channel and frequency plan data model with hardware detection.
+//! Syntonia — radio-agnostic channel and frequency plan data model.
 //!
 //! This crate provides the core types for representing programmable radio
 //! channel memories, frequency plans, and radio-specific validation. It sits
 //! between raw EEPROM bytes and user-visible channel plans: every radio driver
 //! encodes/decodes channels through these types.
-//!
-//! The [`hardware`] module provides USB cable detection, radio auto-discovery,
-//! and actionable diagnostics for connection issues.
 //!
 //! # Key types
 //!
@@ -14,13 +11,19 @@
 //! - [`FrequencyPlan`] — a named collection of channels (serializable to JSON/TOML)
 //! - [`ToneMode`], [`CtcssTone`], [`DcsCode`] — squelch tone configuration
 //! - [`RadioConstraints`] — radio-specific limits for validation
+//!
+//! # Import / Export
+//!
+//! - [`import`] — CHIRP `.img` and `.csv` import
+//! - [`export`] — CHIRP `.csv` export
+//! - [`baofeng`] — Baofeng UV-5R EEPROM codec
 
 pub mod baofeng;
 pub mod channel;
 pub mod error;
-pub mod hardware;
+pub mod export;
+pub mod import;
 pub mod plan;
-pub mod serial;
 pub mod tone;
 pub mod types;
 pub mod validate;
