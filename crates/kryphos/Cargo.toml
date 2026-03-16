@@ -1,0 +1,36 @@
+[package]
+name = "kryphos"
+description = "κρυφός — credential vault and installation identity"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+snafu.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+jiff.workspace = true
+tracing.workspace = true
+compact_str.workspace = true
+ciborium.workspace = true
+
+# Crypto
+chacha20poly1305 = "0.10"
+argon2 = "0.5"
+
+# Storage
+fjall = "3"
+
+# File locking
+fs2 = "0.4"
+
+# Random bytes
+rand = "0.8"
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true
