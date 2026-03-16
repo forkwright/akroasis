@@ -1,0 +1,22 @@
+[package]
+name = "kryphos"
+description = "κρυφός — encryption, key management, credential vault, identity"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+koinon = { path = "../koinon" }
+ed25519-dalek.workspace = true
+chacha20poly1305.workspace = true
+rand_core.workspace = true
+snafu.workspace = true
+serde.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true
