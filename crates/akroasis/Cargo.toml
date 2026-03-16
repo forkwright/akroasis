@@ -16,7 +16,7 @@ clap = { workspace = true }
 comfy-table = "7"
 dialoguer = "0.11"
 figment = { workspace = true }
-indicatif = "0.17"
+indicatif = "0.18"
 koinon = { path = "../koinon" }
 serde = { workspace = true }
 serde_json = { workspace = true }
