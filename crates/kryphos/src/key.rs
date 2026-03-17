@@ -225,7 +225,7 @@ impl InstallationIdentity {
 
     /// Signs a tamper log entry hash, proving this installation produced it.
     ///
-    /// `entry_hash` is the 32-byte BLAKE3 hash from [`koinon::tamper_log::encode_entry`].
+    /// `entry_hash` is the 32-byte BLAKE3 hash from `koinon::tamper_log::encode_entry`.
     #[must_use]
     pub fn sign_entry(&self, entry_hash: &[u8; 32]) -> ed25519_dalek::Signature {
         self.signing.sign(entry_hash)

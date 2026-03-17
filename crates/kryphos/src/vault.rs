@@ -63,7 +63,7 @@ pub struct EntryMetadata {
 /// A single credential stored in the vault.
 ///
 /// The `encrypted_data` field holds the ciphertext produced by
-/// ChaCha20-Poly1305. Decryption requires the [`VaultKey`](super::VaultKey).
+/// ChaCha20-Poly1305. Decryption requires the [`VaultKey`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct VaultEntry {
     /// Human-readable name for this credential.
