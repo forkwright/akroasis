@@ -154,7 +154,7 @@ mod tests {
 
         let inner = Serialized::defaults(TestConfig {
             api_key: "vault:my_api_key".to_owned(),
-            host: "example.com".to_owned(),
+            host: "test.invalid".to_owned(),
             port: 8080,
         });
 
@@ -176,7 +176,7 @@ mod tests {
 
         let inner = Serialized::defaults(TestConfig {
             api_key: "plain-key-value".to_owned(),
-            host: "example.com".to_owned(),
+            host: "test.invalid".to_owned(),
             port: 443,
         });
 
@@ -189,7 +189,7 @@ mod tests {
             "non-vault string must not be modified"
         );
         assert_eq!(
-            config.host, "example.com",
+            config.host, "test.invalid",
             "non-vault string must pass through"
         );
         assert_eq!(config.port, 443, "non-string value must pass through");
@@ -203,7 +203,7 @@ mod tests {
 
         let inner = Serialized::defaults(TestConfig {
             api_key: "vault:nonexistent_key".to_owned(),
-            host: "example.com".to_owned(),
+            host: "test.invalid".to_owned(),
             port: 8080,
         });
 
@@ -222,7 +222,7 @@ mod tests {
     fn vault_not_initialized_returns_clear_error() {
         let inner = Serialized::defaults(TestConfig {
             api_key: "vault:some_key".to_owned(),
-            host: "example.com".to_owned(),
+            host: "test.invalid".to_owned(),
             port: 8080,
         });
 
@@ -241,7 +241,7 @@ mod tests {
     fn without_vault_passes_non_vault_values() {
         let inner = Serialized::defaults(TestConfig {
             api_key: "plain-key".to_owned(),
-            host: "example.com".to_owned(),
+            host: "test.invalid".to_owned(),
             port: 8080,
         });
 
