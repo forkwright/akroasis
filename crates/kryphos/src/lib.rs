@@ -13,8 +13,9 @@ pub mod vault;
 pub use crypto::{decrypt, derive_key, encrypt, generate_salt};
 pub use error::{CryptoError, KeyError, VaultError};
 pub use key::{InstallationIdentity, SigningKey, VaultKey, VerifyingKey};
-pub use storage::{DecryptedEntry, EntryInfo, Vault};
+pub use storage::{DecryptedEntry, EntryHistory, EntryInfo, Vault};
 pub use vault::{
-    CredentialType, EntryMetadata, KdfParams, NONCE_LEN, SALT_LEN, VAULT_VERSION, VaultEntry,
-    VaultHeader, seal_signing_key, unseal_signing_key,
+    CredentialType, EntryMetadata, EntryStatus, HistoryEvent, HistoryEventKind, KdfParams,
+    NONCE_LEN, SALT_LEN, VAULT_VERSION, VaultEntry, VaultHeader, seal_signing_key,
+    unseal_signing_key,
 };

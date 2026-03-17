@@ -49,6 +49,60 @@ impl std::fmt::Display for CredentialType {
     }
 }
 
+/// Lifecycle status of a vault entry.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub enum EntryStatus {
+    /// The credential is active and available for retrieval.
+    #[default]
+    Active,
+    /// The credential has been revoked and cannot be retrieved.
+    Revoked,
+    /// The credential has expired (time-based).
+    Expired,
+}
+
+impl std::fmt::Display for EntryStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Active => f.write_str("active"),
+            Self::Revoked => f.write_str("revoked"),
+            Self::Expired => f.write_str("expired"),
+        }
+    }
+}
+
+/// A lifecycle event in a vault entry's history.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HistoryEvent {
+    /// When the event occurred.
+    pub timestamp: Timestamp,
+    /// What happened.
+    pub kind: HistoryEventKind,
+}
+
+/// The kind of lifecycle event.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub enum HistoryEventKind {
+    /// The entry was created.
+    Created,
+    /// The entry's secret was rotated.
+    Rotated,
+    /// The entry was revoked.
+    Revoked,
+}
+
+impl std::fmt::Display for HistoryEventKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Created => f.write_str("created"),
+            Self::Rotated => f.write_str("rotated"),
+            Self::Revoked => f.write_str("revoked"),
+        }
+    }
+}
+
 /// Metadata attached to a [`VaultEntry`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EntryMetadata {
@@ -56,6 +110,12 @@ pub struct EntryMetadata {
     pub created_at: Timestamp,
     /// When the credential was last rotated, if ever.
     pub rotated_at: Option<Timestamp>,
+    /// When the credential was revoked, if ever.
+    #[serde(default)]
+    pub revoked_at: Option<Timestamp>,
+    /// Number of times the secret has been rotated.
+    #[serde(default)]
+    pub rotation_count: u32,
     /// Free-form tags for filtering and grouping.
     pub tags: Vec<CompactString>,
 }
@@ -189,6 +249,8 @@ mod tests {
         EntryMetadata {
             created_at: Timestamp::UNIX_EPOCH,
             rotated_at: None,
+            revoked_at: None,
+            rotation_count: 0,
             tags: vec![CompactString::from("test")],
         }
     }
@@ -312,6 +374,8 @@ mod tests {
         let meta = EntryMetadata {
             created_at: Timestamp::UNIX_EPOCH,
             rotated_at: Some(Timestamp::UNIX_EPOCH),
+            revoked_at: None,
+            rotation_count: 3,
             tags: vec![CompactString::from("prod"), CompactString::from("rotated")],
         };
         let json = serde_json::to_string(&meta).unwrap();
@@ -396,5 +460,56 @@ mod tests {
             result.is_err(),
             "decryption must fail with tampered ciphertext"
         );
+    }
+
+    // -----------------------------------------------------------------
+    // EntryStatus
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn entry_status_default_is_active() {
+        assert_eq!(EntryStatus::default(), EntryStatus::Active);
+    }
+
+    #[test]
+    fn entry_status_display() {
+        assert_eq!(EntryStatus::Active.to_string(), "active");
+        assert_eq!(EntryStatus::Revoked.to_string(), "revoked");
+        assert_eq!(EntryStatus::Expired.to_string(), "expired");
+    }
+
+    #[test]
+    fn entry_status_serde_round_trip() {
+        for status in [
+            EntryStatus::Active,
+            EntryStatus::Revoked,
+            EntryStatus::Expired,
+        ] {
+            let json = serde_json::to_string(&status).unwrap();
+            let back: EntryStatus = serde_json::from_str(&json).unwrap();
+            assert_eq!(status, back);
+        }
+    }
+
+    // -----------------------------------------------------------------
+    // HistoryEvent / HistoryEventKind
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn history_event_kind_display() {
+        assert_eq!(HistoryEventKind::Created.to_string(), "created");
+        assert_eq!(HistoryEventKind::Rotated.to_string(), "rotated");
+        assert_eq!(HistoryEventKind::Revoked.to_string(), "revoked");
+    }
+
+    #[test]
+    fn history_event_serde_round_trip() {
+        let event = HistoryEvent {
+            timestamp: Timestamp::UNIX_EPOCH,
+            kind: HistoryEventKind::Rotated,
+        };
+        let json = serde_json::to_string(&event).unwrap();
+        let back: HistoryEvent = serde_json::from_str(&json).unwrap();
+        assert_eq!(event, back);
     }
 }

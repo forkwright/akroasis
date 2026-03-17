@@ -11,11 +11,14 @@ use snafu::ResultExt;
 
 use crate::crypto::{self, decrypt, encrypt};
 use crate::error::{
-    AlreadyExistsSnafu, EntryCryptoSnafu, IoSnafu, SerializationSnafu, VaultError,
-    WrongPassphraseSnafu,
+    AlreadyExistsSnafu, EntryCryptoSnafu, EntryNotDeletableSnafu, EntryRevokedSnafu, IoSnafu,
+    SerializationSnafu, VaultError, WrongPassphraseSnafu,
 };
 use crate::key::VaultKey;
-use crate::vault::{CredentialType, EntryMetadata, KdfParams, VAULT_VERSION};
+use crate::vault::{
+    CredentialType, EntryMetadata, EntryStatus, HistoryEvent, HistoryEventKind, KdfParams,
+    VAULT_VERSION,
+};
 
 /// Well-known plaintext used to verify the passphrase on open.
 const KEY_CHECK_PLAINTEXT: &[u8] = b"kryphos-vault-key-check-v1";
@@ -44,6 +47,10 @@ struct StoredEntry {
     credential_type: CredentialType,
     encrypted_secret: Vec<u8>,
     metadata: EntryMetadata,
+    #[serde(default)]
+    status: EntryStatus,
+    #[serde(default)]
+    history: Vec<HistoryEvent>,
 }
 
 /// A decrypted credential retrieved from the vault.
@@ -66,8 +73,23 @@ pub struct EntryInfo {
     pub name: CompactString,
     /// What kind of credential this is.
     pub credential_type: CredentialType,
+    /// Lifecycle status.
+    pub status: EntryStatus,
     /// Associated metadata.
     pub metadata: EntryMetadata,
+}
+
+/// Lifecycle history of a vault entry.
+#[derive(Debug, Clone)]
+pub struct EntryHistory {
+    /// Human-readable name for this credential.
+    pub name: CompactString,
+    /// Current lifecycle status.
+    pub status: EntryStatus,
+    /// Associated metadata.
+    pub metadata: EntryMetadata,
+    /// Chronological lifecycle events.
+    pub events: Vec<HistoryEvent>,
 }
 
 /// Encrypted credential vault backed by fjall.
@@ -197,14 +219,22 @@ impl Vault {
 
         let encrypted_secret = encrypt(&self.key, secret).context(EntryCryptoSnafu)?;
 
+        let now = Timestamp::now();
         let entry = StoredEntry {
             credential_type,
             encrypted_secret,
             metadata: EntryMetadata {
-                created_at: Timestamp::now(),
+                created_at: now,
                 rotated_at: None,
+                revoked_at: None,
+                rotation_count: 0,
                 tags: Vec::new(),
             },
+            status: EntryStatus::Active,
+            history: vec![HistoryEvent {
+                timestamp: now,
+                kind: HistoryEventKind::Created,
+            }],
         };
 
         let value = serde_json::to_vec(&entry).context(SerializationSnafu)?;
@@ -221,6 +251,7 @@ impl Vault {
     /// # Errors
     ///
     /// Returns [`VaultError::EntryNotFound`] if no entry with this name exists.
+    /// Returns [`VaultError::EntryRevoked`] if the entry has been revoked.
     /// Returns [`VaultError::EntryCrypto`] if decryption fails.
     pub fn get(&self, name: &str) -> Result<DecryptedEntry, VaultError> {
         let raw = self.keyspace.get(name).map_err(fjall_err)?.ok_or_else(|| {
@@ -230,6 +261,10 @@ impl Vault {
         })?;
 
         let entry: StoredEntry = serde_json::from_slice(&raw).context(SerializationSnafu)?;
+
+        if entry.status == EntryStatus::Revoked {
+            return EntryRevokedSnafu { name }.fail();
+        }
 
         let secret = decrypt(&self.key, &entry.encrypted_secret).context(EntryCryptoSnafu)?;
 
@@ -261,6 +296,7 @@ impl Vault {
             entries.push(EntryInfo {
                 name: CompactString::from(name),
                 credential_type: entry.credential_type,
+                status: entry.status,
                 metadata: entry.metadata,
             });
         }
@@ -270,14 +306,23 @@ impl Vault {
 
     /// Removes a credential from the vault.
     ///
+    /// Revoked entries cannot be removed (audit trail preservation).
+    ///
     /// # Errors
     ///
     /// Returns [`VaultError::EntryNotFound`] if no entry with this name exists.
+    /// Returns [`VaultError::EntryNotDeletable`] if the entry is revoked.
     pub fn remove(&self, name: &str) -> Result<(), VaultError> {
-        if self.keyspace.get(name).map_err(fjall_err)?.is_none() {
-            return Err(VaultError::EntryNotFound {
+        let raw = self.keyspace.get(name).map_err(fjall_err)?.ok_or_else(|| {
+            VaultError::EntryNotFound {
                 name: name.to_owned(),
-            });
+            }
+        })?;
+
+        let entry: StoredEntry = serde_json::from_slice(&raw).context(SerializationSnafu)?;
+
+        if entry.status == EntryStatus::Revoked {
+            return EntryNotDeletableSnafu { name }.fail();
         }
 
         self.keyspace.remove(name).map_err(fjall_err)?;
@@ -286,6 +331,112 @@ impl Vault {
             .map_err(fjall_err)?;
 
         Ok(())
+    }
+
+    /// Rotates a credential's secret, preserving name and metadata.
+    ///
+    /// Re-encrypts the entry with the new secret, updates the
+    /// `rotated_at` timestamp, and increments the rotation count.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`VaultError::EntryNotFound`] if no entry with this name exists.
+    /// Returns [`VaultError::EntryRevoked`] if the entry has been revoked.
+    /// Returns [`VaultError::EntryCrypto`] if encryption fails.
+    pub fn rotate(&self, name: &str, new_secret: &[u8]) -> Result<(), VaultError> {
+        let raw = self.keyspace.get(name).map_err(fjall_err)?.ok_or_else(|| {
+            VaultError::EntryNotFound {
+                name: name.to_owned(),
+            }
+        })?;
+
+        let mut entry: StoredEntry = serde_json::from_slice(&raw).context(SerializationSnafu)?;
+
+        if entry.status == EntryStatus::Revoked {
+            return EntryRevokedSnafu { name }.fail();
+        }
+
+        entry.encrypted_secret = encrypt(&self.key, new_secret).context(EntryCryptoSnafu)?;
+
+        let now = Timestamp::now();
+        entry.metadata.rotated_at = Some(now);
+        entry.metadata.rotation_count += 1;
+        entry.history.push(HistoryEvent {
+            timestamp: now,
+            kind: HistoryEventKind::Rotated,
+        });
+
+        let value = serde_json::to_vec(&entry).context(SerializationSnafu)?;
+        self.keyspace.insert(name, value).map_err(fjall_err)?;
+        self.db
+            .persist(fjall::PersistMode::SyncAll)
+            .map_err(fjall_err)?;
+
+        Ok(())
+    }
+
+    /// Revokes a credential, preventing future retrieval.
+    ///
+    /// The encrypted data is preserved for audit purposes. Revoked
+    /// entries cannot be deleted or rotated.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`VaultError::EntryNotFound`] if no entry with this name exists.
+    /// Returns [`VaultError::EntryRevoked`] if the entry is already revoked.
+    pub fn revoke(&self, name: &str) -> Result<(), VaultError> {
+        let raw = self.keyspace.get(name).map_err(fjall_err)?.ok_or_else(|| {
+            VaultError::EntryNotFound {
+                name: name.to_owned(),
+            }
+        })?;
+
+        let mut entry: StoredEntry = serde_json::from_slice(&raw).context(SerializationSnafu)?;
+
+        if entry.status == EntryStatus::Revoked {
+            return EntryRevokedSnafu { name }.fail();
+        }
+
+        let now = Timestamp::now();
+        entry.status = EntryStatus::Revoked;
+        entry.metadata.revoked_at = Some(now);
+        entry.history.push(HistoryEvent {
+            timestamp: now,
+            kind: HistoryEventKind::Revoked,
+        });
+
+        let value = serde_json::to_vec(&entry).context(SerializationSnafu)?;
+        self.keyspace.insert(name, value).map_err(fjall_err)?;
+        self.db
+            .persist(fjall::PersistMode::SyncAll)
+            .map_err(fjall_err)?;
+
+        Ok(())
+    }
+
+    /// Returns the lifecycle history for a credential.
+    ///
+    /// Includes creation, rotation, and revocation events in
+    /// chronological order.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`VaultError::EntryNotFound`] if no entry with this name exists.
+    pub fn history(&self, name: &str) -> Result<EntryHistory, VaultError> {
+        let raw = self.keyspace.get(name).map_err(fjall_err)?.ok_or_else(|| {
+            VaultError::EntryNotFound {
+                name: name.to_owned(),
+            }
+        })?;
+
+        let entry: StoredEntry = serde_json::from_slice(&raw).context(SerializationSnafu)?;
+
+        Ok(EntryHistory {
+            name: CompactString::from(name),
+            status: entry.status,
+            metadata: entry.metadata,
+            events: entry.history,
+        })
     }
 
     /// Returns the filesystem path of this vault.
@@ -347,6 +498,10 @@ fn fjall_err(e: impl std::fmt::Display) -> VaultError {
 
 #[cfg(test)]
 #[expect(clippy::unwrap_used, reason = "test assertions use unwrap for clarity")]
+#[expect(
+    clippy::indexing_slicing,
+    reason = "test code with known-valid indices"
+)]
 mod tests {
     use super::*;
 
@@ -516,5 +671,307 @@ mod tests {
 
         let result = Vault::open(&vault_path, TEST_PASSPHRASE);
         assert!(result.is_err(), "concurrent open must fail with lock error");
+    }
+
+    // -----------------------------------------------------------------
+    // Rotation
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn rotate_updates_secret_and_preserves_name() {
+        let dir = tempfile::tempdir().unwrap();
+        let vault_path = dir.path().join("rotate-vault");
+
+        let vault = Vault::create(&vault_path, TEST_PASSPHRASE).unwrap();
+        vault
+            .add("api-key", CredentialType::ApiKey, b"old-secret")
+            .unwrap();
+
+        vault.rotate("api-key", b"new-secret").unwrap();
+
+        let entry = vault.get("api-key").unwrap();
+        assert_eq!(entry.name, "api-key", "name must be preserved after rotate");
+        assert_eq!(
+            entry.secret, b"new-secret",
+            "secret must be updated after rotate"
+        );
+        assert_eq!(
+            entry.credential_type,
+            CredentialType::ApiKey,
+            "credential type must be preserved after rotate"
+        );
+    }
+
+    #[test]
+    fn rotate_increments_rotation_count() {
+        let dir = tempfile::tempdir().unwrap();
+        let vault_path = dir.path().join("rotate-count-vault");
+
+        let vault = Vault::create(&vault_path, TEST_PASSPHRASE).unwrap();
+        vault.add("key", CredentialType::Psk, b"secret-v1").unwrap();
+
+        vault.rotate("key", b"secret-v2").unwrap();
+        vault.rotate("key", b"secret-v3").unwrap();
+
+        let history = vault.history("key").unwrap();
+        assert_eq!(
+            history.metadata.rotation_count, 2,
+            "rotation count must reflect number of rotations"
+        );
+        assert!(
+            history.metadata.rotated_at.is_some(),
+            "rotated_at must be set after rotation"
+        );
+    }
+
+    #[test]
+    fn rotate_missing_entry_fails() {
+        let dir = tempfile::tempdir().unwrap();
+        let vault_path = dir.path().join("rotate-missing-vault");
+
+        let vault = Vault::create(&vault_path, TEST_PASSPHRASE).unwrap();
+
+        let result = vault.rotate("ghost", b"new-secret");
+        assert!(result.is_err(), "rotating a nonexistent entry must fail");
+    }
+
+    #[test]
+    fn rotate_revoked_entry_fails() {
+        let dir = tempfile::tempdir().unwrap();
+        let vault_path = dir.path().join("rotate-revoked-vault");
+
+        let vault = Vault::create(&vault_path, TEST_PASSPHRASE).unwrap();
+        vault.add("key", CredentialType::ApiKey, b"secret").unwrap();
+        vault.revoke("key").unwrap();
+
+        let result = vault.rotate("key", b"new-secret");
+        assert!(result.is_err(), "rotating a revoked entry must fail");
+    }
+
+    // -----------------------------------------------------------------
+    // Revocation
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn revoke_prevents_get() {
+        let dir = tempfile::tempdir().unwrap();
+        let vault_path = dir.path().join("revoke-get-vault");
+
+        let vault = Vault::create(&vault_path, TEST_PASSPHRASE).unwrap();
+        vault.add("key", CredentialType::ApiKey, b"secret").unwrap();
+
+        vault.revoke("key").unwrap();
+
+        let result = vault.get("key");
+        assert!(
+            result.is_err(),
+            "get on a revoked entry must return an error"
+        );
+    }
+
+    #[test]
+    fn revoke_sets_revoked_at() {
+        let dir = tempfile::tempdir().unwrap();
+        let vault_path = dir.path().join("revoke-timestamp-vault");
+
+        let vault = Vault::create(&vault_path, TEST_PASSPHRASE).unwrap();
+        vault.add("key", CredentialType::Psk, b"secret").unwrap();
+
+        vault.revoke("key").unwrap();
+
+        let history = vault.history("key").unwrap();
+        assert_eq!(
+            history.status,
+            EntryStatus::Revoked,
+            "status must be Revoked after revocation"
+        );
+        assert!(
+            history.metadata.revoked_at.is_some(),
+            "revoked_at must be set after revocation"
+        );
+    }
+
+    #[test]
+    fn revoke_already_revoked_fails() {
+        let dir = tempfile::tempdir().unwrap();
+        let vault_path = dir.path().join("revoke-twice-vault");
+
+        let vault = Vault::create(&vault_path, TEST_PASSPHRASE).unwrap();
+        vault.add("key", CredentialType::ApiKey, b"secret").unwrap();
+        vault.revoke("key").unwrap();
+
+        let result = vault.revoke("key");
+        assert!(
+            result.is_err(),
+            "revoking an already revoked entry must fail"
+        );
+    }
+
+    #[test]
+    fn revoke_missing_entry_fails() {
+        let dir = tempfile::tempdir().unwrap();
+        let vault_path = dir.path().join("revoke-missing-vault");
+
+        let vault = Vault::create(&vault_path, TEST_PASSPHRASE).unwrap();
+
+        let result = vault.revoke("ghost");
+        assert!(result.is_err(), "revoking a nonexistent entry must fail");
+    }
+
+    #[test]
+    fn revoked_entry_not_deletable() {
+        let dir = tempfile::tempdir().unwrap();
+        let vault_path = dir.path().join("revoke-delete-vault");
+
+        let vault = Vault::create(&vault_path, TEST_PASSPHRASE).unwrap();
+        vault
+            .add("audit-key", CredentialType::ApiKey, b"secret")
+            .unwrap();
+        vault.revoke("audit-key").unwrap();
+
+        let result = vault.remove("audit-key");
+        assert!(
+            result.is_err(),
+            "removing a revoked entry must fail for audit trail"
+        );
+
+        let entries = vault.list().unwrap();
+        assert_eq!(entries.len(), 1, "revoked entry must remain in the vault");
+    }
+
+    // -----------------------------------------------------------------
+    // History
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn history_tracks_creation_event() {
+        let dir = tempfile::tempdir().unwrap();
+        let vault_path = dir.path().join("history-create-vault");
+
+        let vault = Vault::create(&vault_path, TEST_PASSPHRASE).unwrap();
+        vault.add("key", CredentialType::ApiKey, b"secret").unwrap();
+
+        let history = vault.history("key").unwrap();
+        assert_eq!(history.name, "key");
+        assert_eq!(history.status, EntryStatus::Active);
+        assert_eq!(
+            history.events.len(),
+            1,
+            "new entry must have exactly one history event"
+        );
+        assert_eq!(history.events[0].kind, HistoryEventKind::Created);
+    }
+
+    #[test]
+    fn history_tracks_rotation_events() {
+        let dir = tempfile::tempdir().unwrap();
+        let vault_path = dir.path().join("history-rotate-vault");
+
+        let vault = Vault::create(&vault_path, TEST_PASSPHRASE).unwrap();
+        vault.add("key", CredentialType::Psk, b"v1").unwrap();
+
+        vault.rotate("key", b"v2").unwrap();
+        vault.rotate("key", b"v3").unwrap();
+
+        let history = vault.history("key").unwrap();
+        assert_eq!(
+            history.events.len(),
+            3,
+            "history must have created + 2 rotations"
+        );
+        assert_eq!(history.events[0].kind, HistoryEventKind::Created);
+        assert_eq!(history.events[1].kind, HistoryEventKind::Rotated);
+        assert_eq!(history.events[2].kind, HistoryEventKind::Rotated);
+    }
+
+    #[test]
+    fn history_tracks_revocation() {
+        let dir = tempfile::tempdir().unwrap();
+        let vault_path = dir.path().join("history-revoke-vault");
+
+        let vault = Vault::create(&vault_path, TEST_PASSPHRASE).unwrap();
+        vault.add("key", CredentialType::ApiKey, b"secret").unwrap();
+
+        vault.rotate("key", b"rotated-secret").unwrap();
+        vault.revoke("key").unwrap();
+
+        let history = vault.history("key").unwrap();
+        assert_eq!(
+            history.events.len(),
+            3,
+            "history must have created + rotated + revoked"
+        );
+        assert_eq!(history.events[0].kind, HistoryEventKind::Created);
+        assert_eq!(history.events[1].kind, HistoryEventKind::Rotated);
+        assert_eq!(history.events[2].kind, HistoryEventKind::Revoked);
+        assert_eq!(history.status, EntryStatus::Revoked);
+    }
+
+    #[test]
+    fn history_events_are_chronological() {
+        let dir = tempfile::tempdir().unwrap();
+        let vault_path = dir.path().join("history-chrono-vault");
+
+        let vault = Vault::create(&vault_path, TEST_PASSPHRASE).unwrap();
+        vault.add("key", CredentialType::Psk, b"v1").unwrap();
+        vault.rotate("key", b"v2").unwrap();
+        vault.revoke("key").unwrap();
+
+        let history = vault.history("key").unwrap();
+        for pair in history.events.windows(2) {
+            assert!(
+                pair[0].timestamp <= pair[1].timestamp,
+                "history events must be in chronological order"
+            );
+        }
+    }
+
+    #[test]
+    fn history_missing_entry_fails() {
+        let dir = tempfile::tempdir().unwrap();
+        let vault_path = dir.path().join("history-missing-vault");
+
+        let vault = Vault::create(&vault_path, TEST_PASSPHRASE).unwrap();
+
+        let result = vault.history("ghost");
+        assert!(result.is_err(), "history for a nonexistent entry must fail");
+    }
+
+    // -----------------------------------------------------------------
+    // List with status
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn list_shows_entry_status() {
+        let dir = tempfile::tempdir().unwrap();
+        let vault_path = dir.path().join("list-status-vault");
+
+        let vault = Vault::create(&vault_path, TEST_PASSPHRASE).unwrap();
+        vault
+            .add("active-key", CredentialType::ApiKey, b"secret-a")
+            .unwrap();
+        vault
+            .add("revoked-key", CredentialType::Psk, b"secret-b")
+            .unwrap();
+        vault.revoke("revoked-key").unwrap();
+
+        let entries = vault.list().unwrap();
+        assert_eq!(entries.len(), 2, "list must return all entries");
+
+        for info in &entries {
+            if info.name == "active-key" {
+                assert_eq!(
+                    info.status,
+                    EntryStatus::Active,
+                    "active entry must show Active status"
+                );
+            } else if info.name == "revoked-key" {
+                assert_eq!(
+                    info.status,
+                    EntryStatus::Revoked,
+                    "revoked entry must show Revoked status"
+                );
+            }
+        }
     }
 }
