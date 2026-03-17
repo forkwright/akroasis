@@ -43,6 +43,38 @@ pub enum VaultError {
         /// Underlying I/O error.
         source: std::io::Error,
     },
+
+    /// The passphrase is incorrect (key check decryption failed).
+    #[snafu(display("wrong passphrase: decryption of key check failed"))]
+    WrongPassphrase,
+
+    /// The vault is already locked by another process.
+    #[snafu(display("vault is locked by another process: {path}", path = path.display()))]
+    Locked {
+        /// Path to the vault directory.
+        path: std::path::PathBuf,
+    },
+
+    /// The vault already exists at this path.
+    #[snafu(display("vault already exists at {path}", path = path.display()))]
+    AlreadyExists {
+        /// Path to the existing vault directory.
+        path: std::path::PathBuf,
+    },
+
+    /// The storage backend (fjall) returned an error.
+    #[snafu(display("storage backend error: {message}"))]
+    StorageBackend {
+        /// Human-readable explanation.
+        message: String,
+    },
+
+    /// A cryptographic operation on a vault entry failed.
+    #[snafu(display("entry crypto error: {source}"))]
+    EntryCrypto {
+        /// Underlying crypto error.
+        source: CryptoError,
+    },
 }
 
 /// Errors from key generation, derivation, or loading.
