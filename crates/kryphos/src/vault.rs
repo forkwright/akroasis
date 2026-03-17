@@ -87,7 +87,7 @@ impl Default for KdfParams {
         Self {
             memory_cost_kib: 65_536,
             time_cost: 3,
-            parallelism: 1,
+            parallelism: 4,
         }
     }
 }

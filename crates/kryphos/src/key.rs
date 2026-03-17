@@ -3,6 +3,7 @@
 use std::fmt;
 
 use serde::{Deserialize, Serialize};
+use subtle::ConstantTimeEq;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use crate::error::KeyError;
@@ -197,6 +198,14 @@ impl VaultKey {
         &self.bytes
     }
 }
+
+impl PartialEq for VaultKey {
+    fn eq(&self, other: &Self) -> bool {
+        self.bytes.ct_eq(&other.bytes).into()
+    }
+}
+
+impl Eq for VaultKey {}
 
 impl fmt::Debug for VaultKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
