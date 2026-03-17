@@ -20,6 +20,8 @@ snafu.workspace = true
 subtle.workspace = true
 jiff.workspace = true
 compact_str.workspace = true
+fjall.workspace = true
+fs2.workspace = true
 
 [dev-dependencies]
 serde_json.workspace = true
