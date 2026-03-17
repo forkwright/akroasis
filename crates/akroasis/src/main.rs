@@ -5,6 +5,7 @@
 
 mod cli;
 mod radio;
+mod vault;
 
 use std::path::PathBuf;
 
@@ -32,6 +33,10 @@ enum Error {
     /// A radio operation failed.
     #[snafu(display("{source}"))]
     Radio { source: radio::errors::RadioError },
+
+    /// A vault operation failed.
+    #[snafu(display("{source}"))]
+    Vault { source: vault::VaultCliError },
 }
 
 /// Application configuration loaded from TOML file and environment overrides.
@@ -73,7 +78,9 @@ fn dispatch(command: &Command) -> Result<(), Error> {
         Command::Auto => println!("praxis — automation (not yet implemented)"),
         Command::Nav => println!("chorografia — navigation (not yet implemented)"),
         Command::Know => println!("pinax — knowledge repository (not yet implemented)"),
-        Command::Comms => println!("kryphos — communications (not yet implemented)"),
+        Command::Vault(args) => {
+            vault::dispatch(&args.command).context(VaultSnafu)?;
+        }
         Command::Privacy => println!("lethe — privacy (not yet implemented)"),
         Command::Serve => println!("daemon mode (not yet implemented)"),
     }
