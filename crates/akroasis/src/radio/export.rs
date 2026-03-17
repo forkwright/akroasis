@@ -168,7 +168,7 @@ fn chirp_tone_fields(ch: &Channel) -> (&'static str, String, String, String, &'s
                 "DTCS",
                 "88.5".to_string(),
                 "88.5".to_string(),
-                format!("{:03}", code.code()),
+                format!("{:03}", code.as_code()),
                 pol,
             )
         }
@@ -185,7 +185,7 @@ fn chirp_tone_fields(ch: &Channel) -> (&'static str, String, String, String, &'s
 fn format_tone_csv(tone: ToneMode) -> String {
     match tone {
         ToneMode::Ctcss(t) => format!("{:.1} Hz", t.as_hz()),
-        ToneMode::Dcs(code, _) => format!("DCS {:03}", code.code()),
+        ToneMode::Dcs(code, _) => format!("DCS {:03}", code.as_code()),
         _ => String::new(),
     }
 }

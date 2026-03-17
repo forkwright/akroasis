@@ -74,7 +74,7 @@ fn format_tone(tone: ToneMode) -> String {
     match tone {
         ToneMode::None => "\u{2014}".to_string(),
         ToneMode::Ctcss(t) => format!("{:.1} Hz", t.as_hz()),
-        ToneMode::Dcs(code, _polarity) => format!("DCS {:03}", code.code()),
+        ToneMode::Dcs(code, _polarity) => format!("DCS {:03}", code.as_code()),
         _ => "?".to_string(),
     }
 }
