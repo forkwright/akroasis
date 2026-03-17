@@ -84,5 +84,8 @@ fjall = "3"
 # File locking
 fs2 = "0.4"
 
+# Password input
+rpassword = "7"
+
 # Testing
 tempfile = "3"

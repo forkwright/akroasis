@@ -3,6 +3,7 @@
 use clap::{Parser, Subcommand};
 
 use crate::radio::RadioCommand;
+use crate::vault::VaultCommand;
 
 #[allow(clippy::doc_markdown)]
 #[derive(Parser)]
@@ -37,8 +38,8 @@ pub enum Command {
     Nav,
     /// Knowledge — offline references, frequency databases, manuals
     Know,
-    /// Communications — encrypted messaging, key management
-    Comms,
+    /// Credential vault — store, retrieve, rotate, and revoke secrets
+    Vault(VaultArgs),
     /// Privacy — VPN, anonymization, OPSEC assessment
     Privacy,
     /// Serve the Akroasis daemon
@@ -50,4 +51,11 @@ pub enum Command {
 pub struct RadioArgs {
     #[command(subcommand)]
     pub command: RadioCommand,
+}
+
+/// Vault subcommand arguments.
+#[derive(clap::Args)]
+pub struct VaultArgs {
+    #[command(subcommand)]
+    pub command: VaultCommand,
 }
