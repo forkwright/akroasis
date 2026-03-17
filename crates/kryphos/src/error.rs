@@ -75,6 +75,20 @@ pub enum VaultError {
         /// Underlying crypto error.
         source: CryptoError,
     },
+
+    /// The entry has been revoked and cannot be retrieved.
+    #[snafu(display("entry revoked: {name}"))]
+    EntryRevoked {
+        /// Name of the revoked entry.
+        name: String,
+    },
+
+    /// A revoked entry cannot be deleted (audit trail).
+    #[snafu(display("cannot delete revoked entry: {name} (audit trail)"))]
+    EntryNotDeletable {
+        /// Name of the revoked entry.
+        name: String,
+    },
 }
 
 /// Errors from key generation, derivation, or loading.
