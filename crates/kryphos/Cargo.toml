@@ -20,6 +20,7 @@ snafu.workspace = true
 subtle.workspace = true
 jiff.workspace = true
 compact_str.workspace = true
+figment.workspace = true
 fjall.workspace = true
 fs2.workspace = true
 
