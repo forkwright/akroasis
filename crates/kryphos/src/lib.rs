@@ -13,5 +13,5 @@ pub use error::{CryptoError, KeyError, VaultError};
 pub use key::{InstallationIdentity, SigningKey, VaultKey, VerifyingKey};
 pub use vault::{
     CredentialType, EntryMetadata, KdfParams, NONCE_LEN, SALT_LEN, VAULT_VERSION, VaultEntry,
-    VaultHeader,
+    VaultHeader, seal_signing_key, unseal_signing_key,
 };

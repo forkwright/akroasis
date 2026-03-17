@@ -1,8 +1,13 @@
 //! Vault data model: entries, headers, and credential types.
 
+use chacha20poly1305::aead::Aead;
+use chacha20poly1305::{ChaCha20Poly1305, KeyInit, Nonce};
 use compact_str::CompactString;
 use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
+
+use crate::error::CryptoError;
+use crate::key::{InstallationIdentity, SigningKey, VaultKey};
 
 /// Size of the Argon2id salt in bytes.
 pub const SALT_LEN: usize = 16;
@@ -122,8 +127,61 @@ impl VaultHeader {
     }
 }
 
+/// Encrypts the signing key of an [`InstallationIdentity`] with the given vault
+/// key and nonce, returning the ciphertext.
+///
+/// The nonce must be unique per encryption operation with the same key.
+///
+/// # Errors
+///
+/// Returns [`CryptoError::EncryptionFailed`] if encryption fails.
+pub fn seal_signing_key(
+    identity: &InstallationIdentity,
+    vault_key: &VaultKey,
+    nonce: &[u8; NONCE_LEN],
+) -> Result<Vec<u8>, CryptoError> {
+    let cipher = ChaCha20Poly1305::new(vault_key.as_bytes().into());
+    let nonce = Nonce::from_slice(nonce);
+    let plaintext = identity.signing_key().to_bytes();
+
+    cipher
+        .encrypt(nonce, plaintext.as_ref())
+        .map_err(|e| CryptoError::EncryptionFailed {
+            reason: e.to_string(),
+        })
+}
+
+/// Decrypts a signing key from vault ciphertext, reconstructing the
+/// [`InstallationIdentity`].
+///
+/// # Errors
+///
+/// Returns [`CryptoError::DecryptionFailed`] if decryption fails (wrong key
+/// or tampered ciphertext).
+/// Returns [`crate::KeyError`] (wrapped in `CryptoError`) if the decrypted
+/// bytes are not a valid Ed25519 key.
+pub fn unseal_signing_key(
+    ciphertext: &[u8],
+    vault_key: &VaultKey,
+    nonce: &[u8; NONCE_LEN],
+) -> Result<InstallationIdentity, CryptoError> {
+    let cipher = ChaCha20Poly1305::new(vault_key.as_bytes().into());
+    let nonce = Nonce::from_slice(nonce);
+
+    let plaintext = cipher
+        .decrypt(nonce, ciphertext)
+        .map_err(|_| CryptoError::DecryptionFailed)?;
+
+    let signing =
+        SigningKey::from_bytes(&plaintext).map_err(|e| CryptoError::EncryptionFailed {
+            reason: e.to_string(),
+        })?;
+
+    Ok(InstallationIdentity::from_signing_key(signing))
+}
+
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::indexing_slicing)]
 mod tests {
     use super::*;
 
@@ -272,5 +330,71 @@ mod tests {
         let json = serde_json::to_string(&entry).unwrap();
         let back: VaultEntry = serde_json::from_str(&json).unwrap();
         assert_eq!(entry, back);
+    }
+
+    // -----------------------------------------------------------------
+    // Seal / unseal signing key
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn seal_unseal_round_trip_preserves_identity() {
+        let identity = InstallationIdentity::generate();
+        let vault_key = VaultKey::from_bytes([0x42; 32]);
+        let nonce = [0x01; NONCE_LEN];
+
+        let ciphertext = seal_signing_key(&identity, &vault_key, &nonce).unwrap();
+        let recovered = unseal_signing_key(&ciphertext, &vault_key, &nonce).unwrap();
+
+        assert_eq!(
+            identity.public_key_bytes(),
+            recovered.public_key_bytes(),
+            "recovered identity must have the same public key"
+        );
+
+        let message = b"round-trip test";
+        let sig = identity.sign(message);
+        assert!(
+            recovered.verify(message, &sig).is_ok(),
+            "recovered identity must verify signatures from the original"
+        );
+    }
+
+    #[test]
+    fn unseal_with_wrong_key_fails() {
+        let identity = InstallationIdentity::generate();
+        let vault_key = VaultKey::from_bytes([0x42; 32]);
+        let wrong_key = VaultKey::from_bytes([0xFF; 32]);
+        let nonce = [0x01; NONCE_LEN];
+
+        let ciphertext = seal_signing_key(&identity, &vault_key, &nonce).unwrap();
+        let result = unseal_signing_key(&ciphertext, &wrong_key, &nonce);
+        assert!(result.is_err(), "decryption must fail with wrong vault key");
+    }
+
+    #[test]
+    fn unseal_with_wrong_nonce_fails() {
+        let identity = InstallationIdentity::generate();
+        let vault_key = VaultKey::from_bytes([0x42; 32]);
+        let nonce = [0x01; NONCE_LEN];
+        let wrong_nonce = [0x02; NONCE_LEN];
+
+        let ciphertext = seal_signing_key(&identity, &vault_key, &nonce).unwrap();
+        let result = unseal_signing_key(&ciphertext, &vault_key, &wrong_nonce);
+        assert!(result.is_err(), "decryption must fail with wrong nonce");
+    }
+
+    #[test]
+    fn unseal_tampered_ciphertext_fails() {
+        let identity = InstallationIdentity::generate();
+        let vault_key = VaultKey::from_bytes([0x42; 32]);
+        let nonce = [0x01; NONCE_LEN];
+
+        let mut ciphertext = seal_signing_key(&identity, &vault_key, &nonce).unwrap();
+        ciphertext[0] ^= 0xFF;
+        let result = unseal_signing_key(&ciphertext, &vault_key, &nonce);
+        assert!(
+            result.is_err(),
+            "decryption must fail with tampered ciphertext"
+        );
     }
 }

@@ -23,6 +23,8 @@ compact_str.workspace = true
 
 [dev-dependencies]
 serde_json.workspace = true
+koinon = { path = "../koinon" }
+tempfile.workspace = true
 
 [lints]
 workspace = true

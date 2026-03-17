@@ -802,11 +802,13 @@ dependencies = [
  "compact_str",
  "ed25519-dalek",
  "jiff",
+ "koinon",
  "rand_core 0.6.4",
  "serde",
  "serde_json",
  "snafu",
  "subtle",
+ "tempfile",
  "zeroize",
 ]
 

@@ -6,7 +6,9 @@ use serde::{Deserialize, Serialize};
 use subtle::ConstantTimeEq;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
-use crate::error::KeyError;
+use ed25519_dalek::Signer;
+
+use crate::error::{CryptoError, KeyError};
 
 /// ChaCha20-Poly1305 symmetric key length in bytes.
 pub const VAULT_KEY_LEN: usize = 32;
@@ -60,6 +62,20 @@ impl SigningKey {
         }
     }
 
+    /// Signs a message and returns the signature.
+    #[must_use]
+    pub fn sign(&self, message: &[u8]) -> ed25519_dalek::Signature {
+        self.inner.sign(message)
+    }
+
+    /// Returns the raw 32-byte secret key material.
+    ///
+    /// Caller is responsible for zeroizing the returned bytes.
+    #[must_use]
+    pub fn to_bytes(&self) -> [u8; SIGNING_KEY_LEN] {
+        self.inner.to_bytes()
+    }
+
     /// Borrows the underlying `ed25519_dalek::SigningKey`.
     #[must_use]
     pub const fn as_inner(&self) -> &ed25519_dalek::SigningKey {
@@ -107,6 +123,22 @@ impl VerifyingKey {
     #[must_use]
     pub fn as_bytes(&self) -> &[u8; VERIFYING_KEY_LEN] {
         self.inner.as_bytes()
+    }
+
+    /// Verifies a signature against a message.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CryptoError::SignatureInvalid`] if the signature does not match.
+    pub fn verify(
+        &self,
+        message: &[u8],
+        signature: &ed25519_dalek::Signature,
+    ) -> Result<(), CryptoError> {
+        use ed25519_dalek::Verifier;
+        self.inner
+            .verify(message, signature)
+            .map_err(|_| CryptoError::SignatureInvalid)
     }
 
     /// Borrows the underlying `ed25519_dalek::VerifyingKey`.
@@ -160,10 +192,43 @@ impl InstallationIdentity {
         &self.signing
     }
 
-    /// Returns a clone of the verifying (public) key.
+    /// Returns a reference to the verifying (public) key.
     #[must_use]
     pub const fn verifying_key(&self) -> &VerifyingKey {
         &self.verifying
+    }
+
+    /// Signs a message with this installation's private key.
+    #[must_use]
+    pub fn sign(&self, message: &[u8]) -> ed25519_dalek::Signature {
+        self.signing.sign(message)
+    }
+
+    /// Verifies a signature against a message using this installation's public key.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CryptoError::SignatureInvalid`] if the signature does not match.
+    pub fn verify(
+        &self,
+        message: &[u8],
+        signature: &ed25519_dalek::Signature,
+    ) -> Result<(), CryptoError> {
+        self.verifying.verify(message, signature)
+    }
+
+    /// Returns the raw 32-byte public key for identity fingerprinting.
+    #[must_use]
+    pub fn public_key_bytes(&self) -> [u8; 32] {
+        *self.verifying.as_bytes()
+    }
+
+    /// Signs a tamper log entry hash, proving this installation produced it.
+    ///
+    /// `entry_hash` is the 32-byte BLAKE3 hash from [`koinon::tamper_log::encode_entry`].
+    #[must_use]
+    pub fn sign_entry(&self, entry_hash: &[u8; 32]) -> ed25519_dalek::Signature {
+        self.signing.sign(entry_hash)
     }
 }
 
@@ -325,6 +390,62 @@ mod tests {
         assert!(
             !dbg.contains("SigningKey("),
             "debug must not expose signing key innards"
+        );
+    }
+
+    #[test]
+    fn sign_verify_round_trip_succeeds() {
+        let id = InstallationIdentity::generate();
+        let message = b"tamper log entry hash";
+        let signature = id.sign(message);
+        assert!(
+            id.verify(message, &signature).is_ok(),
+            "verification must succeed for matching key"
+        );
+    }
+
+    #[test]
+    fn verify_with_wrong_key_fails() {
+        let id1 = InstallationIdentity::generate();
+        let id2 = InstallationIdentity::generate();
+        let message = b"some message";
+        let signature = id1.sign(message);
+        assert!(
+            id2.verify(message, &signature).is_err(),
+            "verification must fail with a different key"
+        );
+    }
+
+    #[test]
+    fn verify_with_wrong_message_fails() {
+        let id = InstallationIdentity::generate();
+        let signature = id.sign(b"original");
+        assert!(
+            id.verify(b"tampered", &signature).is_err(),
+            "verification must fail with a different message"
+        );
+    }
+
+    #[test]
+    fn public_key_bytes_returns_32_bytes() {
+        let id = InstallationIdentity::generate();
+        let bytes = id.public_key_bytes();
+        assert_eq!(bytes.len(), 32, "public key must be 32 bytes");
+        assert_eq!(
+            &bytes,
+            id.verifying_key().as_bytes(),
+            "public_key_bytes must match verifying key"
+        );
+    }
+
+    #[test]
+    fn sign_entry_signs_32_byte_hash() {
+        let id = InstallationIdentity::generate();
+        let entry_hash = [0xAB_u8; 32];
+        let signature = id.sign_entry(&entry_hash);
+        assert!(
+            id.verify(&entry_hash, &signature).is_ok(),
+            "sign_entry signature must verify against the same hash"
         );
     }
 
