@@ -136,7 +136,7 @@ When you add a new name, it must compose with what exists. A name that fits loca
 
 ---
 
-## The Gnomon principle
+## The gnomon principle
 
 A gnomon doesn't contain time. It doesn't measure time. It casts a shadow, and the shadow makes time legible.
 

@@ -23,7 +23,7 @@ See `ARCHITECTURE.md` for the crate map, layer structure, and key decisions.
 
 Full phase details: kanon repo roadmap.
 
-## Related Projects
+## Related projects
 
 | Project | Relationship |
 |---------|-------------|
