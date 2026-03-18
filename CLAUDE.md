@@ -37,7 +37,7 @@ cargo clippy --workspace               # Lint (zero warnings)
 ## Before Submitting
 
 1. `cargo test -p <affected-crate>` passes
-2. `cargo clippy --workspace` — zero warnings
+2. `cargo clippy --workspace` passes with zero warnings
 3. No `unwrap()` in library code
 4. New errors use snafu with context
 

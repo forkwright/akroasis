@@ -1,4 +1,4 @@
-# Architecture — Akroasis
+# Architecture: Akroasis
 
 Single Rust binary. 17 crates across 5 layers. All domains produce typed `GeoSignal` into a shared pipeline.
 
@@ -31,7 +31,7 @@ Foundation:     koinon (shared types), kryphos (encryption), lethe (privacy)
 | **praxis** | Orchestration | Automation engine, playbooks, event triggers, state machines |
 | **chorografia** | Model | Geographic model, RF propagation, navigation, terrain |
 | **pinax** | Knowledge | Offline knowledge repository, frequency databases, maps |
-| **opsis** | Interface | TUI, Tauri native app, web UI |
+| **opsis** | Interface | TUI, Dioxus native app, web UI |
 | **akroasis** | Binary | CLI entrypoint, subcommand routing |
 
 ## Key Decisions
@@ -55,8 +55,5 @@ Foundation:     koinon (shared types), kryphos (encryption), lethe (privacy)
 
 ## References
 
-- Full scope: `/media/theke/projects/akroasis/planning/scope.md`
-- Roadmap: `/media/theke/projects/akroasis/planning/roadmap.md`
-- Vision: `/media/theke/projects/akroasis/planning/vision.md`
-- Research results: `/media/theke/projects/akroasis/research/`
+- Planning docs (scope, roadmap, vision, research): live in the kanon repo
 - Naming: `gnomon.md`, `lexicon.md`

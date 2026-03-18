@@ -1,30 +1,30 @@
 # Gnomon
 
-*γνώμων — that which reveals by indicating*
+*γνώμων: that which reveals by indicating*
 
-A sundial's gnomon doesn't contain time. It casts a shadow that makes time legible. The best names work the same way — they don't describe what something is. They reveal what was already there.
+A sundial's gnomon doesn't contain time. It casts a shadow that makes time legible. The best names work the same way: they don't describe what something is. They reveal what was already there.
 
 ---
 
 ## Why Greek
 
-Ancient Greek was engineered across centuries for a single purpose — distinguishing between closely related things that matter. Where English has "knowledge," Greek has episteme (systematic knowledge), gnosis (direct acquaintance), techne (craft knowledge), phronesis (practical wisdom), and nous (direct apprehension). These aren't synonyms. They're fundamentally different stances toward the world.
+Ancient Greek was engineered across centuries for a single purpose: distinguishing between closely related things that matter. Where English has "knowledge," Greek has episteme (systematic knowledge), gnosis (direct acquaintance), techne (craft knowledge), phronesis (practical wisdom), and nous (direct apprehension). These aren't synonyms. They're fundamentally different stances toward the world.
 
 This precision extends beyond epistemics. Where English has "form," Greek has morphe (the form that makes a thing *this kind* of thing), schema (the shape or figure), eidos (the visible form), and typos (the impression left by a blow). Where English has "order," Greek has taxis (arrangement), kosmos (the beautiful order of a whole), and logos (the rational principle that structures).
 
-When you name a module *Dianoia*, you're not saying "thinking" — you're saying *discursive reasoning that works through problems step by step*, as distinct from noesis (immediate insight) or episteme (systematic knowledge). When you name a platform *Harmonia*, you're not saying "media player" — you're saying *the fitting-together of parts into a concordant whole*. The Greek carries the distinction natively. English requires a paragraph.
+When you name a module *Dianoia*, you're not saying "thinking." You're saying *discursive reasoning that works through problems step by step*, as distinct from noesis (immediate insight) or episteme (systematic knowledge). When you name a platform *Harmonia*, you're not saying "media player." You're saying *the fitting-together of parts into a concordant whole*. The Greek carries the distinction natively. English requires a paragraph.
 
 Greek also offers:
 
 - **Productive compounding.** Roots, prefixes, and suffixes combine systematically. The grammar builds meaning.
 - **Defamiliarization.** An unfamiliar word resists assumption. You have to ask what it means, which means you have to think about what the thing *does*.
-- **Density.** Meaning compressed into sound. Aletheia is four syllables carrying an entire ontology — truth as *unconcealment*, the negation of forgetting.
+- **Density.** Meaning compressed into sound. Aletheia is four syllables carrying an entire ontology: truth as *unconcealment*, the negation of forgetting.
 
 The goal is not erudition. The goal is precision tools for systems that distinguish between many closely related things.
 
 ---
 
-## Building Names
+## Building names
 
 Greek names are constructed, not found. Three components combine.
 
@@ -75,45 +75,45 @@ A name like **προσοχή** (prosoche) is: πρός (toward) + ἔχω (to ho
 
 ---
 
-## The Layer Test
+## The layer test
 
 Every name must work at multiple levels of abstraction simultaneously. This is the primary quality test.
 
 | Layer | What it answers | Failure mode |
 |-------|----------------|--------------|
-| **L1 — Practical** | What does this do? | Too abstract to use |
-| **L2 — Structural** | How does this relate to other things? | Isolated, doesn't compose |
-| **L3 — Philosophical** | What essential nature does this name unconceal? | Decorative, not meaningful |
-| **L4 — Reflexive** | Does the name exhibit what it describes? | Inert, doesn't reward reflection |
+| **L1: Practical** | What does this do? | Too abstract to use |
+| **L2: Structural** | How does this relate to other things? | Isolated, doesn't compose |
+| **L3: Philosophical** | What essential nature does this name unconceal? | Decorative, not meaningful |
+| **L4: Reflexive** | Does the name exhibit what it describes? | Inert, doesn't reward reflection |
 
 A name that works at L1 but not L3 is a label. A name that works at L3 but not L1 is pretension.
 
-**Aletheia** (ἀλήθεια — unconcealment):
+**Aletheia** (ἀλήθεια, unconcealment):
 
 | Layer | Reading |
 |-------|---------|
-| L1 | A cognitive system — agents, memory, orchestration |
+| L1 | A cognitive system: agents, memory, orchestration |
 | L2 | The substrate that makes the other systems possible |
-| L3 | Truth as unconcealment — the negation of forgetting. Not truth as correspondence but truth as *revealing what was hidden* |
-| L4 | The system itself practices unconcealment — surfacing latent knowledge, making hidden patterns legible, refusing to let things stay forgotten |
+| L3 | Truth as unconcealment: the negation of forgetting. Not truth as correspondence but truth as *revealing what was hidden* |
+| L4 | The system itself practices unconcealment, surfacing latent knowledge, making hidden patterns legible, refusing to let things stay forgotten |
 
-**Harmonia** (ἁρμονία — fitting-together):
+**Harmonia** (ἁρμονία, fitting-together):
 
 | Layer | Reading |
 |-------|---------|
-| L1 | A media platform — backend, player, audio core unified |
+| L1 | A media platform: backend, player, audio core unified |
 | L2 | The integration layer that makes disparate media components work as one |
-| L3 | The fitting-together of parts — not mere compatibility but active concordance, each part finding its place within a whole |
+| L3 | The fitting-together of parts, not mere compatibility but active concordance, each part finding its place within a whole |
 | L4 | The platform harmonizes: Mouseion (collection) and Akroasis (listening) joined into a coherent whole. The name describes its own architecture |
 
-**Akroasis** (ἀκρόασις — attentive reception):
+**Akroasis** (ἀκρόασις, attentive reception):
 
 | Layer | Reading |
 |-------|---------|
 | L1 | RF intelligence, mesh networking, communications sovereignty |
 | L2 | The system that makes electromagnetic and digital activity intelligible and actionable |
-| L3 | Not passive hearing but *attentive reception*. Aristotle's Physics was called "Physike Akroasis" — learning through disciplined listening |
-| L4 | The system listens at every level — spectrum, mesh, network, proximity — then understands, then acts |
+| L3 | Not passive hearing but *attentive reception*. Aristotle's Physics was called "Physike Akroasis," learning through disciplined listening |
+| L4 | The system listens at every level: spectrum, mesh, network, proximity, then understands, then acts |
 
 ---
 
@@ -121,9 +121,9 @@ A name that works at L1 but not L3 is a label. A name that works at L3 but not L
 
 Names in a system are not independent. They compose. The relationships between names carry meaning.
 
-**Noesis** and **Dianoia** are the two sides of Plato's divided line — one sees the whole immediately, the other works through it step by step. Placing them in the same system asserts that both modes are necessary.
+**Noesis** and **Dianoia** are the two sides of Plato's divided line: one sees the whole immediately, the other works through it step by step. Placing them in the same system asserts that both modes are necessary.
 
-**Lethe** (λήθη — concealment) and **Aletheia** (ἀ-λήθεια — unconcealment) share the same root, opposite directions. One unconceals truth, the other conceals the operator. The strongest topological pairing in the ecosystem.
+**Lethe** (λήθη, concealment) and **Aletheia** (ἀ-λήθεια, unconcealment) share the same root, opposite directions. One unconceals truth, the other conceals the operator. The strongest topological pairing in the ecosystem.
 
 **Prosoche** (sustained attention) is the *practice* that makes **Aletheia** (unconcealment) possible. You can't reveal what's hidden without attending carefully. The names encode this dependency.
 
@@ -136,19 +136,19 @@ When you add a new name, it must compose with what exists. A name that fits loca
 
 ---
 
-## The Gnomon Principle
+## The Gnomon principle
 
 A gnomon doesn't contain time. It doesn't measure time. It casts a shadow, and the shadow makes time legible.
 
 The best names are gnomons. They indicate without containing. The name Aletheia doesn't *make* the system true. It reveals that the system was already an act of unconcealment. The name Harmonia doesn't *make* the platform coherent. It reveals that the fitting-together of collection and listening was always the essential nature.
 
-A name succeeds as a gnomon when someone encounters it, learns what it means, and feels that the thing has become more itself — not differently described but more clearly *seen*.
+A name succeeds as a gnomon when someone encounters it, learns what it means, and feels that the thing has become more itself, not differently described but more clearly *seen*.
 
 A name fails as a gnomon when the name draws attention to itself rather than to what it names. If you're explaining the name, it's decoration. If the name is explaining the thing, it's a gnomon.
 
 ---
 
-## When Naming
+## When naming
 
 1. **Wait.** Let the thing reveal its nature before fixing the name. Build first, name when the essential nature becomes clear. Premature naming produces labels.
 2. **Identify what needs unconcealing.** Not what the thing *does technically* but what it *essentially is*.
@@ -158,7 +158,7 @@ A name fails as a gnomon when the name draws attention to itself rather than to 
 6. **Check the topology.** Does this name compose with what exists?
 7. **Listen for recognition.** The right name feels discovered, not invented. If you're arguing for why it fits, it doesn't.
 
-### Anti-Patterns
+### Anti-patterns
 
 - **Naming the implementation.** You named what it does technically, not what it essentially is. "Tracker" is an implementation. Prosoche is the essential nature that tracking serves.
 - **Naming too precisely.** A name that works at only one layer is brittle. Essential-nature names survive refactors because the nature persists even when the mechanism changes.
@@ -170,9 +170,9 @@ A name fails as a gnomon when the name draws attention to itself rather than to 
 
 ## Sources
 
-- **Plato** — *Republic* (the divided line: dianoia and noesis), *Meno* (anamnesis), *Theaetetus* (knowledge and perception)
-- **Aristotle** — *Nicomachean Ethics* (ergon, phronesis, techne), *Categories* (fundamental ways a thing can be), *Metaphysics* (energeia, morphe/hyle)
-- **The Stoics** — Epictetus and Marcus Aurelius on prosoche (attention as practice), melete (care as disciplined practice)
-- **Heidegger** — *Being and Time* on aletheia as unconcealment
-- **Jacob Klein** — *Greek Mathematical Thought and the Origin of Algebra* on naming and knowing
-- **Liddell-Scott-Jones** — *Greek-English Lexicon*
+- **Plato**: *Republic* (the divided line: dianoia and noesis), *Meno* (anamnesis), *Theaetetus* (knowledge and perception)
+- **Aristotle**: *Nicomachean Ethics* (ergon, phronesis, techne), *Categories* (fundamental ways a thing can be), *Metaphysics* (energeia, morphe/hyle)
+- **The Stoics**: Epictetus and Marcus Aurelius on prosoche (attention as practice), melete (care as disciplined practice)
+- **Heidegger**: *Being and Time* on aletheia as unconcealment
+- **Jacob Klein**: *Greek Mathematical Thought and the Origin of Algebra* on naming and knowing
+- **Liddell-Scott-Jones**: *Greek-English Lexicon*

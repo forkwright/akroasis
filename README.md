@@ -4,7 +4,7 @@
 
 ---
 
-I keep coming back to the same problem - every tool I use for radio, mesh networking, spectrum monitoring, network security, or communications is a separate thing. Separate interfaces, separate data models, separate mental contexts. A mesh node goes offline while frequency activity spikes nearby and my network IDS fires an alert. Three tools. Three windows. No one connecting the dots.
+Every tool for radio, mesh networking, spectrum monitoring, network security, or communications is a separate thing. Separate interfaces, separate data models, separate mental contexts. A mesh node goes offline while frequency activity spikes nearby and a network IDS fires an alert. Three tools. Three windows. No one connecting the dots.
 
 Akroasis is the attempt to fix that.
 
@@ -14,7 +14,7 @@ One system. One signal model. Every domain produces typed signals into the same 
 
 ---
 
-## What It Does
+## What it does
 
 | Domain | Crate | What |
 |--------|-------|------|
@@ -30,7 +30,7 @@ One system. One signal model. Every domain produces typed signals into the same 
 | **Navigation** | chorografia | RF propagation modeling, infrastructure dependency graphs, cascade analysis. Vehicle and foot navigation with offline OSM maps. Military planning overlays. Space weather integration for HF propagation prediction. |
 | **Knowledge** | pinax | Offline knowledge repository - frequency databases, protocol specs, equipment manuals, topo maps, emergency procedures, vulnerability databases. Compressed, indexed, searchable. When the internet dies, the knowledge survives. |
 | **Privacy** | lethe | VPN/proxy management, anonymization, metadata scrubbing, IMSI catcher detection, continuous OPSEC scoring. The etymological complement to [Aletheia](https://github.com/forkwright/aletheia) - same root (λήθη), opposite directions. |
-| **Interface** | opsis | TUI (ratatui), native app (Tauri), web UI (Axum over Tailscale). Spectrum waterfall, mesh topology, intelligence dashboard, map display, after-action replay. |
+| **Interface** | opsis | TUI (ratatui), native app (Dioxus), web UI (Axum over Tailscale). Spectrum waterfall, mesh topology, intelligence dashboard, map display, after-action replay. |
 
 Foundation crates: **koinon** (shared types, signal model, entity index, temporal engine), **kryphos** (encryption, key management, credential vault, identity segregation).
 
@@ -70,7 +70,7 @@ Every collection crate produces typed `GeoSignal` objects into koinon. Semaino a
 
 ---
 
-## Design Constraints
+## Design constraints
 
 - **Standalone.** Runs without internet, without an LLM, without anything but the hardware in front of you. Grid-down capable.
 - **Sovereignty.** Every protocol owned. No cloud dependencies, no subscriptions, no external trust.
@@ -84,7 +84,7 @@ Every collection crate produces typed `GeoSignal` objects into koinon. Semaino a
 
 | | |
 |---|---|
-| Language | Rust (edition 2024, MSRV 1.85) |
+| Language | Rust (edition 2024, MSRV in Cargo.toml) |
 | Errors | snafu (context wrapping, not thiserror) |
 | Async | tokio, native async traits |
 | SDR runtime | FutureSDR (async block graph) |
@@ -95,7 +95,7 @@ Every collection crate produces typed `GeoSignal` objects into koinon. Semaino a
 | Maps | OSM vector tiles, SRTM elevation |
 | Search | tantivy (full-text indexing) |
 | TUI | ratatui |
-| Desktop | Tauri |
+| Desktop | Dioxus |
 | Web | Axum |
 | License | AGPL-3.0-or-later |
 
@@ -103,15 +103,15 @@ Every collection crate produces typed `GeoSignal` objects into koinon. Semaino a
 
 ## Documentation
 
-- [standards/STANDARDS.md](standards/STANDARDS.md) — Coding standards (universal + per-language)
-- [docs/gnomon.md](docs/gnomon.md) — Naming methodology
-- [docs/lexicon.md](docs/lexicon.md) — Project name registry
+- [standards/STANDARDS.md](standards/STANDARDS.md): Coding standards (universal + per-language)
+- [docs/gnomon.md](docs/gnomon.md): Naming methodology
+- [docs/lexicon.md](docs/lexicon.md): Project name registry
 
 ## Status
 
-Scaffolded. Research phase complete for radio protocols, Meshtastic, SDR ecosystem. Architecture finalized. Not yet under active development - [Aletheia](https://github.com/forkwright/aletheia) cutover comes first.
+Wave 1 (kryphos, 7 PRs) and Wave 2 (syntonia, 7 PRs) are complete. Architecture finalized. Active development ongoing.
 
-The scope is massive. I don't know if one person builds all of this. But the architecture makes each domain independent - a crate with clear boundaries, producing typed signals into the shared model. The pieces don't need to arrive simultaneously. They just need to speak the same language when they do.
+The scope is massive. The architecture makes each domain independent: a crate with clear boundaries, producing typed signals into the shared model. The pieces don't need to arrive simultaneously. They just need to speak the same language when they do.
 
 ---
 
@@ -125,7 +125,7 @@ Developed against:
 - **Compute:** Linux server, ruggedized field laptop, Raspberry Pi
 - **Proximity:** nRF52840 (BLE), Proxmark3 (NFC/RFID), WiFi monitor mode adapters
 
-Hardware support is additive — if it speaks serial, USB, or IP, it can be integrated.
+Hardware support is additive: if it speaks serial, USB, or IP, it can be integrated.
 
 ---
 
@@ -135,7 +135,7 @@ Hardware support is additive — if it speaks serial, USB, or IP, it can be inte
 
 Names follow [gnomon](https://github.com/forkwright/aletheia/blob/main/docs/gnomon.md) - the naming philosophy where each name reveals its essential nature across four layers of reading.
 
-**Lethe** (λήθη) and **Aletheia** (ἀ-λήθεια) share the same root. One unconceals truth. The other conceals the operator. Same word, opposite directions. I keep thinking about that pairing - two systems built by the same person, one for understanding and one for sovereignty, and the Greek already knew they were the same thing.
+**Lethe** (λήθη) and **Aletheia** (ἀ-λήθεια) share the same root. One unconceals truth. The other conceals the operator. Same word, opposite directions. Two systems, one for understanding and one for sovereignty, and the Greek already knew they were the same thing.
 
 ---
 
