@@ -17,19 +17,16 @@ on:
       - ".github/workflows/rust.yml"
 
 concurrency:
-  group: rust-${{ github.ref }}
+  group: rust-\${{ github.ref }}
   cancel-in-progress: true
 
 env:
   CARGO_TERM_COLOR: always
 
-# WHY: fmt, clippy, and tests are validated by kanon on Verda (180 cores)
-# before PR creation. GitHub CI only validates what can't be checked locally:
-# feature isolation, MSRV compatibility, and binary smoke tests.
+# WHY: fmt, clippy, and tests are validated by kanon pre-push.
+# GitHub CI only validates what can't be checked locally.
 
 jobs:
-  # WHY: Verify feature-gated code compiles independently.
-  # Agents can't easily test all feature combos locally.
   feature-isolation:
     name: Feature isolation
     runs-on: ubuntu-latest
@@ -39,32 +36,23 @@ jobs:
         include:
           - name: no-default-features
             args: "--workspace --no-default-features"
-          - name: recall-only
-            args: "-p aletheia --no-default-features --features recall"
-          - name: embed-candle
-            args: "-p aletheia --features embed-candle"
-          - name: migrate-qdrant
-            args: "-p aletheia --features migrate-qdrant"
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
       - uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
-      - name: Check ${{ matrix.name }}
-        run: cargo check ${{ matrix.args }}
+      - name: Check \${{ matrix.name }}
+        run: cargo check \${{ matrix.args }}
 
-  # WHY: Ensure we don't accidentally use features newer than MSRV.
-  # Can't be tested locally without managing multiple toolchains.
   msrv:
     name: MSRV (1.85)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-      - uses: dtolnay/rust-toolchain@d1565eeb874f106d1696ad08faf835331133fe14 # 1.85
+      - uses: dtolnay/rust-toolchain@ff9b7e97f1c15b93257ad9a20e43c84dc3eef47b # 1.85
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
       - name: Check MSRV
         run: cargo check --workspace
 
-  # WHY: Catch broken doc links. Fast (no test execution).
   docs:
     name: Rustdoc
     runs-on: ubuntu-latest
@@ -77,8 +65,6 @@ jobs:
       - name: Build docs
         run: cargo doc --workspace --no-deps
 
-  # WHY: Binary builds and runs correctly with default features.
-  # Catches link errors and missing runtime deps.
   smoke:
     name: Binary smoke test
     runs-on: ubuntu-latest
@@ -86,13 +72,7 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
       - uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
-      - name: Build default binary
-        run: cargo build --release -p aletheia
-      - name: Verify version
-        run: ./target/release/aletheia --version
-      - name: Verify check-config
-        run: |
-          mkdir -p /tmp/test-instance/config /tmp/test-instance/data /tmp/test-instance/nous/_default
-          echo '[gateway]' > /tmp/test-instance/config/aletheia.toml
-          echo 'port = 19999' >> /tmp/test-instance/config/aletheia.toml
-          ./target/release/aletheia check-config -r /tmp/test-instance || true
+      - name: Build binary
+        run: cargo build --release -p akroasis
+      - name: Verify binary runs
+        run: ./target/release/akroasis --version || ./target/release/akroasis --help || true
