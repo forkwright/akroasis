@@ -1,0 +1,34 @@
+# Changelog
+
+## [0.1.1](https://github.com/forkwright/akroasis/compare/v0.1.0...v0.1.1) (2026-03-18)
+
+
+### Features
+
+* **akroasis:** radio CLI — read, program, export, import, detect ([#21](https://github.com/forkwright/akroasis/issues/21)) ([4f853fc](https://github.com/forkwright/akroasis/commit/4f853fc3878d5e66d6196f56bd632abf42792437))
+* expand to 17-crate architecture ([f68ab25](https://github.com/forkwright/akroasis/commit/f68ab256ec9de7c3efe070d14d095a1681654ab1))
+* **koinon:** hardware asset registry with USB device identification ([#12](https://github.com/forkwright/akroasis/issues/12)) ([b2224d9](https://github.com/forkwright/akroasis/commit/b2224d924844d6af7d76687a8f8a8972bd93bfe2))
+* **koinon:** signal model, GeoSignal, and Entity types ([#13](https://github.com/forkwright/akroasis/issues/13)) ([d4e0480](https://github.com/forkwright/akroasis/commit/d4e04807d98d855614c62aef7f034b10a0a63fc6))
+* **koinon:** tamper-evident log with BLAKE3 hash chain ([#6](https://github.com/forkwright/akroasis/issues/6)) ([23fc071](https://github.com/forkwright/akroasis/commit/23fc0719192342fdcc73432d0abe08b62870ddb5))
+* **koinon:** temporal baseline engine with Welford's algorithm ([#14](https://github.com/forkwright/akroasis/issues/14)) ([5dadc33](https://github.com/forkwright/akroasis/commit/5dadc332f79a86766302313bc82c95b032c58eb5))
+* **koinon:** workspace scaffold with shared types + CLI skeleton ([#5](https://github.com/forkwright/akroasis/issues/5)) ([d01cdab](https://github.com/forkwright/akroasis/commit/d01cdab57fdc750f0e146cc5897ccf78931a7ef3))
+* **kryphos:** add Argon2id KDF and ChaCha20-Poly1305 encryption core ([#33](https://github.com/forkwright/akroasis/issues/33)) ([c8ec08d](https://github.com/forkwright/akroasis/commit/c8ec08d0a23ccabfc15958bd941dbf83a2a33114))
+* **kryphos:** add Ed25519 signing, vault storage, and tamper log integration ([#34](https://github.com/forkwright/akroasis/issues/34)) ([9b286b5](https://github.com/forkwright/akroasis/commit/9b286b5d2052ebd197a82d33e46a09898db51716))
+* **kryphos:** add figment provider for vault-backed config values ([#37](https://github.com/forkwright/akroasis/issues/37)) ([6f12afd](https://github.com/forkwright/akroasis/commit/6f12afd2403040867f922cfcd375763338780d5c))
+* **kryphos:** add fjall-backed vault storage with advisory locking ([#35](https://github.com/forkwright/akroasis/issues/35)) ([b83eb1b](https://github.com/forkwright/akroasis/commit/b83eb1b0968ceb19ba2398aba08923b761137eba))
+* **kryphos:** add key lifecycle — rotation, revocation, and audit ([#36](https://github.com/forkwright/akroasis/issues/36)) ([0730115](https://github.com/forkwright/akroasis/commit/0730115d93f54173c2afa62678775eed07ce52e3))
+* **kryphos:** add vault CLI — init, add, list, get, rotate, revoke, identity ([#38](https://github.com/forkwright/akroasis/issues/38)) ([df3ac1a](https://github.com/forkwright/akroasis/commit/df3ac1a67ea79d955079dc8d233d4adfbf709be5))
+* **kryphos:** scaffold crate with vault data model and key types ([#32](https://github.com/forkwright/akroasis/issues/32)) ([5ead4b2](https://github.com/forkwright/akroasis/commit/5ead4b235f655665cad99c7e364a940a45ce05bc))
+* **syntonia:** BF-F8HP + UV-5RM Plus variant support ([#19](https://github.com/forkwright/akroasis/issues/19)) ([4d44e09](https://github.com/forkwright/akroasis/commit/4d44e09a3b0ebb1898dabbf6aadb7cd3108b99d2))
+* **syntonia:** channel data model + frequency plan + validation ([#15](https://github.com/forkwright/akroasis/issues/15)) ([dd21fd6](https://github.com/forkwright/akroasis/commit/dd21fd63c167afa70a8903e776607566170a6c82))
+* **syntonia:** CHIRP .img and .csv import/export for UV-5R ([#20](https://github.com/forkwright/akroasis/issues/20)) ([61bba3d](https://github.com/forkwright/akroasis/commit/61bba3d4f8a2359679794f2a7a269c6cdb9f79db))
+* **syntonia:** USB hardware detection + radio auto-detect ([#16](https://github.com/forkwright/akroasis/issues/16)) ([37de389](https://github.com/forkwright/akroasis/commit/37de389dfaae054ddc5912e6b931cafef0bb9227))
+* **syntonia:** UV-5R EEPROM clone protocol ([#18](https://github.com/forkwright/akroasis/issues/18)) ([9cf06be](https://github.com/forkwright/akroasis/commit/9cf06be1ca631a34d44f9a207dcc935363cbcbc7))
+* **syntonia:** UV-5R EEPROM memory map + channel codec ([#17](https://github.com/forkwright/akroasis/issues/17)) ([1a3deea](https://github.com/forkwright/akroasis/commit/1a3deeae82de90c15b0c3851dc2cb35539117c91))
+
+
+### Bug Fixes
+
+* **akroasis:** use DcsCode::as_code() not nonexistent .code() method ([1cf71a8](https://github.com/forkwright/akroasis/commit/1cf71a8369e614e6c07393d90cd9bb8f23945004))
+* **ci:** update deny.toml — BSD-3-Clause license, advisory ignore, warn on duplicates ([4744db4](https://github.com/forkwright/akroasis/commit/4744db4d8e34dbd05e5b31229df00a93b639b728))
+* **ci:** use akroasis-specific binary and features in rust.yml ([#42](https://github.com/forkwright/akroasis/issues/42)) ([154dcb5](https://github.com/forkwright/akroasis/commit/154dcb57377ae40a9d058017459e8f3d23b9f201))
