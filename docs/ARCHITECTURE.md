@@ -1,8 +1,8 @@
-# Architecture — Akroasis
+# Architecture: Akroasis
 
 Single Rust binary. 17 crates across 5 layers. All domains produce typed `GeoSignal` into a shared pipeline.
 
-## Layer Structure
+## Layer structure
 
 ```
 Interface:      opsis (TUI/web/native)
@@ -12,7 +12,7 @@ Collection:     syntonia, kerykeion, dektis, engys, aspis, skopos, peira
 Foundation:     koinon (shared types), kryphos (encryption), lethe (privacy)
 ```
 
-## Crate Registry
+## Crate registry
 
 | Crate | Layer | Purpose |
 |-------|-------|---------|
@@ -31,10 +31,10 @@ Foundation:     koinon (shared types), kryphos (encryption), lethe (privacy)
 | **praxis** | Orchestration | Automation engine, playbooks, event triggers, state machines |
 | **chorografia** | Model | Geographic model, RF propagation, navigation, terrain |
 | **pinax** | Knowledge | Offline knowledge repository, frequency databases, maps |
-| **opsis** | Interface | TUI, Tauri native app, web UI |
+| **opsis** | Interface | TUI, Dioxus native app, web UI |
 | **akroasis** | Binary | CLI entrypoint, subcommand routing |
 
-## Key Decisions
+## Key decisions
 
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
@@ -49,14 +49,11 @@ Foundation:     koinon (shared types), kryphos (encryption), lethe (privacy)
 | SDR | Own dataflow engine | FutureSDR dependency risk too high (single maintainer, 0.0.x) |
 | Mesh | Meshtastic official crate + own crypto | Transport via crate, encryption/topology/routing ourselves |
 
-## Dependency Philosophy
+## Dependency philosophy
 
 "Own the interface, depend on the implementation only when the implementation is trustworthy." When a crate is single-maintainer, pre-1.0, or provides a thin wrapper over a kernel/hardware interface we understand, we build our own. See `scope.md` -> Ownership Corrections for the full audit.
 
 ## References
 
-- Full scope: `/media/theke/projects/akroasis/planning/scope.md`
-- Roadmap: `/media/theke/projects/akroasis/planning/roadmap.md`
-- Vision: `/media/theke/projects/akroasis/planning/vision.md`
-- Research results: `/media/theke/projects/akroasis/research/`
+- Planning docs (scope, roadmap, vision, research): live in the kanon repo
 - Naming: `gnomon.md`, `lexicon.md`

@@ -24,7 +24,7 @@ cargo test -p <crate>                  # Single crate
 cargo clippy --workspace               # Lint (zero warnings)
 ```
 
-## Key Patterns
+## Key patterns
 
 - **Errors:** `snafu` with `.context()` propagation and `Location` tracking
 - **IDs:** Newtypes for all domain IDs
@@ -34,10 +34,10 @@ cargo clippy --workspace               # Lint (zero warnings)
 - **Visibility:** `pub(crate)` by default
 - **Naming:** Greek names per [docs/gnomon.md](docs/gnomon.md), registry at [docs/lexicon.md](docs/lexicon.md)
 
-## Before Submitting
+## Before submitting
 
 1. `cargo test -p <affected-crate>` passes
-2. `cargo clippy --workspace` — zero warnings
+2. `cargo clippy --workspace` passes with zero warnings
 3. No `unwrap()` in library code
 4. New errors use snafu with context
 
