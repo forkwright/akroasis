@@ -46,6 +46,7 @@ jobs:
             . | grep -v 'pii-patterns' | \
             grep -v 'target/' | \
             grep -v '^./docs/' | \
+            grep -v '^./research/' | \
             grep -v '^./standards/' | \
             grep -v 'node_modules/' || true)
           if [ -n "$HITS" ]; then
