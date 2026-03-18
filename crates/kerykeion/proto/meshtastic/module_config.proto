@@ -1,0 +1,42 @@
+syntax = "proto3";
+package meshtastic;
+
+// Module-level configuration.
+message ModuleConfig {
+  message MQTTConfig {
+    bool enabled = 1;
+    string address = 2;
+    string username = 3;
+    string password = 4;
+    bool encryption_enabled = 5;
+    bool json_enabled = 6;
+    bool tls_enabled = 7;
+    string root = 8;
+    bool proxy_to_client_enabled = 9;
+    bool map_reporting_enabled = 10;
+  }
+
+  message SerialConfig {
+    bool enabled = 1;
+    bool echo = 2;
+    uint32 rxd = 3;
+    uint32 txd = 4;
+    uint32 baud = 5;
+    uint32 timeout = 6;
+  }
+
+  message StoreForwardConfig {
+    bool enabled = 1;
+    bool heartbeat = 2;
+    uint32 records = 3;
+    uint32 history_return_max = 4;
+    uint32 history_return_window = 5;
+    bool is_server = 6;
+  }
+
+  oneof payload_variant {
+    MQTTConfig mqtt = 1;
+    SerialConfig serial = 2;
+    StoreForwardConfig store_forward = 3;
+  }
+}
