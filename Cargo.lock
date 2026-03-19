@@ -34,7 +34,7 @@ dependencies = [
 
 [[package]]
 name = "akroasis"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "clap",
  "comfy-table",
@@ -1164,7 +1164,7 @@ dependencies = [
 
 [[package]]
 name = "koinon"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "blake3",
  "ciborium",
@@ -1181,7 +1181,7 @@ dependencies = [
 
 [[package]]
 name = "kryphos"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "argon2",
  "blake3",
@@ -2045,7 +2045,7 @@ dependencies = [
 
 [[package]]
 name = "syntonia"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "compact_str",
  "csv",

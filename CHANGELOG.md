@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.1.4](https://github.com/forkwright/akroasis/compare/v0.1.3...v0.1.4) (2026-03-19)
+
+
+### Features
+
+* **kerykeion:** serial/TCP transport, frame codec, AES-CTR encryption, config handshake ([221f2b7](https://github.com/forkwright/akroasis/commit/221f2b7cf23441dd5c90a359ae33ad930d37cdcd))
+* **kerykeion:** serial/TCP transport, frame codec, AES-CTR encryption, config handshake ([e84cebc](https://github.com/forkwright/akroasis/commit/e84cebcbf7ed303fda4a58725760710932434b0e))
+
+
+### Bug Fixes
+
+* **ci:** allow MPL-2.0 license (serialport crate) + thiserror-impl duplicate ([f1f8873](https://github.com/forkwright/akroasis/commit/f1f887353d3c2d201525f2af247c4d20f568af10))
+* rustdoc private item links + cargo-deny thiserror duplicate ([c2676c5](https://github.com/forkwright/akroasis/commit/c2676c5e9b9762f8e3c45a674fdaee8f62a9ab4f))
+
 ## [0.1.3](https://github.com/forkwright/akroasis/compare/v0.1.2...v0.1.3) (2026-03-19)
 
 
