@@ -1,0 +1,193 @@
+//! Error types for kerykeion mesh networking operations.
+
+use snafu::Snafu;
+
+/// All errors produced by kerykeion operations.
+#[derive(Debug, Snafu)]
+#[non_exhaustive]
+pub enum Error {
+    /// Failed to open a serial port connection.
+    #[snafu(display("failed to open serial port {port}: {source}"))]
+    SerialConnect {
+        /// Underlying I/O error.
+        source: std::io::Error,
+        /// Serial port path (e.g. `/dev/ttyUSB0`).
+        port: String,
+        /// Source location for diagnostics.
+        #[snafu(implicit)]
+        location: snafu::Location,
+    },
+
+    /// Serial read or write failed.
+    #[snafu(display("serial I/O error: {source}"))]
+    SerialIo {
+        /// Underlying I/O error.
+        source: std::io::Error,
+        /// Source location for diagnostics.
+        #[snafu(implicit)]
+        location: snafu::Location,
+    },
+
+    /// TCP connection to a Meshtastic node failed.
+    #[snafu(display("TCP connection to {addr} failed: {source}"))]
+    TcpConnect {
+        /// Underlying I/O error.
+        source: std::io::Error,
+        /// Address that was dialed.
+        addr: String,
+        /// Source location for diagnostics.
+        #[snafu(implicit)]
+        location: snafu::Location,
+    },
+
+    /// BLE connection to a named device failed.
+    #[snafu(display("BLE connection to device '{device}' failed"))]
+    BleConnect {
+        /// Device name or address.
+        device: String,
+        /// Source location for diagnostics.
+        #[snafu(implicit)]
+        location: snafu::Location,
+    },
+
+    /// Received a frame with an invalid magic header or out-of-range length.
+    #[snafu(display("invalid frame: {detail}"))]
+    FrameDecode {
+        /// Human-readable description of the decode failure.
+        detail: String,
+        /// Source location for diagnostics.
+        #[snafu(implicit)]
+        location: snafu::Location,
+    },
+
+    /// Protobuf deserialization failed.
+    #[snafu(display("protobuf decode error: {source}"))]
+    ProtobufDecode {
+        /// Underlying prost error.
+        source: prost::DecodeError,
+        /// Source location for diagnostics.
+        #[snafu(implicit)]
+        location: snafu::Location,
+    },
+
+    /// Protobuf serialization failed.
+    #[snafu(display("protobuf encode error: {source}"))]
+    ProtobufEncode {
+        /// Underlying prost error.
+        source: prost::EncodeError,
+        /// Source location for diagnostics.
+        #[snafu(implicit)]
+        location: snafu::Location,
+    },
+
+    /// AES-CTR encryption or decryption failed.
+    #[snafu(display("encryption/decryption error: {detail}"))]
+    Encryption {
+        /// Human-readable description of the failure.
+        detail: String,
+        /// Source location for diagnostics.
+        #[snafu(implicit)]
+        location: snafu::Location,
+    },
+
+    /// Channel index is outside the valid range `0..MAX_CHANNELS`.
+    #[snafu(display("channel index {index} is out of range (max {})", crate::types::MAX_CHANNELS - 1))]
+    InvalidChannel {
+        /// The invalid index that was provided.
+        index: u8,
+        /// Source location for diagnostics.
+        #[snafu(implicit)]
+        location: snafu::Location,
+    },
+
+    /// Hop limit exceeds the protocol maximum.
+    #[snafu(display(
+        "hop limit {hop_limit} exceeds maximum {}",
+        crate::types::MAX_HOP_LIMIT
+    ))]
+    InvalidHopLimit {
+        /// The invalid hop limit that was provided.
+        hop_limit: u8,
+        /// Source location for diagnostics.
+        #[snafu(implicit)]
+        location: snafu::Location,
+    },
+
+    /// The requested node number is not in the `NodeDb`.
+    #[snafu(display("node {node_num:#010x} not found in NodeDb"))]
+    NodeNotFound {
+        /// The node number that was looked up.
+        node_num: u32,
+        /// Source location for diagnostics.
+        #[snafu(implicit)]
+        location: snafu::Location,
+    },
+
+    /// Config handshake with the radio did not complete.
+    #[snafu(display("config handshake failed: {detail}"))]
+    HandshakeFailed {
+        /// Human-readable description of the failure.
+        detail: String,
+        /// Source location for diagnostics.
+        #[snafu(implicit)]
+        location: snafu::Location,
+    },
+
+    /// The transport connection dropped unexpectedly.
+    #[snafu(display("connection lost: {detail}"))]
+    ConnectionLost {
+        /// Human-readable description of why the connection was lost.
+        detail: String,
+        /// Source location for diagnostics.
+        #[snafu(implicit)]
+        location: snafu::Location,
+    },
+
+    /// Packet send failed due to a routing error.
+    #[snafu(display("packet send failed: {detail}"))]
+    SendFailed {
+        /// Human-readable description of the routing error.
+        detail: String,
+        /// Source location for diagnostics.
+        #[snafu(implicit)]
+        location: snafu::Location,
+    },
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use snafu::ResultExt as _;
+
+    fn make_io_error() -> std::io::Error {
+        std::io::Error::new(std::io::ErrorKind::BrokenPipe, "pipe broken")
+    }
+
+    #[test]
+    fn serial_connect_error_chain() {
+        let result: Result<(), Error> = Err(make_io_error()).context(SerialConnectSnafu {
+            port: "/dev/ttyUSB0",
+        });
+        #[expect(clippy::unwrap_used, reason = "test-only: we expect an error")]
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("/dev/ttyUSB0"));
+    }
+
+    #[test]
+    fn invalid_channel_message() {
+        let err = Error::InvalidChannel {
+            index: 9,
+            location: snafu::Location::new(file!(), line!(), column!()),
+        };
+        assert!(err.to_string().contains('9'));
+    }
+
+    #[test]
+    fn node_not_found_message() {
+        let err = Error::NodeNotFound {
+            node_num: 0xDEAD_BEEF,
+            location: snafu::Location::new(file!(), line!(), column!()),
+        };
+        assert!(err.to_string().contains("0xdeadbeef"));
+    }
+}

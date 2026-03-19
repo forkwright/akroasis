@@ -1,0 +1,26 @@
+syntax = "proto3";
+package meshtastic;
+
+// Channel role within the mesh.
+enum Channel_Role {
+  DISABLED = 0;
+  PRIMARY = 1;
+  SECONDARY = 2;
+}
+
+// Per-channel key material and settings.
+message ChannelSettings {
+  uint32 channel_num = 1;
+  bytes psk = 4;
+  string name = 5;
+  uint32 id = 6;
+  bool uplink_enabled = 7;
+  bool downlink_enabled = 8;
+}
+
+// A configured mesh channel.
+message Channel {
+  int32 index = 1;
+  ChannelSettings settings = 2;
+  Channel_Role role = 3;
+}

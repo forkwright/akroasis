@@ -1,0 +1,38 @@
+syntax = "proto3";
+package meshtastic;
+
+import "meshtastic/mesh.proto";
+import "meshtastic/channel.proto";
+import "meshtastic/config.proto";
+import "meshtastic/module_config.proto";
+
+// Administrative message for device configuration.
+message AdminMessage {
+  oneof payload_variant {
+    string get_channel_request = 1;
+    Channel get_channel_response = 2;
+    string get_owner_request = 3;
+    User get_owner_response = 4;
+    Config get_config_response = 6;
+    ModuleConfig get_module_config_response = 8;
+    bool get_radio_request = 10;
+    bool factory_reset_device = 11;
+    bool exit_simulator = 12;
+    string note_data_received = 14;
+    bool reboot_ota_seconds = 16;
+    bool get_device_metadata_request = 17;
+    bool reboot_seconds = 18;
+    bool shutdown_seconds = 19;
+    Channel set_channel = 20;
+    Config set_config = 21;
+    ModuleConfig set_module_config = 22;
+    User set_owner = 23;
+    bool remove_by_nodenum = 24;
+    bool set_favorite_node = 25;
+    bool remove_favorite_node = 26;
+    bool set_fixed_position = 27;
+    bool remove_fixed_position = 28;
+    bool begin_edit_settings = 29;
+    bool commit_edit_settings = 30;
+  }
+}
