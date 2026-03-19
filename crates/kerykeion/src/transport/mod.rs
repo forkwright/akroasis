@@ -1,0 +1,83 @@
+//! Transport implementations for Meshtastic radio connections.
+//!
+//! Provides concrete [`MeshConnection`] implementations for serial and TCP
+//! transports, plus a factory function that creates the right transport from a
+//! [`ConnectionConfig`].
+
+pub mod serial;
+pub mod tcp;
+
+use crate::Error;
+use crate::config::ConnectionConfig;
+use crate::connection::MeshConnection;
+use crate::error::BleConnectSnafu;
+use crate::proto::{FromRadio, ToRadio};
+use serial::SerialTransport;
+use tcp::TcpTransport;
+
+/// A concrete, enum-dispatched connection to a Meshtastic radio.
+///
+/// Implements [`MeshConnection`] by forwarding calls to the active transport
+/// variant.  An enum is used instead of `Box<dyn MeshConnection>` because
+/// native async fn in traits (Rust 2024) is not object-safe.
+pub enum ConnectionHandle {
+    /// USB serial transport.
+    Serial(SerialTransport),
+    /// TCP/IP transport.
+    Tcp(TcpTransport),
+}
+
+impl MeshConnection for ConnectionHandle {
+    async fn send(&mut self, packet: ToRadio) -> Result<(), Error> {
+        match self {
+            Self::Serial(c) => c.send(packet).await,
+            Self::Tcp(c) => c.send(packet).await,
+        }
+    }
+
+    async fn recv(&mut self) -> Result<FromRadio, Error> {
+        match self {
+            Self::Serial(c) => c.recv().await,
+            Self::Tcp(c) => c.recv().await,
+        }
+    }
+
+    fn is_connected(&self) -> bool {
+        match self {
+            Self::Serial(c) => c.is_connected(),
+            Self::Tcp(c) => c.is_connected(),
+        }
+    }
+
+    async fn reconnect(&mut self) -> Result<(), Error> {
+        match self {
+            Self::Serial(c) => c.reconnect().await,
+            Self::Tcp(c) => c.reconnect().await,
+        }
+    }
+}
+
+/// Create a [`ConnectionHandle`] from a [`ConnectionConfig`].
+///
+/// # Errors
+///
+/// Returns a transport-specific connection error if the initial connect fails.
+pub async fn connect(config: &ConnectionConfig) -> Result<ConnectionHandle, Error> {
+    match config {
+        ConnectionConfig::Serial { port, baud } => {
+            let conn = SerialTransport::open(port, *baud).await?;
+            Ok(ConnectionHandle::Serial(conn))
+        }
+        ConnectionConfig::Tcp { addr, port } => {
+            let conn = TcpTransport::connect(addr, *port).await?;
+            Ok(ConnectionHandle::Tcp(conn))
+        }
+        ConnectionConfig::Ble { device_name } => {
+            // WHY: BLE transport is deferred; serial and TCP cover all hardware targets.
+            BleConnectSnafu {
+                device: device_name.clone(),
+            }
+            .fail()
+        }
+    }
+}

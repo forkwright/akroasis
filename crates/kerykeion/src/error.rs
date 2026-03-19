@@ -3,8 +3,12 @@
 use snafu::Snafu;
 
 /// All errors produced by kerykeion operations.
+// WHY: pub(crate) visibility on context selectors is required so that
+// transport, codec, handshake, and crypto modules can construct errors via
+// the snafu context-selector pattern.  snafu 0.8 defaults to private selectors.
 #[derive(Debug, Snafu)]
 #[non_exhaustive]
+#[snafu(visibility(pub(crate)))]
 pub enum Error {
     /// Failed to open a serial port connection.
     #[snafu(display("failed to open serial port {port}: {source}"))]
@@ -152,6 +156,19 @@ pub enum Error {
         #[snafu(implicit)]
         location: snafu::Location,
     },
+}
+
+// WHY: tokio_util::codec::Decoder::Error and Encoder::Error both require
+// From<io::Error> so that Framed can wrap transport-layer I/O errors.
+// We map them to ConnectionLost since an I/O failure on the transport means
+// the connection can no longer be used.
+impl From<std::io::Error> for Error {
+    fn from(e: std::io::Error) -> Self {
+        Self::ConnectionLost {
+            detail: e.to_string(),
+            location: snafu::Location::new(file!(), line!(), column!()),
+        }
+    }
 }
 
 #[cfg(test)]
