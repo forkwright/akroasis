@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.2](https://github.com/forkwright/akroasis/compare/v0.1.1...v0.1.2) (2026-03-18)
+
+
+### Bug Fixes
+
+* **ci:** install protobuf-compiler for kerykeion prost codegen ([#53](https://github.com/forkwright/akroasis/issues/53)) ([b79da85](https://github.com/forkwright/akroasis/commit/b79da853d05495c6e3eddb5d0a769e6dd4630a6b))
+
 ## [0.1.1](https://github.com/forkwright/akroasis/compare/v0.1.0...v0.1.1) (2026-03-18)
 
 
