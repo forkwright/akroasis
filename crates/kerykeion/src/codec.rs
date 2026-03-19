@@ -9,7 +9,7 @@
 //!   magic[0]  magic[1]   ╰──── big-endian payload length ────╯
 //! ```
 //!
-//! [`MeshCodec`] implements [`tokio_util::codec::Decoder`] (yields [`FromRadio`])
+//!  implements [`tokio_util::codec::Decoder`] (yields [`FromRadio`])
 //! and [`tokio_util::codec::Encoder`] (takes [`ToRadio`]).
 
 use bytes::{Buf as _, BufMut as _, BytesMut};

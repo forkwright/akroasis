@@ -114,7 +114,7 @@ pub(crate) fn apply_aes_ctr(
 ///
 /// # Errors
 ///
-/// Propagates errors from [`apply_aes_ctr`].
+/// Propagates errors from .
 pub fn encrypt(
     plaintext: &[u8],
     packet_id: u32,

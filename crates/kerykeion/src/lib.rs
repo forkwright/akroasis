@@ -5,7 +5,7 @@
 //! - Core mesh types: [`types::NodeNum`], [`types::PacketId`], [`types::ChannelIndex`]
 //! - Configuration: [`config::MeshConfig`] with TOML deserialization
 //! - Transport abstraction: [`connection::MeshConnection`] trait
-//! - Frame codec: [`codec::MeshCodec`] (Meshtastic 4-byte header framing)
+//! - Frame codec: `codec::MeshCodec` (Meshtastic 4-byte header framing)
 //! - Serial transport: [`transport::serial::SerialTransport`]
 //! - TCP transport: [`transport::tcp::TcpTransport`]
 //! - Config handshake: [`handshake::handshake`]

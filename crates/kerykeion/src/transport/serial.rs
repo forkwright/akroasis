@@ -1,7 +1,7 @@
 //! Serial transport for Meshtastic radio connections.
 //!
 //! Opens a serial port at 115 200 baud (no flow control, DTR/RTS disabled) and
-//! wraps it in a [`tokio_util::codec::Framed`] with [`MeshCodec`].
+//! wraps it in a [`tokio_util::codec::Framed`] with .
 
 use std::time::Duration;
 
