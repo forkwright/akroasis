@@ -14,14 +14,22 @@ koinon = { path = "../koinon" }
 serde = { workspace = true }
 snafu = { workspace = true }
 tracing = { workspace = true }
-tokio = { workspace = true, features = ["sync", "time", "macros"] }
+tokio = { workspace = true }
 jiff = { workspace = true }
 toml = { workspace = true }
 prost = { workspace = true }
+tokio-serial = { workspace = true }
+tokio-util = { workspace = true }
+bytes = { workspace = true }
+aes = { workspace = true }
+ctr = { workspace = true }
+futures = { workspace = true }
+rand_core = { workspace = true }
 
 [build-dependencies]
 prost-build = "0.14.3"
 
 [dev-dependencies]
-tokio = { workspace = true, features = ["test-util", "rt-multi-thread", "macros"] }
 proptest = { workspace = true }
+# WHY: test-util provides tokio::time::pause/advance for deterministic async timing tests.
+tokio = { workspace = true, features = ["test-util"] }

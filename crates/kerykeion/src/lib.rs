@@ -5,16 +5,25 @@
 //! - Core mesh types: [`types::NodeNum`], [`types::PacketId`], [`types::ChannelIndex`]
 //! - Configuration: [`config::MeshConfig`] with TOML deserialization
 //! - Transport abstraction: [`connection::MeshConnection`] trait
+//! - Frame codec: `codec::MeshCodec` (Meshtastic 4-byte header framing)
+//! - Serial transport: [`transport::serial::SerialTransport`]
+//! - TCP transport: [`transport::tcp::TcpTransport`]
+//! - Config handshake: [`handshake::handshake`]
+//! - AES-CTR encryption: [`crypto::encrypt`] / [`crypto::decrypt`]
+//! - Heartbeat keepalive: [`heartbeat::run_heartbeat`]
 //! - Node tracking: [`node_db::NodeDb`]
 //! - Collection pipeline integration: [`collector::MeshCollector`]
-//!
-//! Protocol implementations (serial, TCP, BLE) are added in P2-02.
 
+pub mod codec;
 pub mod collector;
 pub mod config;
 pub mod connection;
+pub mod crypto;
 pub mod error;
+pub mod handshake;
+pub mod heartbeat;
 pub mod node_db;
+pub mod transport;
 pub mod types;
 
 // WHY: generated protobuf code cannot be annotated; allow all lints on this module.
@@ -26,14 +35,18 @@ pub mod types;
     dead_code,
     unused
 )]
-pub(crate) mod proto {
+pub mod proto {
     include!(concat!(env!("OUT_DIR"), "/meshtastic.rs"));
 }
 
 pub use collector::{Collector, MeshCollector};
 pub use config::{ChannelPsk, ConnectionConfig, MeshConfig, StoreForwardConfig, TopologyConfig};
+pub use connection::MeshConnection;
+pub use crypto::{DEFAULT_PSK, decrypt, encrypt};
 pub use error::Error;
+pub use handshake::{HandshakeResult, handshake};
 pub use node_db::{DeviceMetrics, MeshNode, NodeDb, NodePosition, UserInfo};
+pub use proto::{FromRadio, ToRadio};
 pub use types::{
     BROADCAST_ADDR, ChannelIndex, FRAME_MAGIC, MAX_CHANNELS, MAX_HOP_LIMIT, MAX_PACKET_SIZE,
     NodeNum, PacketId,
