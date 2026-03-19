@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.3](https://github.com/forkwright/akroasis/compare/v0.1.2...v0.1.3) (2026-03-19)
+
+
+### Features
+
+* **kerykeion:** crate scaffold with mesh types, config, and protobuf codegen ([#52](https://github.com/forkwright/akroasis/issues/52)) ([23da372](https://github.com/forkwright/akroasis/commit/23da372dbde8145f00f3f6f2a637e5f1530a1ec2))
+
 ## [0.1.2](https://github.com/forkwright/akroasis/compare/v0.1.1...v0.1.2) (2026-03-18)
 
 
