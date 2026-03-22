@@ -86,6 +86,9 @@ pub struct TopologyConfig {
     pub stale_node_timeout_secs: u64,
     /// Whether to request neighbor info packets from the radio.
     pub neighbor_info_enabled: bool,
+    /// Node numbers manually designated as gateways.
+    #[serde(default)]
+    pub gateway_nodes: Vec<u32>,
 }
 
 impl Default for TopologyConfig {
@@ -94,6 +97,7 @@ impl Default for TopologyConfig {
             traceroute_interval_secs: 3600,
             stale_node_timeout_secs: 7200,
             neighbor_info_enabled: true,
+            gateway_nodes: Vec::new(),
         }
     }
 }

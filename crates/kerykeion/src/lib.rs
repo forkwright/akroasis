@@ -13,16 +13,26 @@
 //! - Heartbeat keepalive: [`heartbeat::run_heartbeat`]
 //! - Node tracking: [`node_db::NodeDb`]
 //! - Collection pipeline integration: [`collector::MeshCollector`]
+//! - Mesh topology graph: [`topology::MeshTopology`]
+//! - Packet dispatch: [`processor::PacketProcessor`]
+//! - Node discovery: [`discovery::run_discovery`]
+//! - Gateway detection: [`gateway::GatewayDetector`]
+//! - Signal production: [`signals::MeshEvent`]
 
 pub mod codec;
 pub mod collector;
 pub mod config;
 pub mod connection;
 pub mod crypto;
+pub mod discovery;
 pub mod error;
+pub mod gateway;
 pub mod handshake;
 pub mod heartbeat;
 pub mod node_db;
+pub mod processor;
+pub mod signals;
+pub mod topology;
 pub mod transport;
 pub mod types;
 
@@ -43,10 +53,15 @@ pub use collector::{Collector, MeshCollector};
 pub use config::{ChannelPsk, ConnectionConfig, MeshConfig, StoreForwardConfig, TopologyConfig};
 pub use connection::MeshConnection;
 pub use crypto::{DEFAULT_PSK, decrypt, encrypt};
+pub use discovery::{NodeState, build_traceroute_request, classify_node_state, run_discovery};
 pub use error::Error;
+pub use gateway::GatewayDetector;
 pub use handshake::{HandshakeResult, handshake};
 pub use node_db::{DeviceMetrics, MeshNode, NodeDb, NodePosition, UserInfo};
+pub use processor::PacketProcessor;
 pub use proto::{FromRadio, ToRadio};
+pub use signals::{MeshEvent, mesh_event_to_signal};
+pub use topology::{LinkQuality, MeshTopology, TopologySnapshot};
 pub use types::{
     BROADCAST_ADDR, ChannelIndex, FRAME_MAGIC, MAX_CHANNELS, MAX_HOP_LIMIT, MAX_PACKET_SIZE,
     NodeNum, PacketId,

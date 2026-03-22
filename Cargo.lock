@@ -1149,11 +1149,13 @@ dependencies = [
  "futures",
  "jiff",
  "koinon",
+ "petgraph",
  "proptest",
  "prost",
  "prost-build",
  "rand_core 0.6.4",
  "serde",
+ "serde_json",
  "snafu",
  "tokio",
  "tokio-serial",
@@ -1458,6 +1460,8 @@ dependencies = [
  "fixedbitset",
  "hashbrown 0.15.5",
  "indexmap",
+ "serde",
+ "serde_derive",
 ]
 
 [[package]]
