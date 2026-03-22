@@ -11,6 +11,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "proto/meshtastic/mesh.proto",
         "proto/meshtastic/admin.proto",
         "proto/meshtastic/storeforward.proto",
+        "proto/meshtastic/mqtt.proto",
     ];
 
     prost_build::Config::new()

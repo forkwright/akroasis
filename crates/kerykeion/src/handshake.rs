@@ -78,7 +78,7 @@ pub async fn handshake(
                 }
 
                 Some(from_radio::PayloadVariant::NodeInfo(ni)) => {
-                    let node = node_info_to_mesh_node(ni);
+                    let node = node_info_to_mesh_node(&ni);
                     tracing::trace!(node_num = node.num.0, "received NodeInfo");
                     known_nodes.push(node.clone());
                     node_db.insert(node);
@@ -146,17 +146,17 @@ pub async fn handshake(
 }
 
 /// Convert a proto [`NodeInfo`] into a [`MeshNode`] for the in-memory database.
-fn node_info_to_mesh_node(ni: crate::proto::NodeInfo) -> MeshNode {
-    let user = ni.user.map(|u| UserInfo {
-        id: u.id,
-        long_name: u.long_name,
-        short_name: u.short_name,
+pub fn node_info_to_mesh_node(ni: &crate::proto::NodeInfo) -> MeshNode {
+    let user = ni.user.as_ref().map(|u| UserInfo {
+        id: u.id.clone(),
+        long_name: u.long_name.clone(),
+        short_name: u.short_name.clone(),
         // WHY: proto3 stores HardwareModel as i32; values are always ≥ 0.
         hw_model: u32::try_from(u.hw_model).unwrap_or(0),
         is_licensed: u.is_licensed,
     });
 
-    let position = ni.position.map(|p| NodePosition {
+    let position = ni.position.as_ref().map(|p| NodePosition {
         // WHY: Meshtastic encodes lat/lon as integer degrees × 1e7.
         latitude: f64::from(p.latitude_i) * 1e-7,
         longitude: f64::from(p.longitude_i) * 1e-7,
