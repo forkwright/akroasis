@@ -4,6 +4,9 @@
 //! 17 crates. 10 capability domains. One shared signal model.
 
 mod cli;
+// WHY: helper functions in mesh module are used by daemon; not called from CLI dispatch path.
+#[allow(dead_code)]
+mod mesh;
 mod radio;
 mod vault;
 
@@ -37,6 +40,10 @@ enum Error {
     /// A vault operation failed.
     #[snafu(display("{source}"))]
     Vault { source: vault::VaultCliError },
+
+    /// A mesh operation failed.
+    #[snafu(display("{source}"))]
+    Mesh { source: mesh::MeshError },
 }
 
 /// Application configuration loaded from TOML file and environment overrides.
@@ -66,7 +73,9 @@ fn dispatch(command: &Command) -> Result<(), Error> {
         Command::Radio(args) => {
             radio::dispatch(&args.command).context(RadioSnafu)?;
         }
-        Command::Mesh => println!("kerykeion — mesh networking (not yet implemented)"),
+        Command::Mesh(args) => {
+            mesh::dispatch(&args.command).context(MeshSnafu)?;
+        }
         Command::Sdr => println!("dektis — SDR reception (not yet implemented)"),
         Command::Proximity => println!("engys — proximity intelligence (not yet implemented)"),
         Command::Shield => println!("aspis — network defense (not yet implemented)"),

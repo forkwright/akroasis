@@ -42,6 +42,7 @@ dependencies = [
  "figment",
  "indicatif",
  "jiff",
+ "kerykeion",
  "koinon",
  "kryphos",
  "rpassword",

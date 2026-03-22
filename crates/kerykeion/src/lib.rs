@@ -12,6 +12,8 @@
 //! - AES-CTR encryption: [`crypto::encrypt`] / [`crypto::decrypt`]
 //! - Heartbeat keepalive: [`heartbeat::run_heartbeat`]
 //! - Node tracking: [`node_db::NodeDb`]
+//! - Gateway bridge: [`bridge::GatewayBridge`] with multi-gateway failover
+//! - MQTT parsing: [`mqtt`] for `ServiceEnvelope`, `MapReport` decoding
 //! - Collection pipeline integration: [`collector::MeshCollector`]
 //! - Mesh topology graph: [`topology::MeshTopology`]
 //! - Packet dispatch: [`processor::PacketProcessor`]
@@ -19,6 +21,7 @@
 //! - Gateway detection: [`gateway::GatewayDetector`]
 //! - Signal production: [`signals::MeshEvent`]
 
+pub mod bridge;
 pub mod codec;
 pub mod collector;
 pub mod config;
@@ -29,6 +32,7 @@ pub mod error;
 pub mod gateway;
 pub mod handshake;
 pub mod heartbeat;
+pub mod mqtt;
 pub mod node_db;
 pub mod processor;
 pub mod signals;
@@ -49,6 +53,7 @@ pub mod proto {
     include!(concat!(env!("OUT_DIR"), "/meshtastic.rs"));
 }
 
+pub use bridge::{GatewayBridge, GatewayEvent, GatewayHealth, GatewayState};
 pub use collector::{Collector, MeshCollector};
 pub use config::{ChannelPsk, ConnectionConfig, MeshConfig, StoreForwardConfig, TopologyConfig};
 pub use connection::MeshConnection;
@@ -57,6 +62,7 @@ pub use discovery::{NodeState, build_traceroute_request, classify_node_state, ru
 pub use error::Error;
 pub use gateway::GatewayDetector;
 pub use handshake::{HandshakeResult, handshake};
+pub use mqtt::{GatewayInfo, ParsedMapReport};
 pub use node_db::{DeviceMetrics, MeshNode, NodeDb, NodePosition, UserInfo};
 pub use processor::PacketProcessor;
 pub use proto::{FromRadio, ToRadio};

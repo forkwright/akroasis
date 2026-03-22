@@ -1,0 +1,72 @@
+syntax = "proto3";
+package meshtastic;
+
+import "meshtastic/mesh.proto";
+
+// Wraps a MeshPacket with the MQTT channel and gateway context.
+// Used when packets arrive from or are destined to an MQTT broker.
+message ServiceEnvelope {
+  // The actual mesh packet being transported.
+  MeshPacket packet = 1;
+
+  // The global channel ID it was sent on.
+  string channel_id = 2;
+
+  // The sending gateway node number.
+  string gateway_id = 3;
+}
+
+// Unencrypted report published by nodes for public mesh maps.
+// Receive-only: never publish without explicit user configuration.
+message MapReport {
+  // Long name of the reporting node.
+  string long_name = 1;
+
+  // Short name of the reporting node.
+  string short_name = 2;
+
+  // Role of the reporting node.
+  int32 role = 3;
+
+  // Hardware model enum value.
+  int32 hw_model = 4;
+
+  // Firmware version string.
+  string firmware_version = 5;
+
+  // LoRa region code.
+  int32 region = 6;
+
+  // LoRa modem preset.
+  int32 modem_preset = 7;
+
+  // Whether the node has default channel set.
+  bool has_default_channel = 8;
+
+  // Latitude in integer degrees (x 1e-7).
+  sfixed32 latitude_i = 9;
+
+  // Longitude in integer degrees (x 1e-7).
+  sfixed32 longitude_i = 10;
+
+  // Altitude in metres above sea level.
+  int32 altitude = 11;
+
+  // Number of online local nodes this node can see.
+  uint32 num_online_local_nodes = 12;
+}
+
+// Proxied MQTT message from a node with proxy_to_client enabled.
+message MqttClientProxyMessage {
+  // MQTT topic the message is on.
+  string topic = 1;
+
+  // The payload — either raw bytes or text.
+  oneof payload_variant {
+    bytes data = 2;
+    string text = 3;
+  }
+
+  // Whether this should be a retained MQTT message.
+  bool retained = 4;
+}

@@ -2,6 +2,7 @@
 
 use clap::{Parser, Subcommand};
 
+use crate::mesh::MeshCommand;
 use crate::radio::RadioCommand;
 use crate::vault::VaultCommand;
 
@@ -19,7 +20,7 @@ pub enum Command {
     /// Radio management — frequency plans, programming, vehicle telemetry
     Radio(RadioArgs),
     /// Mesh networking — Meshtastic, topology, DTN, PACE communications
-    Mesh,
+    Mesh(MeshArgs),
     /// SDR reception — spectrum, demodulation, EW detection
     Sdr,
     /// Proximity — `WiFi`, BLE, Zigbee, NFC/RFID monitoring
@@ -51,6 +52,13 @@ pub enum Command {
 pub struct RadioArgs {
     #[command(subcommand)]
     pub command: RadioCommand,
+}
+
+/// Mesh subcommand arguments.
+#[derive(clap::Args)]
+pub struct MeshArgs {
+    #[command(subcommand)]
+    pub command: MeshCommand,
 }
 
 /// Vault subcommand arguments.

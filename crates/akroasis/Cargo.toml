@@ -18,6 +18,7 @@ dialoguer = "0.11"
 figment = { workspace = true }
 indicatif = "0.17"
 jiff = { workspace = true }
+kerykeion = { path = "../kerykeion" }
 koinon = { path = "../koinon" }
 kryphos = { path = "../kryphos" }
 rpassword = { workspace = true }
