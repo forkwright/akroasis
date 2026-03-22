@@ -156,6 +156,28 @@ pub enum Error {
         #[snafu(implicit)]
         location: snafu::Location,
     },
+
+    /// Protobuf payload could not be decoded for the given portnum.
+    #[snafu(display("failed to decode {portnum} payload: {source}"))]
+    PayloadDecode {
+        /// Port number name for diagnostics.
+        portnum: String,
+        /// Underlying prost decode error.
+        source: prost::DecodeError,
+        /// Source location for diagnostics.
+        #[snafu(implicit)]
+        location: snafu::Location,
+    },
+
+    /// Topology snapshot deserialization failed.
+    #[snafu(display("topology snapshot error: {source}"))]
+    TopologySnapshot {
+        /// Underlying JSON error.
+        source: serde_json::Error,
+        /// Source location for diagnostics.
+        #[snafu(implicit)]
+        location: snafu::Location,
+    },
 }
 
 // WHY: tokio_util::codec::Decoder::Error and Encoder::Error both require
