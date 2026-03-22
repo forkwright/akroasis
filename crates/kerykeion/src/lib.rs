@@ -17,9 +17,15 @@
 //! - Collection pipeline integration: [`collector::MeshCollector`]
 //! - Mesh topology graph: [`topology::MeshTopology`]
 //! - Packet dispatch: [`processor::PacketProcessor`]
+//! - Routing ACK/NAK processing: [`processor::RoutingProcessor`]
 //! - Node discovery: [`discovery::run_discovery`]
 //! - Gateway detection: [`gateway::GatewayDetector`]
 //! - Signal production: [`signals::MeshEvent`]
+//! - Message construction: [`message::MessageBuilder`]
+//! - Outbound queue: [`outbound::OutboundQueue`]
+//! - Message routing: [`router::MeshRouter`]
+//! - Delivery tracking: [`delivery::DeliveryTracker`]
+//! - Store-and-forward: [`store_forward::StoreForward`]
 
 pub mod bridge;
 pub mod codec;
@@ -27,15 +33,20 @@ pub mod collector;
 pub mod config;
 pub mod connection;
 pub mod crypto;
+pub mod delivery;
 pub mod discovery;
 pub mod error;
 pub mod gateway;
 pub mod handshake;
 pub mod heartbeat;
+pub mod message;
 pub mod mqtt;
 pub mod node_db;
+pub mod outbound;
 pub mod processor;
+pub mod router;
 pub mod signals;
+pub mod store_forward;
 pub mod topology;
 pub mod transport;
 pub mod types;
@@ -58,15 +69,20 @@ pub use collector::{Collector, MeshCollector};
 pub use config::{ChannelPsk, ConnectionConfig, MeshConfig, StoreForwardConfig, TopologyConfig};
 pub use connection::MeshConnection;
 pub use crypto::{DEFAULT_PSK, decrypt, encrypt};
+pub use delivery::{DeliveryFailure, DeliveryStatus, DeliveryTracker, DestStats};
 pub use discovery::{NodeState, build_traceroute_request, classify_node_state, run_discovery};
 pub use error::Error;
 pub use gateway::GatewayDetector;
 pub use handshake::{HandshakeResult, handshake};
+pub use message::MessageBuilder;
 pub use mqtt::{GatewayInfo, ParsedMapReport};
 pub use node_db::{DeviceMetrics, MeshNode, NodeDb, NodePosition, UserInfo};
-pub use processor::PacketProcessor;
+pub use outbound::{InflightMessage, OutboundQueue, PendingMessage};
+pub use processor::{PacketProcessor, RoutingProcessor, RoutingResult};
 pub use proto::{FromRadio, ToRadio};
+pub use router::{MeshRouter, SendOptions};
 pub use signals::{MeshEvent, mesh_event_to_signal};
+pub use store_forward::{StoreForward, StoredMessage};
 pub use topology::{LinkQuality, MeshTopology, TopologySnapshot};
 pub use types::{
     BROADCAST_ADDR, ChannelIndex, FRAME_MAGIC, MAX_CHANNELS, MAX_HOP_LIMIT, MAX_PACKET_SIZE,

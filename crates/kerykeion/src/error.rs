@@ -178,6 +178,60 @@ pub enum Error {
         #[snafu(implicit)]
         location: snafu::Location,
     },
+
+    /// Message delivery failed after exhausting all retry attempts.
+    #[snafu(display("delivery failed for packet {packet_id}: {reason}"))]
+    DeliveryFailed {
+        /// The packet that could not be delivered.
+        packet_id: u32,
+        /// Human-readable failure reason.
+        reason: String,
+        /// Source location for diagnostics.
+        #[snafu(implicit)]
+        location: snafu::Location,
+    },
+
+    /// A routing NAK was received from the mesh.
+    #[snafu(display("routing NAK for packet {packet_id}: {error_code}"))]
+    RoutingNak {
+        /// The packet that was NAK'd.
+        packet_id: u32,
+        /// Meshtastic routing error code name.
+        error_code: String,
+        /// Source location for diagnostics.
+        #[snafu(implicit)]
+        location: snafu::Location,
+    },
+
+    /// Store-and-forward queue is full for the destination node.
+    #[snafu(display("store-forward queue full for node {dest:#010x}"))]
+    QueueFull {
+        /// The destination node whose queue is at capacity.
+        dest: u32,
+        /// Source location for diagnostics.
+        #[snafu(implicit)]
+        location: snafu::Location,
+    },
+
+    /// Message has expired past its TTL.
+    #[snafu(display("message {packet_id} expired (TTL exceeded)"))]
+    MessageExpired {
+        /// The expired packet's ID.
+        packet_id: u32,
+        /// Source location for diagnostics.
+        #[snafu(implicit)]
+        location: snafu::Location,
+    },
+
+    /// Serialization or deserialization of store-forward state failed.
+    #[snafu(display("store-forward serialization error: {source}"))]
+    StoreForwardSerde {
+        /// Underlying `serde_json` error.
+        source: serde_json::Error,
+        /// Source location for diagnostics.
+        #[snafu(implicit)]
+        location: snafu::Location,
+    },
 }
 
 // WHY: tokio_util::codec::Decoder::Error and Encoder::Error both require
