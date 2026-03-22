@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.1.5](https://github.com/forkwright/akroasis/compare/v0.1.4...v0.1.5) (2026-03-22)
+
+
+### Features
+
+* **kerykeion:** gateway bridge, MQTT parsing, collector run loop, and mesh CLI ([#62](https://github.com/forkwright/akroasis/issues/62)) ([86b5eb2](https://github.com/forkwright/akroasis/commit/86b5eb24935529724fb8e6c07d5ce671177454a1))
+* **kerykeion:** message routing, store-and-forward, and delivery tracking ([#61](https://github.com/forkwright/akroasis/issues/61)) ([8a7d306](https://github.com/forkwright/akroasis/commit/8a7d30615eec3c3deddf04183c1f6e8615c0150a))
+* **kerykeion:** node discovery, mesh topology graph, and peer tracking ([#60](https://github.com/forkwright/akroasis/issues/60)) ([570ef34](https://github.com/forkwright/akroasis/commit/570ef34405d66c7149407b7047c69bf3f172802e))
+
 ## [0.1.4](https://github.com/forkwright/akroasis/compare/v0.1.3...v0.1.4) (2026-03-19)
 
 
