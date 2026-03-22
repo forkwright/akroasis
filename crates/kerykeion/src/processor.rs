@@ -3,10 +3,14 @@
 use prost::Message as _;
 use tokio::sync::broadcast;
 
+use crate::delivery::{DeliveryFailure, DeliveryTracker};
 use crate::node_db::{DeviceMetrics, MeshNode, NodeDb, NodePosition, UserInfo};
+use crate::outbound::OutboundQueue;
+use crate::proto::mesh_packet::PayloadVariant;
+use crate::proto::{MeshPacket, PortNum, Routing, routing};
 use crate::signals::{MeshEvent, mesh_event_to_signal};
 use crate::topology::MeshTopology;
-use crate::types::NodeNum;
+use crate::types::{NodeNum, PacketId};
 use koinon::GeoSignal;
 
 /// `NeighborInfo` protobuf (portnum 71) — not in vendored protos, decoded manually.
@@ -452,12 +456,118 @@ fn handle_routing(payload: &[u8]) {
     }
 }
 
+// ── Routing ACK/NAK processor ────────────────────────────────────────────────
+
+/// Result of processing a routing packet.
+#[derive(Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum RoutingResult {
+    /// ACK received — message was delivered.
+    Ack {
+        /// The packet ID that was acknowledged.
+        request_id: PacketId,
+    },
+    /// NAK received — routing error.
+    Nak {
+        /// The packet ID that failed.
+        request_id: PacketId,
+        /// The routing error code.
+        error: routing::Error,
+    },
+    /// The packet was not a routing packet or had no actionable variant.
+    NotRouting,
+}
+
+/// Processes inbound mesh packets for delivery confirmation (ACK/NAK).
+///
+/// Examines `ROUTING_APP` packets to update the delivery tracker and
+/// outbound queue based on acknowledgement or error responses.
+pub struct RoutingProcessor;
+
+impl RoutingProcessor {
+    /// Process an inbound mesh packet for routing ACK/NAK.
+    ///
+    /// Only `ROUTING_APP` packets with an `error_reason` variant are processed.
+    /// ACK = `Error::None`, NAK = any other error value.
+    #[must_use]
+    pub fn process_routing(packet: &MeshPacket) -> RoutingResult {
+        let Some(PayloadVariant::Decoded(data)) = &packet.payload_variant else {
+            return RoutingResult::NotRouting;
+        };
+
+        if data.portnum != PortNum::RoutingApp as i32 {
+            return RoutingResult::NotRouting;
+        }
+
+        // The request_id in the Data message refers to the original packet being ACK'd/NAK'd.
+        let request_id = data.request_id;
+        if request_id == 0 {
+            return RoutingResult::NotRouting;
+        }
+
+        let Ok(routing_msg) = Routing::decode(data.payload.as_slice()) else {
+            tracing::warn!(
+                packet_id = packet.id,
+                "failed to decode Routing payload from ROUTING_APP packet"
+            );
+            return RoutingResult::NotRouting;
+        };
+
+        match routing_msg.variant {
+            Some(routing::Variant::ErrorReason(code)) => {
+                let error = routing::Error::try_from(code).unwrap_or(routing::Error::None);
+                if error == routing::Error::None {
+                    RoutingResult::Ack {
+                        request_id: PacketId(request_id),
+                    }
+                } else {
+                    RoutingResult::Nak {
+                        request_id: PacketId(request_id),
+                        error,
+                    }
+                }
+            }
+            _ => RoutingResult::NotRouting,
+        }
+    }
+
+    /// Process a routing result and update the delivery tracker and outbound queue.
+    pub fn apply_routing_result(
+        result: &RoutingResult,
+        delivery: &mut DeliveryTracker,
+        outbound: &mut OutboundQueue,
+    ) {
+        match result {
+            RoutingResult::Ack { request_id } => {
+                tracing::debug!(packet_id = %request_id, "delivery confirmed via ACK");
+                outbound.handle_ack(*request_id);
+                delivery.mark_acknowledged(*request_id, None);
+            }
+            RoutingResult::Nak { request_id, error } => {
+                tracing::debug!(
+                    packet_id = %request_id,
+                    error = ?error,
+                    "delivery NAK received"
+                );
+                let retried = outbound.handle_nak(*request_id);
+                if retried {
+                    delivery.record_retry(*request_id);
+                } else {
+                    delivery.mark_failed(*request_id, DeliveryFailure::Nak(*error));
+                }
+            }
+            RoutingResult::NotRouting => {}
+        }
+    }
+}
+
 // ── Tests ────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::indexing_slicing)]
 mod tests {
     use super::*;
+    use crate::proto::{Data, mesh_packet};
 
     fn make_processor() -> PacketProcessor {
         let (tx, _rx) = broadcast::channel(64);
@@ -678,5 +788,179 @@ mod tests {
             neighbors.iter().any(|(n, _)| *n == my_node),
             "direct packet should create link to server node"
         );
+    }
+
+    // ── Routing processor tests ──────────────────────────────────────────
+
+    fn make_routing_packet(request_id: u32, error_code: i32) -> MeshPacket {
+        let routing = Routing {
+            variant: Some(routing::Variant::ErrorReason(error_code)),
+        };
+        let routing_bytes = routing.encode_to_vec();
+
+        let data = Data {
+            portnum: PortNum::RoutingApp as i32,
+            payload: routing_bytes,
+            want_response: false,
+            dest: 0,
+            source: 0,
+            request_id,
+            reply_id: 0,
+            emoji: vec![],
+        };
+
+        MeshPacket {
+            from: 0x1111,
+            to: 0x2222,
+            channel: 0,
+            id: 0xFFFF,
+            rx_time: 0,
+            rx_snr: 0.0,
+            hop_limit: 3,
+            want_ack: false,
+            priority: mesh_packet::Priority::Default as i32,
+            rx_rssi: 0,
+            via_mqtt: false,
+            hop_start: 3,
+            payload_variant: Some(mesh_packet::PayloadVariant::Decoded(data)),
+        }
+    }
+
+    #[test]
+    fn ack_packet_detected() {
+        let pkt = make_routing_packet(0x1234, routing::Error::None as i32);
+        let result = RoutingProcessor::process_routing(&pkt);
+        assert_eq!(
+            result,
+            RoutingResult::Ack {
+                request_id: PacketId(0x1234)
+            }
+        );
+    }
+
+    #[test]
+    fn nak_no_route_detected() {
+        let pkt = make_routing_packet(0x5678, routing::Error::NoRoute as i32);
+        let result = RoutingProcessor::process_routing(&pkt);
+        assert_eq!(
+            result,
+            RoutingResult::Nak {
+                request_id: PacketId(0x5678),
+                error: routing::Error::NoRoute,
+            }
+        );
+    }
+
+    #[test]
+    fn nak_max_retransmit_detected() {
+        let pkt = make_routing_packet(0xABCD, routing::Error::MaxRetransmit as i32);
+        let result = RoutingProcessor::process_routing(&pkt);
+        assert_eq!(
+            result,
+            RoutingResult::Nak {
+                request_id: PacketId(0xABCD),
+                error: routing::Error::MaxRetransmit,
+            }
+        );
+    }
+
+    #[test]
+    fn non_routing_packet_ignored() {
+        let data = Data {
+            portnum: PortNum::TextMessageApp as i32,
+            payload: b"hello".to_vec(),
+            ..Default::default()
+        };
+        let pkt = MeshPacket {
+            from: 0x1111,
+            to: 0x2222,
+            channel: 0,
+            id: 1,
+            rx_time: 0,
+            rx_snr: 0.0,
+            hop_limit: 3,
+            want_ack: false,
+            priority: mesh_packet::Priority::Default as i32,
+            rx_rssi: 0,
+            via_mqtt: false,
+            hop_start: 3,
+            payload_variant: Some(mesh_packet::PayloadVariant::Decoded(data)),
+        };
+        assert_eq!(
+            RoutingProcessor::process_routing(&pkt),
+            RoutingResult::NotRouting
+        );
+    }
+
+    #[test]
+    fn encrypted_packet_returns_not_routing() {
+        let pkt = MeshPacket {
+            from: 0x1111,
+            to: 0x2222,
+            channel: 0,
+            id: 1,
+            rx_time: 0,
+            rx_snr: 0.0,
+            hop_limit: 3,
+            want_ack: false,
+            priority: mesh_packet::Priority::Default as i32,
+            rx_rssi: 0,
+            via_mqtt: false,
+            hop_start: 3,
+            payload_variant: Some(mesh_packet::PayloadVariant::Encrypted(vec![0xFF; 16])),
+        };
+        assert_eq!(
+            RoutingProcessor::process_routing(&pkt),
+            RoutingResult::NotRouting
+        );
+    }
+
+    #[test]
+    fn zero_request_id_ignored() {
+        let pkt = make_routing_packet(0, routing::Error::None as i32);
+        assert_eq!(
+            RoutingProcessor::process_routing(&pkt),
+            RoutingResult::NotRouting,
+            "request_id=0 should be ignored"
+        );
+    }
+
+    #[test]
+    fn apply_ack_updates_tracker() {
+        let mut delivery = DeliveryTracker::new();
+        let mut outbound = OutboundQueue::new();
+        let id = PacketId(42);
+
+        delivery.track(id, 0x1234);
+        delivery.mark_sent(id);
+
+        let result = RoutingResult::Ack { request_id: id };
+        RoutingProcessor::apply_routing_result(&result, &mut delivery, &mut outbound);
+
+        assert!(matches!(
+            delivery.delivery_status(id),
+            Some(crate::delivery::DeliveryStatus::Acknowledged { .. })
+        ));
+    }
+
+    #[test]
+    fn apply_nak_marks_failed_when_no_inflight() {
+        let mut delivery = DeliveryTracker::new();
+        let mut outbound = OutboundQueue::new();
+        let id = PacketId(77);
+
+        delivery.track(id, 0x5678);
+        delivery.mark_sent(id);
+
+        let result = RoutingResult::Nak {
+            request_id: id,
+            error: routing::Error::NoRoute,
+        };
+        RoutingProcessor::apply_routing_result(&result, &mut delivery, &mut outbound);
+
+        assert!(matches!(
+            delivery.delivery_status(id),
+            Some(crate::delivery::DeliveryStatus::Failed { .. })
+        ));
     }
 }
