@@ -73,7 +73,7 @@ ciborium = "0.2"
 csv = "1"
 
 # TOML serialization
-toml = { version = "0.8", features = ["preserve_order"] }
+toml = { version = "1.1", features = ["preserve_order"] }
 
 # Serial
 serialport = "4"
