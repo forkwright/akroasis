@@ -8,14 +8,12 @@ permissions:
   contents: read
 
 jobs:
-  verify:
+  verify-gate:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      # NOTE: Placeholder until kanon gate ships trailer verification.
-      # Currently passes unconditionally. Will be updated to check
-      # Gate-Passed trailer once kanon gate is deployed.
+      # NOTE: Placeholder until kanon gate trailer flow is validated.
       - name: Gate check (placeholder)
-        run: echo "Gate verification will be enforced once kanon gate is deployed"
+        run: echo "Gate verification will be enforced once kanon gate trailer flow is validated"
