@@ -1,6 +1,10 @@
 # cargo-deny configuration
 # https://embarkstudios.github.io/cargo-deny/
 
+[graph]
+targets = []
+all-features = false
+
 [advisories]
 ignore = [
     { id = "RUSTSEC-2025-0119", reason = "number_prefix unmaintained, transitive via indicatif; no safe upgrade" },
