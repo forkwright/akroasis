@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.6](https://github.com/forkwright/akroasis/compare/v0.1.5...v0.1.6) (2026-03-24)
+
+
+### Bug Fixes
+
+* add [graph] section to deny.toml for cargo-deny 0.19 compatibility ([86af2d9](https://github.com/forkwright/akroasis/commit/86af2d9a004bceb49cceef66cfaf6b4513d0e2d6))
+
 ## [0.1.5](https://github.com/forkwright/akroasis/compare/v0.1.4...v0.1.5) (2026-03-22)
 
 
