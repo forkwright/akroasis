@@ -1,0 +1,61 @@
+# Example mesh section for ~/.config/akroasis/config.toml
+#
+# Hardware supported:
+#   RAK2245 Pi HAT (dedicated gateway, TCP on port 4403)
+#   T-Deck Plus (WiFi-capable, TCP or serial)
+#   WisBlock station (serial USB)
+
+[mesh]
+
+# Transport connections — list in preference order (first = primary).
+#
+# Serial: use when the radio is directly attached via USB.
+# Tcp:    use when the radio runs WiFi firmware (Meshtastic default port 4403).
+#
+# Only Serial and Tcp are implemented; Ble is reserved for a future release.
+
+[[mesh.connections]]
+Serial = { port = "/dev/ttyUSB0", baud = 115200 }
+
+# Uncomment for RAK2245 Pi gateway over TCP:
+# [[mesh.connections]]
+# Tcp = { addr = "192.168.1.10", port = 4403 }
+
+# Uncomment for T-Deck Plus over WiFi:
+# [[mesh.connections]]
+# Tcp = { addr = "192.168.1.11", port = 4403 }
+
+# Channel PSKs — required to decrypt encrypted mesh traffic.
+# Leave psk empty (0 bytes) for the default unencrypted LongFast channel.
+# AES-128 = 16 bytes, AES-256 = 32 bytes.
+
+[[mesh.channel_psk]]
+index = 0
+name = "LongFast"
+psk = []   # no encryption on primary channel
+
+# Uncomment for an encrypted secondary channel:
+# [[mesh.channel_psk]]
+# index = 1
+# name = "Ops"
+# psk = [0xDE,0xAD,0xBE,0xEF,0xDE,0xAD,0xBE,0xEF,0xDE,0xAD,0xBE,0xEF,0xDE,0xAD,0xBE,0xEF]
+
+# Store-and-forward — queue messages for nodes that are temporarily offline.
+[mesh.store_forward]
+enabled = false
+max_queue_per_dest = 16
+message_ttl_secs = 3600    # 1 hour
+
+# Topology maintenance — controls traceroute frequency and node expiry.
+[mesh.topology]
+traceroute_interval_secs = 3600    # send traceroutes every hour
+stale_node_timeout_secs = 7200     # 2 hours before a node is considered stale
+neighbor_info_enabled = true
+
+# Manually designate gateway nodes by their 32-bit node number (hex or decimal).
+# The RAK2245 gateway and any WiFi-capable T-Deck Plus nodes go here.
+# Automatically detected gateway nodes (role=ROUTER_CLIENT + WiFi) are added at runtime.
+gateway_nodes = []
+
+# Example with real hardware node numbers:
+# gateway_nodes = [0xDEADBEEF, 0xAABBCCDD]
