@@ -145,7 +145,7 @@ pub async fn handshake(
     })
 }
 
-/// Convert a proto [`NodeInfo`] into a [`MeshNode`] for the in-memory database.
+/// Convert a proto `NodeInfo` into a [`MeshNode`] for the in-memory database.
 pub fn node_info_to_mesh_node(ni: &crate::proto::NodeInfo) -> MeshNode {
     let user = ni.user.as_ref().map(|u| UserInfo {
         id: u.id.clone(),

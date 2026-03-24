@@ -266,7 +266,7 @@ impl GatewayBridge {
 
     /// Records a failed health check for a gateway.
     ///
-    /// After [`OFFLINE_CHECK_THRESHOLD`] consecutive failures, the gateway
+    /// After `OFFLINE_CHECK_THRESHOLD` consecutive failures, the gateway
     /// transitions to [`GatewayHealth::Offline`] and an automatic failover
     /// is triggered if it was the active gateway.
     pub fn record_health_failure(&mut self, node: NodeNum) {
