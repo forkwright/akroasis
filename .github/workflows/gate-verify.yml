@@ -11,11 +11,23 @@ jobs:
   verify-gate:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
+      - name: Check for bot PR
+        id: bot-check
+        run: |
+          author="${{ github.event.pull_request.user.login }}"
+          if [[ "$author" == *"[bot]" || "$author" == "dependabot"* ]]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "Skipping gate check for bot author: $author"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Verify Gate-Passed trailer
+        if: steps.bot-check.outputs.skip != 'true'
         run: |
           commits=$(git log --format="%H" origin/main..HEAD)
           if [ -z "$commits" ]; then
