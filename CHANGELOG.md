@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.7](https://github.com/forkwright/akroasis/compare/v0.1.6...v0.1.7) (2026-03-27)
+
+
+### Features
+
+* **kerykeion:** gateway bridge and mesh collector wiring ([#71](https://github.com/forkwright/akroasis/issues/71)) ([8da4fc1](https://github.com/forkwright/akroasis/commit/8da4fc1eb6c69c802643fa24514ec95a4a42b4fa))
+* **kerykeion:** node discovery, mesh topology graph, and peer tracking ([#68](https://github.com/forkwright/akroasis/issues/68)) ([ce27b16](https://github.com/forkwright/akroasis/commit/ce27b16cb82f4c1d1eefe2d831d0130180eb7036))
+
 ## [0.1.6](https://github.com/forkwright/akroasis/compare/v0.1.5...v0.1.6) (2026-03-24)
 
 
