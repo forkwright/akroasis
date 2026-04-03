@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.8](https://github.com/forkwright/akroasis/compare/v0.1.7...v0.1.8) (2026-04-03)
+
+
+### Bug Fixes
+
+* resolve lint violations via kanon lint --fix ([7cf413c](https://github.com/forkwright/akroasis/commit/7cf413c429a074794af5e3353167ba8145cee035))
+
 ## [0.1.7](https://github.com/forkwright/akroasis/compare/v0.1.6...v0.1.7) (2026-03-27)
 
 
