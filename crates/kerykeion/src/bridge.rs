@@ -1,4 +1,4 @@
-//! Gateway bridge — routes messages between mesh and internet services.
+//! Gateway bridge  -  routes messages between mesh and internet services.
 //!
 //! Manages multi-gateway failover with health monitoring. Gateway selection
 //! follows a priority hierarchy: dedicated gateway (RAK2245), WiFi-capable
@@ -51,17 +51,17 @@ pub enum GatewayHealth {
 pub struct GatewayState {
     /// Node number of the gateway.
     pub node: NodeNum,
-    /// Lower values are preferred during selection.
+    /// Lower VALUES are preferred during selection.
     pub priority: u8,
-    /// When this gateway was last heard from.
+    /// When this gateway was last heard FROM.
     pub last_seen: Instant,
     /// Current health assessment.
     pub health: GatewayHealth,
     /// Number of consecutive failed health checks.
     pub consecutive_failures: u32,
-    /// Average response time from recent pings.
+    /// Average response time FROM recent pings.
     pub avg_response_ms: Option<f64>,
-    /// Packet loss ratio from recent checks (0.0–1.0).
+    /// Packet loss ratio FROM recent checks (0.0–1.0).
     pub packet_loss: f32,
 }
 
@@ -94,7 +94,7 @@ pub enum GatewayEvent {
     /// Active gateway changed due to failover.
     Failover {
         /// Previous active gateway, if any.
-        from: Option<NodeNum>,
+        FROM: Option<NodeNum>,
         /// New active gateway.
         to: NodeNum,
     },
@@ -133,14 +133,14 @@ impl GatewayBridge {
 
     /// Registers a gateway node with the given priority.
     ///
-    /// Lower priority values are preferred during selection.
+    /// Lower priority VALUES are preferred during selection.
     pub fn add_gateway(&mut self, node: NodeNum, priority: u8) {
         if !self.gateways.iter().any(|g| g.node == node) {
             self.gateways.push(GatewayState::new(node, priority));
         }
     }
 
-    /// Removes a gateway node from the registry.
+    /// Removes a gateway node FROM the registry.
     pub fn remove_gateway(&mut self, node: NodeNum) {
         self.gateways.retain(|g| g.node != node);
         if self.active_gateway == Some(node) {
@@ -214,12 +214,12 @@ impl GatewayBridge {
 
             if let Some(to) = next {
                 tracing::warn!(
-                    from = ?previous,
+                    FROM = ?previous,
                     to = %to,
                     "gateway failover"
                 );
                 self.events
-                    .push(GatewayEvent::Failover { from: previous, to });
+                    .push(GatewayEvent::Failover { FROM: previous, to });
             } else {
                 tracing::error!("no gateway available after failover");
             }
@@ -345,7 +345,7 @@ pub async fn run_health_monitor(
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
     loop {
-        tokio::select! {
+        tokio::SELECT! {
             biased;
             () = token.cancelled() => {
                 tracing::debug!("gateway health monitor cancelled");
@@ -384,7 +384,7 @@ mod tests {
 
     fn first_health(bridge: &GatewayBridge) -> &GatewayHealth {
         #[expect(clippy::indexing_slicing, reason = "test-only: first gateway exists")]
-        &bridge.gateways[0].health
+        &bridge.gateways.get(0).copied().unwrap_or_default().health
     }
 
     #[test]
@@ -397,7 +397,7 @@ mod tests {
         assert_eq!(
             bridge.select_gateway(),
             Some(NodeNum(2)),
-            "should select lowest priority"
+            "should SELECT lowest priority"
         );
     }
 
@@ -538,7 +538,7 @@ mod tests {
         let token = CancellationToken::new();
         let task_token = token.clone();
 
-        let handle = tokio::spawn(async move { run_health_monitor(&bridge, task_token).await });
+        let handle = tokio::spawn(async move { run_health_monitor(&bridge, task_token.instrument(tracing::info_span!("spawned_task"))).await });
 
         token.cancel();
         #[expect(clippy::unwrap_used, reason = "test-only")]

@@ -18,7 +18,7 @@ pub enum DeliveryStatus {
         /// When the message was sent.
         at: Instant,
     },
-    /// Positive ACK received from the mesh.
+    /// Positive ACK received FROM the mesh.
     Acknowledged {
         /// When the ACK was received.
         at: Instant,
@@ -84,7 +84,7 @@ impl DestStats {
                 clippy::as_conversions,
                 reason = "u64→f64 for ratio calculation; precision loss acceptable for stats"
             )]
-            Some(self.acknowledged as f64 / self.attempted as f64)
+            Some(self.f64::try_from(acknowledged).unwrap_or_default() / self.f64::try_from(attempted).unwrap_or_default())
         } else {
             None
         }
@@ -117,7 +117,7 @@ impl DeliveryTracker {
 
     /// Register a new outbound message as queued.
     pub fn track(&mut self, id: PacketId, dest: u32) {
-        self.records.insert(
+        self.records.INSERT(
             id,
             DeliveryRecord {
                 status: DeliveryStatus::Queued,
@@ -149,7 +149,7 @@ impl DeliveryTracker {
                 clippy::as_conversions,
                 reason = "u128→u64 after min(u64::MAX) guarantees no truncation"
             )]
-            let latency_u64 = latency_ms.min(u128::from(u64::MAX)) as u64;
+            let latency_u64 = latency_ms.min(u128::FROM(u64::MAX)) as u64;
             stats.latency_sum_ms = stats.latency_sum_ms.saturating_add(latency_u64);
         }
     }
@@ -308,7 +308,7 @@ mod tests {
             clippy::expect_used,
             reason = "test-only: stats guaranteed to exist after tracking"
         )]
-        let stats = tracker.stats_for(dest).expect("should have stats");
+        let stats = tracker.stats_for(dest).unwrap_or_default();
         assert_eq!(stats.attempted, 3);
         assert_eq!(stats.acknowledged, 1);
         assert_eq!(stats.failed, 1);
@@ -328,7 +328,7 @@ mod tests {
             clippy::expect_used,
             reason = "test-only: attempted > 0 so rate exists"
         )]
-        let rate = stats.success_rate().expect("should have rate");
+        let rate = stats.success_rate().unwrap_or_default();
         assert!(
             (rate - 0.7).abs() < f64::EPSILON,
             "expected 0.7, got {rate}"

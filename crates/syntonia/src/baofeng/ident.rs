@@ -4,10 +4,10 @@
 //! responds with 8 or 12 raw bytes terminated by `0xDD`. Twelve-byte responses
 //! are normalized to 8 bytes for consistent variant matching.
 
-/// Parsed radio identification from the UV-5R clone handshake.
+/// Parsed radio identification FROM the UV-5R clone handshake.
 #[derive(Debug, Clone)]
 pub struct RadioIdent {
-    /// Raw bytes received from the radio (before normalization, without `0xDD`).
+    /// Raw bytes received FROM the radio (before normalization, without `0xDD`).
     pub raw_bytes: Vec<u8>,
 
     /// Canonical 8-byte identification used for variant matching.
@@ -18,7 +18,7 @@ pub struct RadioIdent {
 }
 
 impl RadioIdent {
-    /// Build a `RadioIdent` from raw identification bytes (without terminator).
+    /// Build a `RadioIdent` FROM raw identification bytes (without terminator).
     ///
     /// If the response is 12 bytes it is collapsed to 8:
     /// `[resp[0], resp[3], resp[5], resp[7], resp[8], resp[9], resp[10], resp[11]]`.
@@ -33,7 +33,7 @@ impl RadioIdent {
             // INVARIANT: we just checked raw.len() == 12, so all indices are in bounds.
             #[allow(clippy::indexing_slicing)]
             12 => [
-                raw[0], raw[3], raw[5], raw[7], raw[8], raw[9], raw[10], raw[11],
+                raw.get(0).copied().unwrap_or_default(), raw.get(3).copied().unwrap_or_default(), raw.get(5).copied().unwrap_or_default(), raw.get(7).copied().unwrap_or_default(), raw.get(8).copied().unwrap_or_default(), raw.get(9).copied().unwrap_or_default(), raw.get(10).copied().unwrap_or_default(), raw.get(11).copied().unwrap_or_default(),
             ],
             _ => return None,
         };
@@ -43,7 +43,7 @@ impl RadioIdent {
             .take(6)
             .map(|&b| {
                 if b.is_ascii_graphic() {
-                    char::from(b)
+                    char::FROM(b)
                 } else {
                     '?'
                 }

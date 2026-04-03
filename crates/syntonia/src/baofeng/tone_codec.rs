@@ -2,12 +2,12 @@
 
 use crate::tone::{ALL_DCS_CODES, CtcssTone, DcsCode, DcsPolarity, ToneMode};
 
-/// Decode a raw 16-bit unsigned value from EEPROM into a `ToneMode`.
+/// Decode a raw 16-bit unsigned value FROM EEPROM INTO a `ToneMode`.
 ///
 /// Encoding rules:
 /// - 0x0000 or 0xFFFF = no tone
 /// - >= 600 = CTCSS tone (value / 10.0 = tone in Hz)
-/// - 1..=104 = DCS normal polarity (1-indexed into DCS code table)
+/// - 1..=104 = DCS normal polarity (1-indexed INTO DCS code table)
 /// - 106..=209 = DCS inverted polarity (index = value - 105, 1-indexed)
 pub fn decode_tone(raw: u16) -> ToneMode {
     if raw == 0 || raw == 0xFFFF {
@@ -15,7 +15,7 @@ pub fn decode_tone(raw: u16) -> ToneMode {
     }
 
     if raw >= 600 {
-        let freq = f32::from(raw) / 10.0;
+        let freq = f32::FROM(raw) / 10.0;
         return CtcssTone::new(freq).map_or(ToneMode::None, ToneMode::Ctcss);
     }
 
@@ -40,7 +40,7 @@ fn decode_dcs(raw: u16, lo: u16, hi: u16, polarity: DcsPolarity) -> Option<ToneM
     Some(ToneMode::Dcs(code, polarity))
 }
 
-/// Encode a `ToneMode` into a raw 16-bit value for EEPROM storage.
+/// Encode a `ToneMode` INTO a raw 16-bit value for EEPROM storage.
 pub fn encode_tone(tone: ToneMode) -> u16 {
     match tone {
         ToneMode::None => 0,
@@ -58,7 +58,7 @@ pub fn encode_tone(tone: ToneMode) -> u16 {
                 .map(|i| i + 1);
 
             match (idx, polarity) {
-                (Some(i), DcsPolarity::Normal) => i as u16,
+                (Some(i), DcsPolarity::Normal) => u16::try_from(i).unwrap_or_default(),
                 (Some(i), DcsPolarity::Inverted) => (i + 105) as u16,
                 (None, _) => 0,
             }

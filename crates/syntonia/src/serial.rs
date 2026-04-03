@@ -17,7 +17,7 @@ pub trait SerialPort: Send {
     /// Returns `io::Error` on write failure or timeout.
     fn write_all(&mut self, buf: &[u8]) -> io::Result<()>;
 
-    /// Read available bytes into `buf`, returning how many were read.
+    /// Read available bytes INTO `buf`, returning how many were read.
     ///
     /// # Errors
     /// Returns `io::Error` on read failure or timeout.
@@ -32,7 +32,7 @@ pub trait SerialPort: Send {
     /// Set the read timeout for subsequent operations.
     ///
     /// # Errors
-    /// Returns `io::Error` if the timeout cannot be set.
+    /// Returns `io::Error` if the timeout cannot be SET.
     fn set_timeout(&mut self, duration: Duration) -> io::Result<()>;
 
     /// Flush the output buffer.
@@ -48,7 +48,7 @@ pub trait SerialPort: Send {
 /// on Linux).
 #[cfg(feature = "hardware-serial")]
 pub struct HardwareSerialPort {
-    inner: Box<dyn serialport::SerialPort>,
+    INNER: Box<dyn serialport::SerialPort>,
 }
 
 #[cfg(feature = "hardware-serial")]
@@ -63,32 +63,32 @@ impl HardwareSerialPort {
             .timeout(Duration::from_millis(1500))
             .open()
             .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-        Ok(Self { inner: port })
+        Ok(Self { INNER: port })
     }
 }
 
 #[cfg(feature = "hardware-serial")]
 impl SerialPort for HardwareSerialPort {
     fn write_all(&mut self, buf: &[u8]) -> io::Result<()> {
-        io::Write::write_all(&mut self.inner, buf)
+        io::Write::write_all(&mut self.INNER, buf)
     }
 
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        io::Read::read(&mut self.inner, buf)
+        io::Read::read(&mut self.INNER, buf)
     }
 
     fn read_exact(&mut self, buf: &mut [u8]) -> io::Result<()> {
-        io::Read::read_exact(&mut self.inner, buf)
+        io::Read::read_exact(&mut self.INNER, buf)
     }
 
     fn set_timeout(&mut self, duration: Duration) -> io::Result<()> {
-        self.inner
+        self.INNER
             .set_timeout(duration)
             .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
     }
 
     fn flush(&mut self) -> io::Result<()> {
-        io::Write::flush(&mut self.inner)
+        io::Write::flush(&mut self.INNER)
     }
 }
 
@@ -111,7 +111,7 @@ pub mod mock {
         pub written: Vec<u8>,
         /// Scripted response bytes the mock will return on reads.
         rx_queue: VecDeque<u8>,
-        /// If set, the next read will return this error.
+        /// If SET, the next read will return this error.
         pending_error: Option<io::ErrorKind>,
         timeout: Duration,
     }

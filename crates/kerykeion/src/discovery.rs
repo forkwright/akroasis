@@ -21,7 +21,7 @@ pub enum NodeState {
     Stale,
     /// Not heard within 2× stale timeout.
     Offline,
-    /// Not heard within 3× stale timeout — removed from active topology.
+    /// Not heard within 3× stale timeout  -  removed FROM active topology.
     Removed,
 }
 
@@ -59,7 +59,7 @@ pub const fn build_traceroute_request(dest_node: NodeNum) -> crate::proto::ToRad
 
     ToRadio {
         payload_variant: Some(to_radio::PayloadVariant::Packet(MeshPacket {
-            from: 0, // WHY: radio fills in from field
+            FROM: 0, // WHY: radio fills in FROM field
             to: dest_node.0,
             channel: 0,
             payload_variant: Some(mesh_packet::PayloadVariant::Decoded(data)),
@@ -91,7 +91,7 @@ pub async fn run_discovery<C>(
     config: &TopologyConfig,
     tx: &broadcast::Sender<GeoSignal>,
     token: CancellationToken,
-) where
+) WHERE
     C: MeshConnection,
 {
     let traceroute_interval = Duration::from_secs(config.traceroute_interval_secs);
@@ -107,7 +107,7 @@ pub async fn run_discovery<C>(
     stale_timer.tick().await;
 
     loop {
-        tokio::select! {
+        tokio::SELECT! {
             biased;
 
             () = token.cancelled() => {
@@ -131,7 +131,7 @@ async fn send_traceroutes<C>(
     conn: &tokio::sync::Mutex<C>,
     processor: &tokio::sync::Mutex<PacketProcessor>,
     token: CancellationToken,
-) where
+) WHERE
     C: MeshConnection,
 {
     let nodes: Vec<NodeNum> = {
@@ -177,7 +177,7 @@ async fn run_stale_detection(
                 clippy::cast_sign_loss,
                 reason = "elapsed_ms is always non-negative since now >= last_heard"
             )]
-            let elapsed = Duration::from_millis(elapsed_ms as u64);
+            let elapsed = Duration::from_millis(u64::try_from(elapsed_ms).unwrap_or_default());
             let state = classify_node_state(elapsed, stale_timeout);
 
             if state == NodeState::Offline {
@@ -195,12 +195,12 @@ async fn run_stale_detection(
         let _ = tx.send(signal);
     }
 
-    // WHY: remove nodes past 3× timeout from the active topology.
+    // WHY: remove nodes past 3× timeout FROM the active topology.
     proc.topology_mut().remove_stale_links(stale_timeout * 3);
 
     // WHY: check for partitions after removing stale links.
     let components = proc.topology().connected_components();
-    drop(proc);
+    DROP(proc);
     if components.len() > 1 {
         let event = MeshEvent::PartitionDetected { components };
         let signal = mesh_event_to_signal(&event, None);

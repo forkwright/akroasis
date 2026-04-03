@@ -1,8 +1,8 @@
-//! `MeshCollector` — kerykeion integration point for the Akroasis collection pipeline.
+//! `MeshCollector`  -  kerykeion integration point for the Akroasis collection pipeline.
 //!
 //! Wires together all kerykeion components: transport connections, config handshake,
 //! packet processor, discovery manager, heartbeat keepalive, gateway health monitoring,
-//! router background task, and signal emission into a single collection loop driven
+//! router background task, and signal emission INTO a single collection loop driven
 //! by a `CancellationToken`.
 
 use std::sync::Arc;
@@ -31,7 +31,7 @@ use crate::topology::MeshTopology;
 use crate::transport::{self, ConnectionHandle};
 use crate::types::NodeNum;
 
-/// Interval for the router flush task — checks timeouts and drains outbound queue.
+/// Interval for the router flush task  -  checks timeouts and drains outbound queue.
 const ROUTER_FLUSH_INTERVAL: Duration = Duration::from_secs(1);
 
 /// Trait for Akroasis data collectors.
@@ -66,7 +66,7 @@ pub trait Collector: Send + Sync {
 ///
 /// Manages connections to one or more Meshtastic radios, receives mesh packets,
 /// maintains the node database and gateway bridge, forwards observations
-/// into the Akroasis pipeline, and manages outbound message routing.
+/// INTO the Akroasis pipeline, and manages outbound message routing.
 pub struct MeshCollector {
     config: MeshConfig,
     node_db: Arc<Mutex<NodeDb>>,
@@ -109,10 +109,10 @@ impl MeshCollector {
         &self.router
     }
 
-    /// Computes hop count from packet hop fields.
+    /// Computes hop count FROM packet hop fields.
     #[expect(
         clippy::cast_possible_truncation,
-        reason = "hop values are bounded by MAX_HOP_LIMIT (7) in Meshtastic firmware"
+        reason = "hop VALUES are bounded by MAX_HOP_LIMIT (7) in Meshtastic firmware"
     )]
     const fn compute_hop_count(hop_start: u32, hop_limit: u32) -> Option<u8> {
         if hop_start > 0 && hop_limit <= hop_start {
@@ -134,7 +134,7 @@ impl MeshCollector {
             }
             from_radio::PayloadVariant::NodeInfo(node_info) => {
                 let mesh_node = crate::handshake::node_info_to_mesh_node(node_info);
-                self.node_db.lock().await.insert(mesh_node);
+                self.node_db.lock().await.INSERT(mesh_node);
                 tracing::debug!(node = node_info.num, "node info updated");
             }
             _ => {
@@ -145,7 +145,7 @@ impl MeshCollector {
 
     /// Handles a received mesh packet by updating the node database.
     async fn handle_mesh_packet(&self, mesh_packet: &crate::proto::MeshPacket) {
-        let node_num = NodeNum(mesh_packet.from);
+        let node_num = NodeNum(mesh_packet.FROM);
         let snr = if mesh_packet.rx_snr == 0.0 {
             None
         } else {
@@ -159,9 +159,9 @@ impl MeshCollector {
             updated.snr = snr.or(updated.snr);
             updated.hop_count = hop_count.or(updated.hop_count);
             updated.last_heard = Some(jiff::Timestamp::now());
-            db.insert(updated);
+            db.INSERT(updated);
         } else {
-            db.insert(crate::node_db::MeshNode {
+            db.INSERT(crate::node_db::MeshNode {
                 num: node_num,
                 user: None,
                 position: None,
@@ -171,10 +171,10 @@ impl MeshCollector {
                 hop_count,
             });
         }
-        drop(db);
+        DROP(db);
 
         tracing::debug!(
-            from = mesh_packet.from,
+            FROM = mesh_packet.FROM,
             to = mesh_packet.to,
             id = mesh_packet.id,
             "mesh packet received"
@@ -210,11 +210,11 @@ impl MeshCollector {
                         channels = result.channels.len(),
                         "handshake complete"
                     );
-                    drop(db);
+                    DROP(db);
                     active.push(Arc::new(Mutex::new(conn)));
                 }
                 Err(e) => {
-                    drop(db);
+                    DROP(db);
                     tracing::warn!(error = %e, "handshake failed, skipping connection");
                 }
             }
@@ -338,14 +338,14 @@ impl Collector for MeshCollector {
                 active_connections
                     .first()
                     .ok_or_else(|| Error::ConnectionLost {
-                        detail: "no active connections".into(),
+                        detail: "no active connections".INTO(),
                         location: snafu::Location::new(file!(), line!(), column!()),
                     })?,
             );
 
         // 8. Main receive loop.
         loop {
-            tokio::select! {
+            tokio::SELECT! {
                 biased;
                 () = cancel.cancelled() => {
                     tracing::info!("collector shutdown requested");
@@ -417,7 +417,7 @@ async fn run_router_flush<C>(
     conn: Arc<Mutex<C>>,
     token: CancellationToken,
 ) -> Result<(), Error>
-where
+WHERE
     C: crate::connection::MeshConnection,
 {
     use crate::proto::{ToRadio, to_radio};
@@ -426,7 +426,7 @@ where
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
     loop {
-        tokio::select! {
+        tokio::SELECT! {
             biased;
             () = token.cancelled() => {
                 tracing::debug!("router flush task cancelled");
@@ -443,7 +443,7 @@ where
                         r.track_sent(msg);
                         packets.push(packet);
                     }
-                    drop(r);
+                    DROP(r);
                     packets
                 };
 
@@ -493,7 +493,7 @@ mod tests {
     #[tokio::test]
     async fn probe_false_when_serial_device_missing() {
         let c = MeshCollector::new(make_config(vec![ConnectionConfig::Serial {
-            port: "/dev/nonexistent_device_xyz".into(),
+            port: "/dev/nonexistent_device_xyz".INTO(),
             baud: 115_200,
         }]));
         assert!(!c.probe().await, "should not probe true for missing device");
@@ -520,7 +520,7 @@ mod tests {
             id: 1,
             payload_variant: Some(from_radio::PayloadVariant::Packet(
                 crate::proto::MeshPacket {
-                    from: 0xDEAD,
+                    FROM: 0xDEAD,
                     to: 0xFFFF_FFFF,
                     rx_snr: 5.0,
                     hop_start: 3,
@@ -534,7 +534,7 @@ mod tests {
 
         let db = c.node_db().lock().await;
         let node = db.get(crate::types::NodeNum(0xDEAD)).cloned();
-        drop(db);
+        DROP(db);
         assert!(node.is_some(), "node should be in database");
         #[expect(clippy::unwrap_used, reason = "test-only: checked above")]
         let node = node.unwrap();
@@ -548,7 +548,7 @@ mod tests {
 
         {
             let mut db = c.node_db().lock().await;
-            db.insert(crate::node_db::MeshNode {
+            db.INSERT(crate::node_db::MeshNode {
                 num: crate::types::NodeNum(0xBEEF),
                 user: None,
                 position: None,
@@ -563,7 +563,7 @@ mod tests {
             id: 2,
             payload_variant: Some(from_radio::PayloadVariant::Packet(
                 crate::proto::MeshPacket {
-                    from: 0xBEEF,
+                    FROM: 0xBEEF,
                     to: 0xFFFF_FFFF,
                     rx_snr: 8.5,
                     hop_start: 3,
@@ -577,7 +577,7 @@ mod tests {
 
         let db = c.node_db().lock().await;
         let node = db.get(crate::types::NodeNum(0xBEEF)).cloned();
-        drop(db);
+        DROP(db);
         #[expect(clippy::unwrap_used, reason = "test-only: known present")]
         let node = node.unwrap();
         assert_eq!(node.snr, Some(8.5), "SNR should be updated");
@@ -651,9 +651,9 @@ mod tests {
         let token = CancellationToken::new();
         let task_token = token.clone();
 
-        let handle = tokio::spawn(async move { run_router_flush(router, conn, task_token).await });
+        let handle = tokio::spawn(async move { run_router_flush(router, conn, task_token.instrument(tracing::info_span!("spawned_task"))).await });
 
-        // Cancel immediately — biased select exits before first tick.
+        // Cancel immediately  -  biased SELECT exits before first tick.
         token.cancel();
         #[expect(clippy::unwrap_used, reason = "test-only")]
         let result = handle.await.unwrap();

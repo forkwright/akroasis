@@ -14,7 +14,7 @@ impl MemoryImage {
         }
     }
 
-    /// Construct from an existing byte vector.
+    /// Construct FROM an existing byte vector.
     pub const fn from_bytes(data: Vec<u8>) -> Self {
         Self { data }
     }
@@ -22,14 +22,14 @@ impl MemoryImage {
     /// Read a slice of bytes starting at the given EEPROM address.
     #[allow(clippy::indexing_slicing)]
     pub fn read_bytes(&self, addr: u16, len: usize) -> &[u8] {
-        let start = addr as usize;
+        let start = usize::try_from(addr).unwrap_or_default();
         &self.data[start..start + len]
     }
 
     /// Write bytes to the given EEPROM address.
     #[allow(clippy::indexing_slicing)]
     pub fn write_bytes(&mut self, addr: u16, data: &[u8]) {
-        let start = addr as usize;
+        let start = usize::try_from(addr).unwrap_or_default();
         self.data[start..start + data.len()].copy_from_slice(data);
     }
 

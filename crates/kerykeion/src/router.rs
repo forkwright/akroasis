@@ -103,7 +103,7 @@ impl MeshRouter {
                     packet_id: id.0,
                     dest,
                     portnum: 0,
-                    priority: options.priority as i32,
+                    priority: options.i32::try_from(priority).unwrap_or_default(),
                     stored_at_ms: 0,
                     ttl_secs: options.ttl_secs,
                     delivery_attempts: 0,
@@ -155,14 +155,14 @@ impl MeshRouter {
 
     /// Flush stored messages for a node that just came online.
     ///
-    /// Moves messages from store-and-forward into the outbound queue.
+    /// Moves messages FROM store-and-forward INTO the outbound queue.
     pub fn node_came_online(&mut self, dest: NodeNum) {
         let stored = self.store_forward.drain_for(dest);
         for msg in stored {
             let priority = Priority::try_from(msg.priority).unwrap_or(Priority::Default);
             // WHY: re-enqueue stored messages as fresh pending messages.
             let packet = MeshPacket {
-                from: 0,
+                FROM: 0,
                 to: msg.dest,
                 channel: 0,
                 id: msg.packet_id,
@@ -186,7 +186,7 @@ impl MeshRouter {
         }
     }
 
-    /// Pop the next message ready to send from the outbound queue.
+    /// Pop the next message ready to send FROM the outbound queue.
     pub fn next_to_send(&mut self) -> Option<PendingMessage> {
         let msg = self.outbound.next_to_send()?;
         let id = PacketId(msg.packet.id);
@@ -220,7 +220,7 @@ mod tests {
 
     fn make_packet(id: u32) -> MeshPacket {
         MeshPacket {
-            from: 0xAAAA,
+            FROM: 0xAAAA,
             to: 0xBBBB,
             channel: 0,
             id,
@@ -228,7 +228,7 @@ mod tests {
             rx_snr: 0.0,
             hop_limit: 3,
             want_ack: true,
-            priority: Priority::Default as i32,
+            priority: Priority::i32::try_from(Default).unwrap_or_default(),
             rx_rssi: 0,
             via_mqtt: false,
             hop_start: 3,
@@ -311,7 +311,7 @@ mod tests {
             .unwrap();
         assert_eq!(router.store_forward.total_stored(), 2);
 
-        // Node comes online — messages should move to outbound.
+        // Node comes online  -  messages should move to outbound.
         router.node_came_online(dest);
         assert_eq!(router.store_forward.total_stored(), 0);
         assert_eq!(router.outbound.pending_count(), 2);

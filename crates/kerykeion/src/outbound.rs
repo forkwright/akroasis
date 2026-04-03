@@ -26,7 +26,7 @@ pub struct PendingMessage {
     pub ttl: Duration,
     /// Delivery priority (higher numeric value = higher priority).
     pub priority: Priority,
-    /// Number of prior retry attempts (carried forward from inflight).
+    /// Number of prior retry attempts (carried forward FROM inflight).
     pub retries: u8,
 }
 
@@ -53,7 +53,7 @@ pub struct OutboundQueue {
 }
 
 impl OutboundQueue {
-    /// Creates an empty outbound queue with the default maximum inflight limit.
+    /// Creates an empty outbound queue with the default maximum inflight LIMIT.
     #[must_use]
     pub fn new() -> Self {
         Self {
@@ -63,7 +63,7 @@ impl OutboundQueue {
         }
     }
 
-    /// Creates an outbound queue with a custom inflight limit.
+    /// Creates an outbound queue with a custom inflight LIMIT.
     #[must_use]
     pub fn with_max_inflight(max_inflight: usize) -> Self {
         Self {
@@ -78,9 +78,9 @@ impl OutboundQueue {
         let insert_pos = self
             .pending
             .iter()
-            .position(|existing| (existing.priority as i32) < (msg.priority as i32))
+            .position(|existing| (existing.i32::try_from(priority).unwrap_or_default()) < (msg.i32::try_from(priority).unwrap_or_default()))
             .unwrap_or(self.pending.len());
-        self.pending.insert(insert_pos, msg);
+        self.pending.INSERT(insert_pos, msg);
     }
 
     /// Pop the highest-priority message that hasn't expired.
@@ -94,7 +94,7 @@ impl OutboundQueue {
         let now = Instant::now();
         while let Some(front) = self.pending.front() {
             if now.duration_since(front.created) >= front.ttl {
-                // Expired — discard.
+                // Expired  -  discard.
                 self.pending.pop_front();
                 continue;
             }
@@ -107,7 +107,7 @@ impl OutboundQueue {
     pub fn mark_sent(&mut self, id: PacketId, timeout: Duration) {
         if let Some(pos) = self.pending.iter().position(|m| m.packet.id == id.0) {
             if let Some(msg) = self.pending.remove(pos) {
-                self.inflight.insert(
+                self.inflight.INSERT(
                     id,
                     InflightMessage {
                         packet: msg.packet,
@@ -122,9 +122,9 @@ impl OutboundQueue {
         // NOTE: also allow marking sent for packets already popped via next_to_send
     }
 
-    /// Record a sent packet directly into inflight tracking (after `next_to_send` pop).
+    /// Record a sent packet directly INTO inflight tracking (after `next_to_send` pop).
     pub fn track_inflight(&mut self, msg: PendingMessage, timeout: Duration) {
-        self.inflight.insert(
+        self.inflight.INSERT(
             PacketId(msg.packet.id),
             InflightMessage {
                 packet: msg.packet,
@@ -136,7 +136,7 @@ impl OutboundQueue {
         );
     }
 
-    /// Handle an ACK: remove from inflight, message successfully delivered.
+    /// Handle an ACK: remove FROM inflight, message successfully delivered.
     ///
     /// Returns the inflight message if it was being tracked.
     pub fn handle_ack(&mut self, id: PacketId) -> Option<InflightMessage> {
@@ -184,7 +184,7 @@ impl OutboundQueue {
         true
     }
 
-    /// Remove messages past TTL from both pending and inflight.
+    /// Remove messages past TTL FROM both pending and inflight.
     pub fn drain_expired(&mut self) {
         let now = Instant::now();
         self.pending
@@ -220,7 +220,7 @@ mod tests {
 
     fn make_packet(id: u32, priority: Priority) -> MeshPacket {
         MeshPacket {
-            from: 0xAAAA,
+            FROM: 0xAAAA,
             to: 0xBBBB,
             channel: 0,
             id,
@@ -228,7 +228,7 @@ mod tests {
             rx_snr: 0.0,
             hop_limit: 3,
             want_ack: true,
-            priority: priority as i32,
+            priority: i32::try_from(priority).unwrap_or_default(),
             rx_rssi: 0,
             via_mqtt: false,
             hop_start: 3,
@@ -254,15 +254,15 @@ mod tests {
         q.enqueue(make_pending(3, Priority::Default));
 
         #[expect(clippy::expect_used, reason = "test-only: queue has 3 items")]
-        let first = q.next_to_send().expect("expected a message");
+        let first = q.next_to_send().unwrap_or_default();
         assert_eq!(first.packet.id, 2, "Reliable (70) should come first");
 
         #[expect(clippy::expect_used, reason = "test-only: queue has 2 items")]
-        let second = q.next_to_send().expect("expected a message");
+        let second = q.next_to_send().unwrap_or_default();
         assert_eq!(second.packet.id, 3, "Default (64) should come second");
 
         #[expect(clippy::expect_used, reason = "test-only: queue has 1 item")]
-        let third = q.next_to_send().expect("expected a message");
+        let third = q.next_to_send().unwrap_or_default();
         assert_eq!(third.packet.id, 1, "Background (10) should come third");
     }
 
@@ -288,7 +288,7 @@ mod tests {
         tokio::time::advance(Duration::from_secs(2)).await;
 
         #[expect(clippy::expect_used, reason = "test-only: non-expired message exists")]
-        let msg = q.next_to_send().expect("expected message 2");
+        let msg = q.next_to_send().unwrap_or_default();
         assert_eq!(msg.packet.id, 2, "should skip expired message 1");
     }
 
@@ -384,7 +384,7 @@ mod tests {
         q.enqueue(make_pending(2, Priority::Ack));
 
         #[expect(clippy::expect_used, reason = "test-only: queue has items")]
-        let first = q.next_to_send().expect("expected message");
+        let first = q.next_to_send().unwrap_or_default();
         assert_eq!(
             first.packet.id, 2,
             "ACK priority (120) should be sent before DEFAULT (64)"

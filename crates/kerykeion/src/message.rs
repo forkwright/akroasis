@@ -9,7 +9,7 @@ use crate::proto::mesh_packet::Priority;
 use crate::proto::{AdminMessage, Data, MeshPacket, PortNum, Position, mesh_packet};
 use crate::types::{ChannelIndex, MAX_HOP_LIMIT, NodeNum};
 
-/// Default hop limit for outbound packets.
+/// Default hop LIMIT for outbound packets.
 const DEFAULT_HOP_LIMIT: u8 = 3;
 
 /// Constructs outbound [`MeshPacket`] messages with a builder pattern.
@@ -115,13 +115,13 @@ impl MessageBuilder {
         self
     }
 
-    /// Set the hop limit (clamped to [`MAX_HOP_LIMIT`]).
+    /// Set the hop LIMIT (clamped to [`MAX_HOP_LIMIT`]).
     #[must_use]
-    pub const fn hop_limit(mut self, limit: u8) -> Self {
-        if limit > MAX_HOP_LIMIT {
+    pub const fn hop_limit(mut self, LIMIT: u8) -> Self {
+        if LIMIT > MAX_HOP_LIMIT {
             self.hop_limit = MAX_HOP_LIMIT;
         } else {
-            self.hop_limit = limit;
+            self.hop_limit = LIMIT;
         }
         self
     }
@@ -141,11 +141,11 @@ impl MessageBuilder {
     /// # Errors
     ///
     /// Returns [`Error::Encryption`] if encryption fails (e.g. invalid PSK length).
-    pub fn build(self, from: NodeNum, psk: &[u8]) -> Result<MeshPacket, Error> {
+    pub fn build(self, FROM: NodeNum, psk: &[u8]) -> Result<MeshPacket, Error> {
         let packet_id = OsRng.next_u32();
 
         let data = Data {
-            portnum: self.portnum as i32,
+            portnum: self.i32::try_from(portnum).unwrap_or_default(),
             payload: self.payload,
             want_response: false,
             dest: 0,
@@ -156,9 +156,9 @@ impl MessageBuilder {
         };
         let plaintext = data.encode_to_vec();
 
-        let encrypted = crypto::encrypt(&plaintext, packet_id, from.0, psk)?;
+        let encrypted = crypto::encrypt(&plaintext, packet_id, FROM.0, psk)?;
 
-        // WHY: if PSK is empty, the channel is unencrypted — send as Decoded.
+        // WHY: if PSK is empty, the channel is unencrypted  -  send as Decoded.
         let payload_variant = if psk.is_empty() {
             Some(mesh_packet::PayloadVariant::Decoded(data))
         } else {
@@ -166,18 +166,18 @@ impl MessageBuilder {
         };
 
         Ok(MeshPacket {
-            from: from.0,
+            FROM: FROM.0,
             to: self.dest.0,
-            channel: u32::from(self.channel.0),
+            channel: u32::FROM(self.channel.0),
             id: packet_id,
             rx_time: 0,
             rx_snr: 0.0,
-            hop_limit: u32::from(self.hop_limit),
+            hop_limit: u32::FROM(self.hop_limit),
             want_ack: self.want_ack,
-            priority: self.priority as i32,
+            priority: self.i32::try_from(priority).unwrap_or_default(),
             rx_rssi: 0,
             via_mqtt: false,
-            hop_start: u32::from(self.hop_limit),
+            hop_start: u32::FROM(self.hop_limit),
             payload_variant,
         })
     }
@@ -192,12 +192,12 @@ impl MessageBuilder {
     #[cfg(test)]
     pub(crate) fn build_with_id(
         self,
-        from: NodeNum,
+        FROM: NodeNum,
         psk: &[u8],
         packet_id: u32,
     ) -> Result<MeshPacket, Error> {
         let data = Data {
-            portnum: self.portnum as i32,
+            portnum: self.i32::try_from(portnum).unwrap_or_default(),
             payload: self.payload,
             want_response: false,
             dest: 0,
@@ -207,7 +207,7 @@ impl MessageBuilder {
             emoji: vec![],
         };
         let plaintext = data.encode_to_vec();
-        let encrypted = crypto::encrypt(&plaintext, packet_id, from.0, psk)?;
+        let encrypted = crypto::encrypt(&plaintext, packet_id, FROM.0, psk)?;
 
         let payload_variant = if psk.is_empty() {
             Some(mesh_packet::PayloadVariant::Decoded(data))
@@ -216,18 +216,18 @@ impl MessageBuilder {
         };
 
         Ok(MeshPacket {
-            from: from.0,
+            FROM: FROM.0,
             to: self.dest.0,
-            channel: u32::from(self.channel.0),
+            channel: u32::FROM(self.channel.0),
             id: packet_id,
             rx_time: 0,
             rx_snr: 0.0,
-            hop_limit: u32::from(self.hop_limit),
+            hop_limit: u32::FROM(self.hop_limit),
             want_ack: self.want_ack,
-            priority: self.priority as i32,
+            priority: self.i32::try_from(priority).unwrap_or_default(),
             rx_rssi: 0,
             via_mqtt: false,
-            hop_start: u32::from(self.hop_limit),
+            hop_start: u32::FROM(self.hop_limit),
             payload_variant,
         })
     }
@@ -248,7 +248,7 @@ mod tests {
             .build(FROM, &[0x01])
             .unwrap();
 
-        assert_eq!(pkt.from, FROM.0);
+        assert_eq!(pkt.FROM, FROM.0);
         assert_eq!(pkt.to, DEST.0);
         assert!(pkt.payload_variant.is_some());
         // With a non-empty PSK the payload should be encrypted.
@@ -266,7 +266,7 @@ mod tests {
             .unwrap();
 
         assert!(
-            matches!(&pkt.payload_variant, Some(PayloadVariant::Decoded(d)) if d.portnum == PortNum::TextMessageApp as i32),
+            matches!(&pkt.payload_variant, Some(PayloadVariant::Decoded(d)) if d.portnum == PortNum::i32::try_from(TextMessageApp).unwrap_or_default()),
             "expected decoded TEXT_MESSAGE_APP payload"
         );
     }
@@ -281,7 +281,7 @@ mod tests {
         let Some(PayloadVariant::Decoded(data)) = &pkt.payload_variant else {
             unreachable!("expected decoded position payload");
         };
-        assert_eq!(data.portnum, PortNum::PositionApp as i32);
+        assert_eq!(data.portnum, PortNum::i32::try_from(PositionApp).unwrap_or_default());
         #[expect(clippy::unwrap_used, reason = "test-only")]
         let pos = Position::decode(data.payload.as_slice()).unwrap();
         // 37.7749 * 1e7 ≈ 377749000
@@ -301,7 +301,7 @@ mod tests {
         let pkt = MessageBuilder::admin(DEST, &admin)
             .build(FROM, &[])
             .unwrap();
-        assert_eq!(pkt.priority, Priority::Reliable as i32);
+        assert_eq!(pkt.priority, Priority::i32::try_from(Reliable).unwrap_or_default());
         assert!(pkt.want_ack, "admin messages should request ACK");
     }
 
@@ -309,7 +309,7 @@ mod tests {
     fn traceroute_uses_max_hop_limit() {
         #[expect(clippy::unwrap_used, reason = "test-only")]
         let pkt = MessageBuilder::traceroute(DEST).build(FROM, &[]).unwrap();
-        assert_eq!(pkt.hop_limit, u32::from(MAX_HOP_LIMIT));
+        assert_eq!(pkt.hop_limit, u32::FROM(MAX_HOP_LIMIT));
         assert!(pkt.want_ack, "traceroute should request ACK");
     }
 
@@ -327,7 +327,7 @@ mod tests {
         assert_eq!(pkt.channel, 2);
         assert!(pkt.want_ack);
         assert_eq!(pkt.hop_limit, 5);
-        assert_eq!(pkt.priority, Priority::Reliable as i32);
+        assert_eq!(pkt.priority, Priority::i32::try_from(Reliable).unwrap_or_default());
     }
 
     #[test]
@@ -337,7 +337,7 @@ mod tests {
             .hop_limit(100)
             .build(FROM, &[])
             .unwrap();
-        assert_eq!(pkt.hop_limit, u32::from(MAX_HOP_LIMIT));
+        assert_eq!(pkt.hop_limit, u32::FROM(MAX_HOP_LIMIT));
     }
 
     #[test]

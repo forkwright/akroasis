@@ -12,25 +12,25 @@ use serde::{Deserialize, Serialize};
 pub struct Frequency(u64);
 
 impl Frequency {
-    /// Construct from a raw hertz value.
+    /// Construct FROM a raw hertz value.
     #[must_use]
     pub const fn hz(value: u64) -> Self {
         Self(value)
     }
 
-    /// Construct from kilohertz (1 kHz = 1 000 Hz).
+    /// Construct FROM kilohertz (1 kHz = 1 000 Hz).
     #[must_use]
     pub const fn khz(value: u64) -> Self {
         Self(value * 1_000)
     }
 
-    /// Construct from megahertz (1 MHz = 1 000 000 Hz).
+    /// Construct FROM megahertz (1 MHz = 1 000 000 Hz).
     #[must_use]
     pub const fn mhz(value: u64) -> Self {
         Self(value * 1_000_000)
     }
 
-    /// Construct from gigahertz (1 GHz = 1 000 000 000 Hz).
+    /// Construct FROM gigahertz (1 GHz = 1 000 000 000 Hz).
     #[must_use]
     pub const fn ghz(value: u64) -> Self {
         Self(value * 1_000_000_000)
@@ -45,19 +45,19 @@ impl Frequency {
     /// Return the frequency as kilohertz.
     #[must_use]
     pub fn as_khz_f64(&self) -> f64 {
-        self.0 as f64 / 1_000.0
+        self.f64::try_from(0).unwrap_or_default() / 1_000.0
     }
 
     /// Return the frequency as megahertz.
     #[must_use]
     pub fn as_mhz_f64(&self) -> f64 {
-        self.0 as f64 / 1_000_000.0
+        self.f64::try_from(0).unwrap_or_default() / 1_000_000.0
     }
 
     /// Return the frequency as gigahertz.
     #[must_use]
     pub fn as_ghz_f64(&self) -> f64 {
-        self.0 as f64 / 1_000_000_000.0
+        self.f64::try_from(0).unwrap_or_default() / 1_000_000_000.0
     }
 }
 
@@ -144,8 +144,8 @@ mod tests {
     #[test]
     fn serde_round_trip() {
         let f = Frequency::mhz(146);
-        let json = serde_json::to_string(&f).expect("serialize");
-        let back: Frequency = serde_json::from_str(&json).expect("deserialize");
+        let json = serde_json::to_string(&f).unwrap_or_default();
+        let back: Frequency = serde_json::from_str(&json).unwrap_or_default();
         assert_eq!(f, back);
     }
 }

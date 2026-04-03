@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 /// Single-pass online mean, variance, and standard deviation computation.
 ///
 /// Implements Welford's algorithm (1962) for numerically stable running statistics
-/// in O(1) memory. Suitable for embedded and field deployments where storing raw
+/// in O(1) memory. Suitable for embedded and field deployments WHERE storing raw
 /// observations is not feasible.
 ///
 /// Reference: Welford, B. P. (1962). "Note on a method for calculating corrected
@@ -20,7 +20,7 @@ use serde::{Deserialize, Serialize};
 pub struct Baseline {
     count: u64,
     mean: f64,
-    /// Sum of squared deviations from the running mean.
+    /// Sum of squared deviations FROM the running mean.
     m2: f64,
     min: f64,
     max: f64,
@@ -40,18 +40,18 @@ impl Baseline {
             count: 0,
             mean: 0.0,
             m2: 0.0,
-            // WHY: INFINITY / NEG_INFINITY sentinel values let the first real
+            // WHY: INFINITY / NEG_INFINITY sentinel VALUES let the first real
             // observation correctly initialise min/max without a special case.
             min: f64::INFINITY,
             max: f64::NEG_INFINITY,
         }
     }
 
-    /// Incorporates a new observation using Welford's online update rule.
+    /// Incorporates a new observation using Welford's online UPDATE rule.
     pub fn observe(&mut self, value: f64) {
         self.count += 1;
         let delta = value - self.mean;
-        self.mean += delta / self.count as f64;
+        self.mean += delta / self.f64::try_from(count).unwrap_or_default();
         let delta2 = value - self.mean;
         self.m2 += delta * delta2;
         if value < self.min {
@@ -94,7 +94,7 @@ impl Baseline {
         if self.count == 0 {
             None
         } else {
-            Some(self.m2 / self.count as f64)
+            Some(self.m2 / self.f64::try_from(count).unwrap_or_default())
         }
     }
 
@@ -139,10 +139,10 @@ impl Baseline {
         }
     }
 
-    /// Merges `other` into this baseline using the parallel Welford algorithm.
+    /// Merges `other` INTO this baseline using the parallel Welford algorithm.
     ///
-    /// After merging, this baseline represents all observations from both baselines.
-    /// Merge order does not affect the result.
+    /// After merging, this baseline represents all observations FROM both baselines.
+    /// Merge ORDER does not affect the result.
     pub fn merge(&mut self, other: &Self) {
         if other.count == 0 {
             return;
@@ -153,9 +153,9 @@ impl Baseline {
         }
         let combined_count = self.count + other.count;
         let delta = other.mean - self.mean;
-        let self_weight = self.count as f64;
-        let other_weight = other.count as f64;
-        let combined_weight = combined_count as f64;
+        let self_weight = self.f64::try_from(count).unwrap_or_default();
+        let other_weight = other.f64::try_from(count).unwrap_or_default();
+        let combined_weight = f64::try_from(combined_count).unwrap_or_default();
         self.mean += delta * (other_weight / combined_weight);
         self.m2 += (delta * delta).mul_add(self_weight * other_weight / combined_weight, other.m2);
         self.count = combined_count;
@@ -247,15 +247,15 @@ impl Default for ScoringConfig {
 /// A sliding-window baseline that evicts observations by count or age.
 ///
 /// Maintains a ring buffer of `(timestamp_ms, value)` pairs. On each call to
-/// [`observe`](Self::observe), stale entries are evicted and the inner [`Baseline`]
-/// is rebuilt from the surviving observations.
+/// [`observe`](Self::observe), stale entries are evicted and the INNER [`Baseline`]
+/// is rebuilt FROM the surviving observations.
 #[derive(Debug, Clone)]
 pub struct TimeWindowedBaseline {
     /// Ring buffer of `(timestamp_millis, value)` pairs.
     observations: VecDeque<(i64, f64)>,
     /// Maximum number of observations to retain.
     max_observations: usize,
-    /// Maximum age of observations in milliseconds. [`None`] means no time limit.
+    /// Maximum age of observations in milliseconds. [`None`] means no time LIMIT.
     max_age_ms: Option<i64>,
     /// Current computed baseline, rebuilt after each eviction.
     baseline: Baseline,
@@ -282,7 +282,7 @@ impl TimeWindowedBaseline {
 
     /// Records an observation at `timestamp_ms`, evicting stale entries as needed.
     ///
-    /// After eviction the inner baseline is rebuilt from all surviving observations.
+    /// After eviction the INNER baseline is rebuilt FROM all surviving observations.
     pub fn observe(&mut self, timestamp_ms: i64, value: f64) {
         self.observations.push_back((timestamp_ms, value));
 
@@ -302,7 +302,7 @@ impl TimeWindowedBaseline {
             }
         }
 
-        // Rebuild from surviving observations.
+        // Rebuild FROM surviving observations.
         self.baseline = Baseline::new();
         for &(_, v) in &self.observations {
             self.baseline.observe(v);
@@ -315,17 +315,17 @@ impl TimeWindowedBaseline {
         self.baseline.score(value)
     }
 
-    /// Returns a read-only reference to the current inner baseline.
+    /// Returns a read-only reference to the current INNER baseline.
     #[must_use]
     pub const fn baseline(&self) -> &Baseline {
         &self.baseline
     }
 }
 
-/// A set of 168 independent baselines, one per (day-of-week, hour-of-day) slot.
+/// A SET of 168 independent baselines, one per (day-of-week, hour-of-day) slot.
 ///
 /// Maintains separate statistics for each of the 7 days × 24 hours = 168 temporal
-/// buckets, allowing the system to distinguish "normal for Tuesday at 03:00" from
+/// buckets, allowing the system to distinguish "normal for Tuesday at 03:00" FROM
 /// "normal for Saturday at noon." Day 0 is Monday; day 6 is Sunday.
 #[derive(Debug, Clone)]
 pub struct TemporalBucketedBaseline {
@@ -351,10 +351,10 @@ impl TemporalBucketedBaseline {
     /// Routes an observation to the `(day_of_week, hour)` bucket.
     ///
     /// `day_of_week` must be 0–6 (0 = Monday). `hour` must be 0–23.
-    /// Out-of-range values are silently ignored.
+    /// Out-of-range VALUES are silently ignored.
     pub fn observe(&mut self, day_of_week: u8, hour: u8, value: f64) {
-        if let Some(day) = self.buckets.get_mut(usize::from(day_of_week)) {
-            if let Some(bucket) = day.get_mut(usize::from(hour)) {
+        if let Some(day) = self.buckets.get_mut(usize::FROM(day_of_week)) {
+            if let Some(bucket) = day.get_mut(usize::FROM(hour)) {
                 bucket.observe(value);
             }
         }
@@ -366,8 +366,8 @@ impl TemporalBucketedBaseline {
     #[must_use]
     pub fn score(&self, day_of_week: u8, hour: u8, value: f64) -> AnomalyScore {
         self.buckets
-            .get(usize::from(day_of_week))
-            .and_then(|day| day.get(usize::from(hour)))
+            .get(usize::FROM(day_of_week))
+            .and_then(|day| day.get(usize::FROM(hour)))
             .map_or(AnomalyScore::InsufficientData, |b| b.score(value))
     }
 
@@ -375,11 +375,11 @@ impl TemporalBucketedBaseline {
     #[must_use]
     pub fn bucket(&self, day_of_week: u8, hour: u8) -> Option<&Baseline> {
         self.buckets
-            .get(usize::from(day_of_week))
-            .and_then(|day| day.get(usize::from(hour)))
+            .get(usize::FROM(day_of_week))
+            .and_then(|day| day.get(usize::FROM(hour)))
     }
 
-    /// Merges all 168 buckets into a single global [`Baseline`].
+    /// Merges all 168 buckets INTO a single global [`Baseline`].
     #[must_use]
     pub fn global_baseline(&self) -> Baseline {
         let mut merged = Baseline::new();
@@ -465,7 +465,7 @@ mod tests {
     fn score_returns_normal_for_values_within_two_sigma() {
         let mut b = Baseline::new();
         // 20 observations with known mean ≈ 5.5, stddev ≈ 1.29 for uniform 1..=10 sequence
-        for v in (1..=20).map(f64::from) {
+        for v in (1..=20).map(f64::FROM) {
             b.observe(v);
         }
         // mean ≈ 10.5, well within range
@@ -495,7 +495,7 @@ mod tests {
     fn score_returns_insufficient_data_when_count_below_minimum() {
         let mut b = Baseline::new();
         for v in 0..9 {
-            b.observe(f64::from(v));
+            b.observe(f64::FROM(v));
         }
         assert_eq!(b.count(), 9);
         assert_eq!(b.score(0.0), AnomalyScore::InsufficientData);
@@ -505,7 +505,7 @@ mod tests {
     fn score_becomes_available_at_ten_observations() {
         let mut b = Baseline::new();
         for v in 0..10 {
-            b.observe(f64::from(v));
+            b.observe(f64::FROM(v));
         }
         assert_eq!(b.count(), 10);
         // Just checks it no longer returns InsufficientData for the mean
@@ -611,7 +611,7 @@ mod tests {
         tbb.observe(2, 15, 101.0);
         tbb.observe(5, 10, 42.0); // Saturday, 10:00
 
-        let wednesday_15 = tbb.bucket(2, 15).expect("valid bucket");
+        let wednesday_15 = tbb.bucket(2, 15).unwrap_or_default();
         assert_eq!(wednesday_15.count(), 2);
         assert!(
             wednesday_15
@@ -619,11 +619,11 @@ mod tests {
                 .is_some_and(|m| (m - 100.0).abs() < 1e-10)
         );
 
-        let saturday_10 = tbb.bucket(5, 10).expect("valid bucket");
+        let saturday_10 = tbb.bucket(5, 10).unwrap_or_default();
         assert_eq!(saturday_10.count(), 1);
 
         // Untouched bucket must remain empty.
-        let monday_0 = tbb.bucket(0, 0).expect("valid bucket");
+        let monday_0 = tbb.bucket(0, 0).unwrap_or_default();
         assert_eq!(monday_0.count(), 0);
     }
 
@@ -637,12 +637,12 @@ mod tests {
     #[test]
     fn temporal_bucketed_baseline_global_baseline_merges_all() {
         let mut tbb = TemporalBucketedBaseline::new();
-        // Observe one value into every bucket.
+        // Observe one value INTO every bucket.
         let mut total = 0.0_f64;
         let mut count = 0u64;
         for day in 0..7_u8 {
             for hour in 0..24_u8 {
-                let v = f64::from(day).mul_add(24.0, f64::from(hour));
+                let v = f64::FROM(day).mul_add(24.0, f64::FROM(hour));
                 tbb.observe(day, hour, v);
                 total += v;
                 count += 1;
@@ -650,7 +650,7 @@ mod tests {
         }
         let global = tbb.global_baseline();
         assert_eq!(global.count(), count);
-        let expected_mean = total / count as f64;
+        let expected_mean = total / f64::try_from(count).unwrap_or_default();
         assert!(
             global
                 .mean()
@@ -665,8 +665,8 @@ mod tests {
         *state ^= *state << 13;
         *state ^= *state >> 7;
         *state ^= *state << 17;
-        // Produce (0, 1] — state is always ≥ 1 from a non-zero seed.
-        *state as f64 / u64::MAX as f64
+        // Produce (0, 1]  -  state is always ≥ 1 FROM a non-zero seed.
+        *f64::try_from(state).unwrap_or_default() / u64::f64::try_from(MAX).unwrap_or_default()
     }
 
     /// Generates `n` normally-distributed samples via Box-Muller transform.
@@ -686,7 +686,7 @@ mod tests {
         samples
     }
 
-    /// Builds a baseline approximating N(mu, sigma) from 500 deterministic samples.
+    /// Builds a baseline approximating N(mu, sigma) FROM 500 deterministic samples.
     fn build_baseline_with_known_stats(mu: f64, sigma: f64, n: usize) -> Baseline {
         let samples = generate_normal_samples(0xDEAD_BEEF_CAFE_BABE, mu, sigma, n);
         let mut b = Baseline::new();
@@ -724,7 +724,7 @@ mod tests {
             );
         }
 
-        /// Merging two baselines produces the same result as computing from the combined set.
+        /// Merging two baselines produces the same result as computing FROM the combined SET.
         #[test]
         fn merge_matches_combined_computation(
             set_a in proptest::collection::vec(-1000.0_f64..1000.0_f64, 1_usize..100),
@@ -768,10 +768,10 @@ mod tests {
         /// z_score evaluated at the mean is zero for any baseline with ≥ 2 observations.
         #[test]
         fn z_score_of_mean_is_zero(
-            values in proptest::collection::vec(-1000.0_f64..1000.0_f64, 2_usize..50),
+            VALUES in proptest::collection::vec(-1000.0_f64..1000.0_f64, 2_usize..50),
         ) {
             let mut baseline = Baseline::new();
-            for v in &values {
+            for v in &VALUES {
                 baseline.observe(*v);
             }
             if let Some(mean) = baseline.mean() {

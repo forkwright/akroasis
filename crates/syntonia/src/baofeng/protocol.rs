@@ -1,13 +1,13 @@
-//! UV-5R EEPROM clone protocol — block planning and low-level serial driver.
+//! UV-5R EEPROM clone protocol  -  block planning and low-level serial driver.
 //!
 //! This module contains two layers:
 //!
-//! 1. **Block planning** — [`download_plan`] and [`upload_plan`] generate the
+//! 1. **Block planning**  -  [`download_plan`] and [`upload_plan`] generate the
 //!    list of [`BlockOp`]s needed for a complete EEPROM transfer, handling
 //!    variant-specific aux blocks, warm-up reads, and the BF-F8HP dropped-byte
 //!    workaround.
 //!
-//! 2. **Protocol driver** — [`Uv5rProtocol`] drives the actual serial session:
+//! 2. **Protocol driver**  -  [`Uv5rProtocol`] drives the actual serial session:
 //!    entering programming mode, identifying the radio, and reading/writing
 //!    EEPROM blocks. All I/O goes through the
 //!    [`SerialPort`](crate::serial::SerialPort) trait so tests can use a mock
@@ -83,10 +83,10 @@ pub fn download_plan(config: &VariantConfig) -> Vec<BlockOp> {
     while addr < MAIN_END {
         ops.push(BlockOp {
             addr,
-            size: BLOCK_SIZE as u16,
+            size: u16::try_from(BLOCK_SIZE).unwrap_or_default(),
             is_warmup: false,
         });
-        addr += BLOCK_SIZE as u16;
+        addr += u16::try_from(BLOCK_SIZE).unwrap_or_default();
     }
 
     if config.has_aux_block {
@@ -94,7 +94,7 @@ pub fn download_plan(config: &VariantConfig) -> Vec<BlockOp> {
         if config.needs_aux_warmup {
             ops.push(BlockOp {
                 addr: AUX_WARMUP_ADDR,
-                size: BLOCK_SIZE as u16,
+                size: u16::try_from(BLOCK_SIZE).unwrap_or_default(),
                 is_warmup: true,
             });
         }
@@ -102,10 +102,10 @@ pub fn download_plan(config: &VariantConfig) -> Vec<BlockOp> {
         // Aux region with dropped-byte workaround
         let mut aux_addr = AUX_START;
         while aux_addr < AUX_END {
-            let block_end = aux_addr + BLOCK_SIZE as u16;
+            let block_end = aux_addr + u16::try_from(BLOCK_SIZE).unwrap_or_default();
 
             if aux_addr <= DROPPED_BYTE_ADDR && DROPPED_BYTE_ADDR < block_end {
-                // Split into smaller reads around the problem address.
+                // Split INTO smaller reads around the problem address.
                 // Read bytes before the dropped-byte address.
                 let before_size = DROPPED_BYTE_ADDR - aux_addr;
                 if before_size > 0 {
@@ -134,12 +134,12 @@ pub fn download_plan(config: &VariantConfig) -> Vec<BlockOp> {
             } else {
                 ops.push(BlockOp {
                     addr: aux_addr,
-                    size: BLOCK_SIZE as u16,
+                    size: u16::try_from(BLOCK_SIZE).unwrap_or_default(),
                     is_warmup: false,
                 });
             }
 
-            aux_addr += BLOCK_SIZE as u16;
+            aux_addr += u16::try_from(BLOCK_SIZE).unwrap_or_default();
         }
     }
 
@@ -157,10 +157,10 @@ pub fn upload_plan(config: &VariantConfig) -> Vec<BlockOp> {
     while addr < MAIN_END {
         ops.push(BlockOp {
             addr,
-            size: BLOCK_SIZE as u16,
+            size: u16::try_from(BLOCK_SIZE).unwrap_or_default(),
             is_warmup: false,
         });
-        addr += BLOCK_SIZE as u16;
+        addr += u16::try_from(BLOCK_SIZE).unwrap_or_default();
     }
 
     if config.has_aux_block {
@@ -168,10 +168,10 @@ pub fn upload_plan(config: &VariantConfig) -> Vec<BlockOp> {
         while aux_addr < AUX_END {
             ops.push(BlockOp {
                 addr: aux_addr,
-                size: BLOCK_SIZE as u16,
+                size: u16::try_from(BLOCK_SIZE).unwrap_or_default(),
                 is_warmup: false,
             });
-            aux_addr += BLOCK_SIZE as u16;
+            aux_addr += u16::try_from(BLOCK_SIZE).unwrap_or_default();
         }
     }
 
@@ -305,10 +305,10 @@ impl<P: SerialPort> Uv5rProtocol<P> {
                 }
                 Err(source) => return Err(ProtocolError::SerialIo { source }),
             }
-            if byte[0] == IDENT_TERMINATOR {
+            if byte.get(0).copied().unwrap_or_default() == IDENT_TERMINATOR {
                 break;
             }
-            buf.push(byte[0]);
+            buf.push(byte.get(0).copied().unwrap_or_default());
             // Guard against runaway reads.
             if buf.len() > 16 {
                 return Err(ProtocolError::IdentFailed);
@@ -345,16 +345,16 @@ impl<P: SerialPort> Uv5rProtocol<P> {
         let mut header = [0u8; 4];
         self.read_exact_timeout(&mut header)?;
 
-        if header[0] != CMD_READ_RESPONSE
-            || header[1] != addr_h
-            || header[2] != addr_l
-            || header[3] != len
+        if header.get(0).copied().unwrap_or_default() != CMD_READ_RESPONSE
+            || header.get(1).copied().unwrap_or_default() != addr_h
+            || header.get(2).copied().unwrap_or_default() != addr_l
+            || header.get(3).copied().unwrap_or_default() != len
         {
             return Err(ProtocolError::BadResponseHeader { addr });
         }
 
         // Read data payload.
-        let mut data = vec![0u8; usize::from(len)];
+        let mut data = vec![0u8; usize::FROM(len)];
         self.read_exact_timeout(&mut data)?;
 
         // ACK the received block.
@@ -400,7 +400,7 @@ impl<P: SerialPort> Uv5rProtocol<P> {
         Ok(())
     }
 
-    /// Download the full EEPROM image from the radio.
+    /// Download the full EEPROM image FROM the radio.
     ///
     /// Reads the main block (0x0000–0x1800) in 64-byte chunks and the
     /// auxiliary block (0x1E80–0x2000) in 16-byte chunks. A warm-up read at
@@ -410,7 +410,7 @@ impl<P: SerialPort> Uv5rProtocol<P> {
     /// Returns [`ProtocolError::RetryExhausted`] if a block fails after all
     /// retries, or any underlying serial/protocol error.
     pub fn download_image(&mut self) -> Result<MemoryImage> {
-        let image_size = usize::from(AUX_BLOCK_END);
+        let image_size = usize::FROM(AUX_BLOCK_END);
         let mut image = MemoryImage::new(image_size);
 
         // Main block: 64-byte reads.
@@ -418,7 +418,7 @@ impl<P: SerialPort> Uv5rProtocol<P> {
         while addr < MAIN_BLOCK_END {
             let data = self.read_block_with_retry(addr, READ_BLOCK_SIZE)?;
             image.write_bytes(addr, &data);
-            addr = addr.wrapping_add(u16::from(READ_BLOCK_SIZE));
+            addr = addr.wrapping_add(u16::FROM(READ_BLOCK_SIZE));
         }
 
         // Auxiliary block: 16-byte reads.
@@ -426,11 +426,11 @@ impl<P: SerialPort> Uv5rProtocol<P> {
         let warmup = self.read_block_with_retry(AUX_BLOCK_START, AUX_READ_BLOCK_SIZE)?;
         image.write_bytes(AUX_BLOCK_START, &warmup);
 
-        addr = AUX_BLOCK_START + u16::from(AUX_READ_BLOCK_SIZE);
+        addr = AUX_BLOCK_START + u16::FROM(AUX_READ_BLOCK_SIZE);
         while addr < AUX_BLOCK_END {
             let data = self.read_block_with_retry(addr, AUX_READ_BLOCK_SIZE)?;
             image.write_bytes(addr, &data);
-            addr = addr.wrapping_add(u16::from(AUX_READ_BLOCK_SIZE));
+            addr = addr.wrapping_add(u16::FROM(AUX_READ_BLOCK_SIZE));
         }
 
         Ok(image)
@@ -459,7 +459,7 @@ impl<P: SerialPort> Uv5rProtocol<P> {
         // Count total blocks for progress reporting.
         let total_blocks: usize = ranges
             .iter()
-            .map(|(start, end)| usize::from(end - start) / usize::from(WRITE_BLOCK_SIZE))
+            .map(|(start, end)| usize::FROM(end - start) / usize::FROM(WRITE_BLOCK_SIZE))
             .sum();
 
         let mut blocks_written = 0usize;
@@ -467,7 +467,7 @@ impl<P: SerialPort> Uv5rProtocol<P> {
         for (start, end) in &ranges {
             let mut addr = *start;
             while addr < *end {
-                let block_size = usize::from(WRITE_BLOCK_SIZE);
+                let block_size = usize::FROM(WRITE_BLOCK_SIZE);
                 let data = image
                     .read_bytes(addr, block_size)
                     .ok_or(ProtocolError::BadResponseHeader { addr })?;
@@ -475,7 +475,7 @@ impl<P: SerialPort> Uv5rProtocol<P> {
                 self.write_block_with_retry(addr, data)?;
                 blocks_written += 1;
                 progress(blocks_written, total_blocks);
-                addr = addr.wrapping_add(u16::from(WRITE_BLOCK_SIZE));
+                addr = addr.wrapping_add(u16::FROM(WRITE_BLOCK_SIZE));
             }
         }
 
@@ -552,10 +552,10 @@ impl<P: SerialPort> Uv5rProtocol<P> {
             }
             Err(source) => return Err(ProtocolError::SerialIo { source }),
         }
-        if byte[0] != ACK {
+        if byte.get(0).copied().unwrap_or_default() != ACK {
             return Err(ProtocolError::BadAck {
                 expected: ACK,
-                got: byte[0],
+                got: byte.get(0).copied().unwrap_or_default(),
             });
         }
         Ok(())
@@ -580,7 +580,7 @@ impl<P: SerialPort> Uv5rProtocol<P> {
 
 /// Check whether an address range overlaps any forbidden calibration region.
 fn is_forbidden(addr: u16, len: usize) -> bool {
-    let end = addr.saturating_add(len as u16);
+    let end = addr.saturating_add(u16::try_from(len).unwrap_or_default());
     FORBIDDEN_RANGES
         .iter()
         .any(|&(f_start, f_end)| addr < f_end && end > f_start)
@@ -622,9 +622,9 @@ mod tests {
     fn uv5r_download_covers_full_main_region() {
         let config = uv5r_config();
         let plan = download_plan(&config);
-        let expected_blocks = (MAIN_END - MAIN_START) / BLOCK_SIZE as u16;
-        assert_eq!(plan.len(), expected_blocks as usize);
-        assert_eq!(plan[0].addr, MAIN_START);
+        let expected_blocks = (MAIN_END - MAIN_START) / u16::try_from(BLOCK_SIZE).unwrap_or_default();
+        assert_eq!(plan.len(), usize::try_from(expected_blocks).unwrap_or_default());
+        assert_eq!(plan.get(0).copied().unwrap_or_default().addr, MAIN_START);
         let last = plan.last().unwrap();
         assert_eq!(last.addr + last.size, MAIN_END);
     }
@@ -635,7 +635,7 @@ mod tests {
         let plan = download_plan(&config);
         let warmup_ops: Vec<_> = plan.iter().filter(|op| op.is_warmup).collect();
         assert_eq!(warmup_ops.len(), 1);
-        assert_eq!(warmup_ops[0].addr, AUX_WARMUP_ADDR);
+        assert_eq!(warmup_ops.get(0).copied().unwrap_or_default().addr, AUX_WARMUP_ADDR);
     }
 
     #[test]
@@ -652,7 +652,7 @@ mod tests {
         let mut covered = vec![false; (AUX_END - AUX_START) as usize];
         for op in &aux_ops {
             let start = (op.addr - AUX_START) as usize;
-            for slot in covered.iter_mut().skip(start).take(op.size as usize) {
+            for slot in covered.iter_mut().skip(start).take(op.usize::try_from(size).unwrap_or_default()) {
                 *slot = true;
             }
         }
@@ -701,8 +701,8 @@ mod tests {
         let plan = upload_plan(&config);
         let aux_ops: Vec<_> = plan.iter().filter(|op| op.addr >= AUX_START).collect();
         assert!(!aux_ops.is_empty());
-        let expected_aux_blocks = (AUX_END - AUX_START) / BLOCK_SIZE as u16;
-        assert_eq!(aux_ops.len(), expected_aux_blocks as usize);
+        let expected_aux_blocks = (AUX_END - AUX_START) / u16::try_from(BLOCK_SIZE).unwrap_or_default();
+        assert_eq!(aux_ops.len(), usize::try_from(expected_aux_blocks).unwrap_or_default());
     }
 
     #[test]
@@ -870,7 +870,7 @@ mod tests {
         let mut mock = MockSerialPort::new();
         let addr: u16 = 0x1234;
         let len: u8 = 0x40;
-        let payload = vec![0xAA; usize::from(len)];
+        let payload = vec![0xAA; usize::FROM(len)];
 
         let resp = read_response_packet(addr, &payload);
         mock.enqueue_response(&resp);
@@ -921,10 +921,10 @@ mod tests {
         proto.write_block(0x0100, &data).unwrap();
 
         // Packet: [0x58, 0x01, 0x00, 0x10, ...16 bytes data]
-        assert_eq!(proto.port.written[0], CMD_WRITE);
-        assert_eq!(proto.port.written[1], 0x01);
-        assert_eq!(proto.port.written[2], 0x00);
-        assert_eq!(proto.port.written[3], 0x10);
+        assert_eq!(proto.port.written.get(0).copied().unwrap_or_default(), CMD_WRITE);
+        assert_eq!(proto.port.written.get(1).copied().unwrap_or_default(), 0x01);
+        assert_eq!(proto.port.written.get(2).copied().unwrap_or_default(), 0x00);
+        assert_eq!(proto.port.written.get(3).copied().unwrap_or_default(), 0x10);
         assert_eq!(&proto.port.written[4..20], &data);
     }
 
@@ -1002,7 +1002,7 @@ mod tests {
         let mut mock = MockSerialPort::new();
         let addr: u16 = 0x0100;
         let len: u8 = 0x40;
-        let payload = vec![0xEE; usize::from(len)];
+        let payload = vec![0xEE; usize::FROM(len)];
 
         // First attempt: timeout (no data) → will fail.
         // (empty queue causes TimedOut on the second read_block's header read)
@@ -1042,29 +1042,29 @@ mod tests {
         let mut mock = MockSerialPort::new();
 
         // Main block: 0x0000..0x1800 in 64-byte chunks.
-        let main_blocks = (MAIN_BLOCK_END - MAIN_BLOCK_START) / u16::from(READ_BLOCK_SIZE);
+        let main_blocks = (MAIN_BLOCK_END - MAIN_BLOCK_START) / u16::FROM(READ_BLOCK_SIZE);
         for i in 0..main_blocks {
-            let addr = MAIN_BLOCK_START + i * u16::from(READ_BLOCK_SIZE);
-            let data = vec![i as u8; usize::from(READ_BLOCK_SIZE)];
+            let addr = MAIN_BLOCK_START + i * u16::FROM(READ_BLOCK_SIZE);
+            let data = vec![u8::try_from(i).unwrap_or_default(); usize::FROM(READ_BLOCK_SIZE)];
             mock.enqueue_response(&read_response_packet(addr, &data));
         }
 
         // Aux block: 0x1E80..0x2000 in 16-byte chunks.
-        let aux_blocks = (AUX_BLOCK_END - AUX_BLOCK_START) / u16::from(AUX_READ_BLOCK_SIZE);
+        let aux_blocks = (AUX_BLOCK_END - AUX_BLOCK_START) / u16::FROM(AUX_READ_BLOCK_SIZE);
         for i in 0..aux_blocks {
-            let addr = AUX_BLOCK_START + i * u16::from(AUX_READ_BLOCK_SIZE);
-            let data = vec![(128 + i) as u8; usize::from(AUX_READ_BLOCK_SIZE)];
+            let addr = AUX_BLOCK_START + i * u16::FROM(AUX_READ_BLOCK_SIZE);
+            let data = vec![(128 + i) as u8; usize::FROM(AUX_READ_BLOCK_SIZE)];
             mock.enqueue_response(&read_response_packet(addr, &data));
         }
 
         let mut proto = make_protocol(mock);
         let image = proto.download_image().unwrap();
 
-        assert_eq!(image.len(), usize::from(AUX_BLOCK_END));
+        assert_eq!(image.len(), usize::FROM(AUX_BLOCK_END));
         // First main block byte.
         assert_eq!(image.read_bytes(0x0000, 1), Some(&[0u8][..]));
         // Last aux block byte.
-        let last_aux_addr = AUX_BLOCK_END - u16::from(AUX_READ_BLOCK_SIZE);
+        let last_aux_addr = AUX_BLOCK_END - u16::FROM(AUX_READ_BLOCK_SIZE);
         let expected_val = (128 + aux_blocks - 1) as u8;
         assert_eq!(
             image.read_bytes(last_aux_addr, 1),
@@ -1081,16 +1081,16 @@ mod tests {
         let total_safe_bytes: usize = UPLOAD_RANGES_MAIN
             .iter()
             .chain(UPLOAD_RANGES_AUX.iter())
-            .map(|(s, e)| usize::from(e - s))
+            .map(|(s, e)| usize::FROM(e - s))
             .sum();
-        let total_blocks = total_safe_bytes / usize::from(WRITE_BLOCK_SIZE);
+        let total_blocks = total_safe_bytes / usize::FROM(WRITE_BLOCK_SIZE);
 
         let mut mock = MockSerialPort::new();
         for _ in 0..total_blocks {
             mock.enqueue_response(&[ACK]);
         }
 
-        let image = MemoryImage::new(usize::from(AUX_BLOCK_END));
+        let image = MemoryImage::new(usize::FROM(AUX_BLOCK_END));
         let mut progress_calls = Vec::new();
         let mut proto = make_protocol(mock);
 
@@ -1109,16 +1109,16 @@ mod tests {
         let total_safe_bytes: usize = UPLOAD_RANGES_MAIN
             .iter()
             .chain(UPLOAD_RANGES_AUX.iter())
-            .map(|(s, e)| usize::from(e - s))
+            .map(|(s, e)| usize::FROM(e - s))
             .sum();
-        let total_blocks = total_safe_bytes / usize::from(WRITE_BLOCK_SIZE);
+        let total_blocks = total_safe_bytes / usize::FROM(WRITE_BLOCK_SIZE);
 
         let mut mock = MockSerialPort::new();
         for _ in 0..total_blocks {
             mock.enqueue_response(&[ACK]);
         }
 
-        let image = MemoryImage::new(usize::from(AUX_BLOCK_END));
+        let image = MemoryImage::new(usize::FROM(AUX_BLOCK_END));
         let mut called = false;
         let mut proto = make_protocol(mock);
 

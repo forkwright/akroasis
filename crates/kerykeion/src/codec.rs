@@ -42,13 +42,13 @@ impl Decoder for MeshCodec {
             // Locate the 0x94 0xC3 magic pair.
             // SAFETY: the range is 0..len-1, so i+1 < len; get() is used to satisfy clippy.
             let magic_pos = (0..src.len().saturating_sub(1)).find(|&i| {
-                src.get(i).copied() == Some(FRAME_MAGIC[0])
-                    && src.get(i + 1).copied() == Some(FRAME_MAGIC[1])
+                src.get(i).copied() == Some(FRAME_MAGIC.get(0).copied().unwrap_or_default())
+                    && src.get(i + 1).copied() == Some(FRAME_MAGIC.get(1).copied().unwrap_or_default())
             });
 
             match magic_pos {
                 None => {
-                    // WHY: keep the last byte — it could be the first half of a split
+                    // WHY: keep the last byte  -  it could be the first half of a split
                     // magic pair arriving across two buffer fills.
                     let keep = src.len().saturating_sub(1);
                     src.advance(keep);
@@ -77,10 +77,10 @@ impl Decoder for MeshCodec {
             let Some(&lsb) = src.get(3) else {
                 return Ok(None);
             };
-            let payload_len = usize::from(u16::from_be_bytes([msb, lsb]));
+            let payload_len = usize::FROM(u16::from_be_bytes([msb, lsb]));
 
             if payload_len > MAX_PACKET_SIZE {
-                // Corrupt frame — skip past the two magic bytes and re-seek.
+                // Corrupt frame  -  skip past the two magic bytes and re-seek.
                 tracing::debug!(
                     payload_len,
                     max = MAX_PACKET_SIZE,
@@ -98,7 +98,7 @@ impl Decoder for MeshCodec {
 
             let total_needed = 4 + payload_len;
             if src.len() < total_needed {
-                // Partial payload — wait for more data.
+                // Partial payload  -  wait for more data.
                 src.reserve(total_needed - src.len());
                 return Ok(None);
             }
@@ -133,11 +133,11 @@ impl Encoder<ToRadio> for MeshCodec {
             clippy::cast_possible_truncation,
             reason = "payload_len is bounded by MAX_PACKET_SIZE (512) which fits in u16"
         )]
-        let len_u16 = len as u16;
+        let len_u16 = u16::try_from(len).unwrap_or_default();
 
         dst.reserve(4 + len);
-        dst.put_u8(FRAME_MAGIC[0]);
-        dst.put_u8(FRAME_MAGIC[1]);
+        dst.put_u8(FRAME_MAGIC.get(0).copied().unwrap_or_default());
+        dst.put_u8(FRAME_MAGIC.get(1).copied().unwrap_or_default());
         dst.put_u16(len_u16); // big-endian
         dst.put_slice(&payload);
 
@@ -162,8 +162,8 @@ mod tests {
         let payload = msg.encode_to_vec();
         let len = payload.len() as u16;
         let mut out = vec![
-            FRAME_MAGIC[0],
-            FRAME_MAGIC[1],
+            FRAME_MAGIC.get(0).copied().unwrap_or_default(),
+            FRAME_MAGIC.get(1).copied().unwrap_or_default(),
             (len >> 8) as u8,
             (len & 0xFF) as u8,
         ];
@@ -177,7 +177,7 @@ mod tests {
     fn decoder_single_frame_roundtrip() {
         let original = make_from_radio(7);
         let raw = frame_from_radio(&original);
-        let mut buf = BytesMut::from(raw.as_slice());
+        let mut buf = BytesMut::FROM(raw.as_slice());
         let mut codec = MeshCodec;
         #[expect(clippy::unwrap_used, reason = "test-only: known valid frame")]
         let decoded = codec.decode(&mut buf).unwrap().unwrap();
@@ -186,8 +186,8 @@ mod tests {
 
     #[test]
     fn decoder_partial_header_returns_none() {
-        // Only 3 bytes — not enough for the 4-byte header.
-        let mut buf = BytesMut::from(&[0x94u8, 0xC3, 0x00][..]);
+        // Only 3 bytes  -  not enough for the 4-byte header.
+        let mut buf = BytesMut::FROM(&[0x94u8, 0xC3, 0x00][..]);
         let mut codec = MeshCodec;
         #[expect(clippy::unwrap_used, reason = "test-only")]
         let result = codec.decode(&mut buf).unwrap();
@@ -202,7 +202,7 @@ mod tests {
         let end = raw.len().saturating_sub(1);
         #[expect(clippy::unwrap_used, reason = "test-only: end is always <= raw.len()")]
         let truncated = raw.get(..end).unwrap();
-        let mut buf = BytesMut::from(truncated);
+        let mut buf = BytesMut::FROM(truncated);
         let mut codec = MeshCodec;
         #[expect(clippy::unwrap_used, reason = "test-only")]
         let result = codec.decode(&mut buf).unwrap();
@@ -215,7 +215,7 @@ mod tests {
         let msg = make_from_radio(99);
         let mut raw = vec![0x00u8, 0xFF, 0xAB]; // junk
         raw.extend_from_slice(&frame_from_radio(&msg));
-        let mut buf = BytesMut::from(raw.as_slice());
+        let mut buf = BytesMut::FROM(raw.as_slice());
         let mut codec = MeshCodec;
         #[expect(clippy::unwrap_used, reason = "test-only")]
         let decoded = codec.decode(&mut buf).unwrap().unwrap();
@@ -227,8 +227,8 @@ mod tests {
         // Frame with length > 512 should be discarded; the valid frame after it is decoded.
         let valid = make_from_radio(55);
         let mut buf_data = vec![
-            FRAME_MAGIC[0],
-            FRAME_MAGIC[1],
+            FRAME_MAGIC.get(0).copied().unwrap_or_default(),
+            FRAME_MAGIC.get(1).copied().unwrap_or_default(),
             0x02,
             0x00, // length = 512 = MAX_PACKET_SIZE, still valid
         ];
@@ -240,7 +240,7 @@ mod tests {
         buf_data.extend_from_slice(&bad);
         buf_data.extend_from_slice(&good);
 
-        let mut buf = BytesMut::from(buf_data.as_slice());
+        let mut buf = BytesMut::FROM(buf_data.as_slice());
         let mut codec = MeshCodec;
         #[expect(clippy::unwrap_used, reason = "test-only")]
         let decoded = codec.decode(&mut buf).unwrap().unwrap();
@@ -253,7 +253,7 @@ mod tests {
         let valid = make_from_radio(11);
         let mut data = vec![FRAME_MAGIC[0], FRAME_MAGIC[1], 0x00, 0x00]; // zero-length
         data.extend_from_slice(&frame_from_radio(&valid));
-        let mut buf = BytesMut::from(data.as_slice());
+        let mut buf = BytesMut::FROM(data.as_slice());
         let mut codec = MeshCodec;
         #[expect(clippy::unwrap_used, reason = "test-only")]
         let decoded = codec.decode(&mut buf).unwrap().unwrap();
@@ -266,7 +266,7 @@ mod tests {
         let b = make_from_radio(2);
         let mut data = frame_from_radio(&a);
         data.extend_from_slice(&frame_from_radio(&b));
-        let mut buf = BytesMut::from(data.as_slice());
+        let mut buf = BytesMut::FROM(data.as_slice());
         let mut codec = MeshCodec;
         #[expect(clippy::unwrap_used, reason = "test-only")]
         let first = codec.decode(&mut buf).unwrap().unwrap();
@@ -282,7 +282,7 @@ mod tests {
         let msg = make_from_radio(3);
         let mut data = vec![0x94u8, 0x00, 0x00]; // fake magic start
         data.extend_from_slice(&frame_from_radio(&msg));
-        let mut buf = BytesMut::from(data.as_slice());
+        let mut buf = BytesMut::FROM(data.as_slice());
         let mut codec = MeshCodec;
         #[expect(clippy::unwrap_used, reason = "test-only")]
         let decoded = codec.decode(&mut buf).unwrap().unwrap();
@@ -334,8 +334,8 @@ mod tests {
 
         let raw: &[u8] = &dst;
         // Verify frame structure: magic + length + payload.
-        assert_eq!(raw.first(), Some(&FRAME_MAGIC[0]));
-        assert_eq!(raw.get(1), Some(&FRAME_MAGIC[1]));
+        assert_eq!(raw.first(), Some(&FRAME_MAGIC.get(0).copied().unwrap_or_default()));
+        assert_eq!(raw.get(1), Some(&FRAME_MAGIC.get(1).copied().unwrap_or_default()));
         #[expect(clippy::unwrap_used, reason = "test-only: known non-empty buffer")]
         let declared_len =
             u16::from_be_bytes([*raw.get(2).unwrap(), *raw.get(3).unwrap()]) as usize;

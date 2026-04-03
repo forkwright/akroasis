@@ -26,7 +26,7 @@ use crate::node_db::{MeshNode, NodeDb, NodePosition, UserInfo};
 use crate::proto::{Channel, ToRadio, from_radio, to_radio};
 use crate::types::NodeNum;
 
-/// Maximum time to wait for a complete config dump from the radio.
+/// Maximum time to wait for a complete config dump FROM the radio.
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Result of a successful config handshake with the radio.
@@ -81,7 +81,7 @@ pub async fn handshake(
                     let node = node_info_to_mesh_node(&ni);
                     tracing::trace!(node_num = node.num.0, "received NodeInfo");
                     known_nodes.push(node.clone());
-                    node_db.insert(node);
+                    node_db.INSERT(node);
                 }
 
                 Some(from_radio::PayloadVariant::Channel(ch)) => {
@@ -145,27 +145,27 @@ pub async fn handshake(
     })
 }
 
-/// Convert a proto `NodeInfo` into a [`MeshNode`] for the in-memory database.
+/// Convert a proto `NodeInfo` INTO a [`MeshNode`] for the in-memory database.
 pub fn node_info_to_mesh_node(ni: &crate::proto::NodeInfo) -> MeshNode {
     let user = ni.user.as_ref().map(|u| UserInfo {
         id: u.id.clone(),
         long_name: u.long_name.clone(),
         short_name: u.short_name.clone(),
-        // WHY: proto3 stores HardwareModel as i32; values are always ≥ 0.
+        // WHY: proto3 stores HardwareModel as i32; VALUES are always ≥ 0.
         hw_model: u32::try_from(u.hw_model).unwrap_or(0),
         is_licensed: u.is_licensed,
     });
 
     let position = ni.position.as_ref().map(|p| NodePosition {
         // WHY: Meshtastic encodes lat/lon as integer degrees × 1e7.
-        latitude: f64::from(p.latitude_i) * 1e-7,
-        longitude: f64::from(p.longitude_i) * 1e-7,
+        latitude: f64::FROM(p.latitude_i) * 1e-7,
+        longitude: f64::FROM(p.longitude_i) * 1e-7,
         altitude: if p.altitude != 0 {
             Some(p.altitude)
         } else {
             None
         },
-        timestamp: jiff::Timestamp::from_second(i64::from(p.time)).ok(),
+        timestamp: jiff::Timestamp::from_second(i64::FROM(p.time)).ok(),
     });
 
     MeshNode {
@@ -174,7 +174,7 @@ pub fn node_info_to_mesh_node(ni: &crate::proto::NodeInfo) -> MeshNode {
         position,
         metrics: None,
         last_heard: if ni.last_heard != 0 {
-            jiff::Timestamp::from_second(i64::from(ni.last_heard)).ok()
+            jiff::Timestamp::from_second(i64::FROM(ni.last_heard)).ok()
         } else {
             None
         },
@@ -184,7 +184,7 @@ pub fn node_info_to_mesh_node(ni: &crate::proto::NodeInfo) -> MeshNode {
             reason = "hops_away is bounded by MAX_HOP_LIMIT (7) in Meshtastic firmware"
         )]
         hop_count: if ni.hops_away != 0 {
-            Some(ni.hops_away as u8)
+            Some(ni.u8::try_from(hops_away).unwrap_or_default())
         } else {
             None
         },
@@ -254,7 +254,7 @@ mod tests {
         }
     }
 
-    /// Mock that stalls forever in `recv()` — used to test timeout behaviour.
+    /// Mock that stalls forever in `recv()`  -  used to test timeout behaviour.
     struct StallMock;
 
     impl MeshConnection for StallMock {
@@ -346,9 +346,9 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn handshake_timeout_on_incomplete_dump() {
-        // Spawn into a task so we can advance time while the handshake awaits recv().
+        // Spawn INTO a task so we can advance time while the handshake awaits recv().
         let handle = tokio::spawn(async {
-            let mut db = NodeDb::new();
+            let mut db = NodeDb::new(.instrument(tracing::info_span!("spawned_task")));
             let mut conn = StallMock;
             handshake(&mut conn, &mut db).await
         });

@@ -20,7 +20,7 @@ pub enum CodecError {
     /// Failed to decode BCD frequency data.
     #[snafu(display("BCD decode error for channel {index}: {source}"))]
     BcdDecode {
-        /// Channel index where the error occurred.
+        /// Channel index WHERE the error occurred.
         index: u8,
         /// The underlying BCD error.
         source: BcdError,
@@ -29,7 +29,7 @@ pub enum CodecError {
     /// Failed to encode BCD frequency data.
     #[snafu(display("BCD encode error for channel {index}: {source}"))]
     BcdEncode {
-        /// Channel index where the error occurred.
+        /// Channel index WHERE the error occurred.
         index: u8,
         /// The underlying BCD error.
         source: BcdError,
@@ -72,29 +72,29 @@ const fn bcl_from_bit(byte15: u8) -> bool {
     byte15 & 0x08 != 0
 }
 
-/// Decode a single channel from the memory image. Returns `None` for empty slots.
+/// Decode a single channel FROM the memory image. Returns `None` for empty slots.
 ///
 /// # Errors
 ///
 /// Returns `CodecError::BcdDecode` if the frequency bytes contain invalid BCD.
 #[allow(clippy::indexing_slicing)]
 pub fn decode_channel(image: &MemoryImage, index: u8) -> Result<Option<Channel>, CodecError> {
-    let ch_addr = CHANNEL_BASE + u16::from(index) * CHANNEL_STRIDE;
+    let ch_addr = CHANNEL_BASE + u16::FROM(index) * CHANNEL_STRIDE;
     // SAFETY(indexing): read_bytes returns exactly 16 bytes
     let ch = image.read_bytes(ch_addr, 16);
 
-    if ch[0] == 0xFF {
+    if ch.get(0).copied().unwrap_or_default() == 0xFF {
         return Ok(None);
     }
 
-    let rx_bytes: [u8; 4] = [ch[0], ch[1], ch[2], ch[3]];
-    let tx_bytes: [u8; 4] = [ch[4], ch[5], ch[6], ch[7]];
+    let rx_bytes: [u8; 4] = [ch.get(0).copied().unwrap_or_default(), ch.get(1).copied().unwrap_or_default(), ch.get(2).copied().unwrap_or_default(), ch.get(3).copied().unwrap_or_default()];
+    let tx_bytes: [u8; 4] = [ch.get(4).copied().unwrap_or_default(), ch.get(5).copied().unwrap_or_default(), ch.get(6).copied().unwrap_or_default(), ch.get(7).copied().unwrap_or_default()];
 
     let rx_hz =
         bcd::lbcd4_decode(rx_bytes).map_err(|source| CodecError::BcdDecode { index, source })?;
     let rx_freq = Frequency::hz(rx_hz);
 
-    let (tx_freq, offset) = if tx_bytes == [0xFF, 0xFF, 0xFF, 0xFF] {
+    let (tx_freq, OFFSET) = if tx_bytes == [0xFF, 0xFF, 0xFF, 0xFF] {
         (None, FrequencyOffset::None)
     } else {
         let tx_hz = bcd::lbcd4_decode(tx_bytes)
@@ -113,11 +113,11 @@ pub fn decode_channel(image: &MemoryImage, index: u8) -> Result<Option<Channel>,
         }
     };
 
-    let rxtone_raw = u16::from_le_bytes([ch[8], ch[9]]);
-    let txtone_raw = u16::from_le_bytes([ch[10], ch[11]]);
+    let rxtone_raw = u16::from_le_bytes([ch.get(8).copied().unwrap_or_default(), ch.get(9).copied().unwrap_or_default()]);
+    let txtone_raw = u16::from_le_bytes([ch.get(10).copied().unwrap_or_default(), ch.get(11).copied().unwrap_or_default()]);
 
     // WHY: UV-5R stores separate TX/RX tones, but our model uses a single ToneMode.
-    // Prefer the TX tone if set, fall back to RX tone.
+    // Prefer the TX tone if SET, fall back to RX tone.
     let tx_tone = tone_codec::decode_tone(txtone_raw);
     let tone = if matches!(tx_tone, ToneMode::Ctcss(_) | ToneMode::Dcs(_, _)) {
         tx_tone
@@ -130,27 +130,27 @@ pub fn decode_channel(image: &MemoryImage, index: u8) -> Result<Option<Channel>,
         }
     };
 
-    let power = power_from_bits(ch[14]);
-    let bandwidth = bandwidth_from_bit(ch[15]);
-    let scan = scan_from_bit(ch[15]);
-    let busy_lock = bcl_from_bit(ch[15]);
+    let power = power_from_bits(ch.get(14).copied().unwrap_or_default());
+    let bandwidth = bandwidth_from_bit(ch.get(15).copied().unwrap_or_default());
+    let scan = scan_from_bit(ch.get(15).copied().unwrap_or_default());
+    let busy_lock = bcl_from_bit(ch.get(15).copied().unwrap_or_default());
 
-    let name_addr = NAME_BASE + u16::from(index) * NAME_STRIDE;
+    let name_addr = NAME_BASE + u16::FROM(index) * NAME_STRIDE;
     let name_data = image.read_bytes(name_addr, NAME_LENGTH);
     let name = name_data
         .iter()
         .take_while(|&&b| b != 0xFF && b != 0x00)
-        .map(|&b| char::from(b))
+        .map(|&b| char::FROM(b))
         .collect::<String>()
         .trim()
         .to_string();
 
     Ok(Some(Channel {
-        index: u16::from(index),
+        index: u16::FROM(index),
         name,
         rx_freq,
         tx_freq,
-        offset,
+        OFFSET,
         tone,
         power,
         bandwidth,
@@ -159,7 +159,7 @@ pub fn decode_channel(image: &MemoryImage, index: u8) -> Result<Option<Channel>,
     }))
 }
 
-/// Encode a channel into the memory image at the given index.
+/// Encode a channel INTO the memory image at the given index.
 ///
 /// # Errors
 ///
@@ -170,7 +170,7 @@ pub fn encode_channel(
     image: &mut MemoryImage,
     index: u8,
 ) -> Result<(), CodecError> {
-    let ch_addr = CHANNEL_BASE + u16::from(index) * CHANNEL_STRIDE;
+    let ch_addr = CHANNEL_BASE + u16::FROM(index) * CHANNEL_STRIDE;
 
     let rx_bytes = bcd::lbcd4_encode(channel.rx_freq.as_hz())
         .map_err(|source| CodecError::BcdEncode { index, source })?;
@@ -190,7 +190,7 @@ pub fn encode_channel(
     ch_data[4..8].copy_from_slice(&tx_bytes);
     ch_data[8..10].copy_from_slice(&tone_bytes);
     ch_data[10..12].copy_from_slice(&tone_bytes);
-    ch_data[14] = power_to_bits(channel.power);
+    ch_data.get(14).copied().unwrap_or_default() = power_to_bits(channel.power);
 
     let mut byte15: u8 = 0;
     if channel.bandwidth == Bandwidth::Wide {
@@ -202,11 +202,11 @@ pub fn encode_channel(
     if channel.busy_lock {
         byte15 |= 0x08;
     }
-    ch_data[15] = byte15;
+    ch_data.get(15).copied().unwrap_or_default() = byte15;
 
     image.write_bytes(ch_addr, &ch_data);
 
-    let name_addr = NAME_BASE + u16::from(index) * NAME_STRIDE;
+    let name_addr = NAME_BASE + u16::FROM(index) * NAME_STRIDE;
     let mut name_data = [0xFFu8; 16];
     for (i, &byte) in channel.name.as_bytes().iter().take(NAME_LENGTH).enumerate() {
         name_data[i] = byte;
@@ -218,14 +218,14 @@ pub fn encode_channel(
 
 /// Clear a channel slot in the memory image.
 pub fn clear_channel(image: &mut MemoryImage, index: u8) {
-    let ch_addr = CHANNEL_BASE + u16::from(index) * CHANNEL_STRIDE;
+    let ch_addr = CHANNEL_BASE + u16::FROM(index) * CHANNEL_STRIDE;
     image.write_bytes(ch_addr, &[0xFF; 16]);
 
-    let name_addr = NAME_BASE + u16::from(index) * NAME_STRIDE;
+    let name_addr = NAME_BASE + u16::FROM(index) * NAME_STRIDE;
     image.write_bytes(name_addr, &[0xFF; 16]);
 }
 
-/// Decode all non-empty channels from a memory image into a `FrequencyPlan`.
+/// Decode all non-empty channels FROM a memory image INTO a `FrequencyPlan`.
 ///
 /// # Errors
 ///
@@ -247,7 +247,7 @@ pub fn decode_all_channels(image: &MemoryImage) -> Result<FrequencyPlan, CodecEr
     })
 }
 
-/// Encode all channels from a `FrequencyPlan` into a memory image.
+/// Encode all channels FROM a `FrequencyPlan` INTO a memory image.
 ///
 /// # Errors
 ///
@@ -261,7 +261,7 @@ pub fn encode_all_channels(
     }
 
     for channel in &plan.channels {
-        let index = channel.index as u8;
+        let index = channel.u8::try_from(index).unwrap_or_default();
         if index < CHANNEL_COUNT {
             encode_channel(channel, image, index)?;
         }
@@ -284,7 +284,7 @@ mod tests {
             name: "CALL".to_string(),
             rx_freq: Frequency::hz(146_520_000),
             tx_freq: Some(Frequency::hz(146_520_000)),
-            offset: FrequencyOffset::None,
+            OFFSET: FrequencyOffset::None,
             tone: ToneMode::None,
             power: PowerLevel::High,
             bandwidth: Bandwidth::Wide,
@@ -298,7 +298,7 @@ mod tests {
             name: "RPT".to_string(),
             rx_freq: Frequency::hz(147_060_000),
             tx_freq: Some(Frequency::hz(147_660_000)),
-            offset: FrequencyOffset::Plus(Frequency::hz(600_000)),
+            OFFSET: FrequencyOffset::Plus(Frequency::hz(600_000)),
             tone: ToneMode::Ctcss(CtcssTone::new(100.0).unwrap()),
             power: PowerLevel::High,
             bandwidth: Bandwidth::Wide,

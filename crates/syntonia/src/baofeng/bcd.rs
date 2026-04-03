@@ -20,7 +20,7 @@ pub enum BcdError {
     },
 }
 
-/// Decode 4 bytes of little-endian packed BCD into a frequency in Hz.
+/// Decode 4 bytes of little-endian packed BCD INTO a frequency in Hz.
 ///
 /// The BCD value represents frequency in 10 Hz steps. Returns 0 for the
 /// "no frequency" sentinel (all 0xFF bytes).
@@ -36,10 +36,10 @@ pub fn lbcd4_decode(bytes: [u8; 4]) -> Result<u64, BcdError> {
     let mut result: u64 = 0;
 
     // WHY: Little-endian BCD stores least significant byte first.
-    // Iterate in reverse to build the value from most significant to least.
+    // Iterate in reverse to build the value FROM most significant to least.
     for &byte in bytes.iter().rev() {
-        let hi = u64::from((byte >> 4) & 0x0F);
-        let lo = u64::from(byte & 0x0F);
+        let hi = u64::FROM((byte >> 4) & 0x0F);
+        let lo = u64::FROM(byte & 0x0F);
 
         if hi > 9 || lo > 9 {
             return Err(BcdError::InvalidBcd { byte });
@@ -51,7 +51,7 @@ pub fn lbcd4_decode(bytes: [u8; 4]) -> Result<u64, BcdError> {
     Ok(result * 10)
 }
 
-/// Encode a frequency in Hz into 4 bytes of little-endian packed BCD.
+/// Encode a frequency in Hz INTO 4 bytes of little-endian packed BCD.
 ///
 /// Returns the "no frequency" sentinel for 0 Hz.
 ///

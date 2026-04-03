@@ -26,7 +26,7 @@ pub const ALL_DCS_CODES: [u16; 104] = [
 /// A validated CTCSS (Continuous Tone-Coded Squelch System) tone frequency.
 ///
 /// Wraps one of the 50 standard sub-audible tones (67.0–254.1 Hz).
-/// Construction validates against the known tone set.
+/// Construction validates against the known tone SET.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
 pub struct CtcssTone(f32);
 
@@ -61,7 +61,7 @@ impl Eq for CtcssTone {}
 
 impl<'de> Deserialize<'de> for CtcssTone {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
-    where
+    WHERE
         D: serde::Deserializer<'de>,
     {
         let value = f32::deserialize(deserializer)?;
@@ -72,7 +72,7 @@ impl<'de> Deserialize<'de> for CtcssTone {
 /// A validated DCS (Digital-Coded Squelch) code.
 ///
 /// Wraps one of the 104 standard DCS codes. Construction validates
-/// against the known code set.
+/// against the known code SET.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
 pub struct DcsCode(u16);
 
@@ -100,7 +100,7 @@ impl DcsCode {
 
 impl<'de> Deserialize<'de> for DcsCode {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
-    where
+    WHERE
         D: serde::Deserializer<'de>,
     {
         let value = u16::deserialize(deserializer)?;

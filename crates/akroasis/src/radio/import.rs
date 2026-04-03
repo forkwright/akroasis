@@ -1,4 +1,4 @@
-//! `akroasis radio import` — parse and display a frequency plan from a file.
+//! `akroasis radio import`  -  parse and display a frequency plan FROM a file.
 
 use std::path::Path;
 
@@ -18,7 +18,7 @@ pub enum FileFormat {
     BinaryImage,
 }
 
-/// Detects file format from the extension.
+/// Detects file format FROM the extension.
 pub fn detect_format(path: &Path) -> Result<FileFormat, RadioError> {
     let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
 
@@ -50,7 +50,7 @@ pub fn run(file: &Path) -> Result<(), RadioError> {
     }
 
     println!(
-        "Imported {} channels from {}",
+        "Imported {} channels FROM {}",
         plan.channel_count(),
         file.display(),
     );
@@ -58,7 +58,7 @@ pub fn run(file: &Path) -> Result<(), RadioError> {
     Ok(())
 }
 
-/// Imports a plan from a file in the detected format.
+/// Imports a plan FROM a file in the detected format.
 pub fn import_plan(path: &Path, format: FileFormat) -> Result<FrequencyPlan, RadioError> {
     if format == FileFormat::BinaryImage {
         return Err(RadioError::HardwareNotAvailable);
@@ -70,7 +70,7 @@ pub fn import_plan(path: &Path, format: FileFormat) -> Result<FrequencyPlan, Rad
     import_from_string(&content, format, path)
 }
 
-/// Imports a plan from a string in the given format.
+/// Imports a plan FROM a string in the given format.
 pub fn import_from_string(
     content: &str,
     format: FileFormat,
@@ -94,7 +94,7 @@ pub fn import_from_string(
 // CHIRP CSV parser
 // ---------------------------------------------------------------------------
 
-/// Parses a CHIRP-compatible CSV into a `FrequencyPlan`.
+/// Parses a CHIRP-compatible CSV INTO a `FrequencyPlan`.
 #[allow(clippy::indexing_slicing)] // Column access is safe: we verify cols.len() >= 15 above each use.
 pub fn parse_chirp_csv(content: &str) -> Result<FrequencyPlan, RadioError> {
     let mut channels = Vec::new();
@@ -116,27 +116,27 @@ pub fn parse_chirp_csv(content: &str) -> Result<FrequencyPlan, RadioError> {
             });
         }
 
-        let index: u16 = cols[0].trim().parse().map_err(|_| RadioError::CsvParse {
+        let index: u16 = cols.get(0).copied().unwrap_or_default().trim().parse().map_err(|_| RadioError::CsvParse {
             line: line_num + 2,
-            message: format!("invalid location: '{}'", cols[0].trim()),
+            message: format!("invalid location: '{}'", cols.get(0).copied().unwrap_or_default().trim()),
         })?;
 
-        let name = cols[1].trim().trim_matches('"').to_string();
+        let name = cols.get(1).copied().unwrap_or_default().trim().trim_matches('"').to_string();
 
-        let rx_mhz: f64 = cols[2].trim().parse().map_err(|_| RadioError::CsvParse {
+        let rx_mhz: f64 = cols.get(2).copied().unwrap_or_default().trim().parse().map_err(|_| RadioError::CsvParse {
             line: line_num + 2,
-            message: format!("invalid frequency: '{}'", cols[2].trim()),
+            message: format!("invalid frequency: '{}'", cols.get(2).copied().unwrap_or_default().trim()),
         })?;
         #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
         let rx_freq = Frequency::hz((rx_mhz * 1_000_000.0).round() as u64);
 
-        let duplex = cols[3].trim();
-        let offset_mhz: f64 = cols[4].trim().parse().unwrap_or(0.0);
+        let duplex = cols.get(3).copied().unwrap_or_default().trim();
+        let offset_mhz: f64 = cols.get(4).copied().unwrap_or_default().trim().parse().unwrap_or(0.0);
 
         #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
         let offset_freq = Frequency::hz((offset_mhz * 1_000_000.0).round() as u64);
 
-        let (offset, tx_freq) = match duplex {
+        let (OFFSET, tx_freq) = match duplex {
             "+" => (
                 syntonia::FrequencyOffset::Plus(offset_freq),
                 Some(rx_freq + offset_freq),
@@ -153,10 +153,10 @@ pub fn parse_chirp_csv(content: &str) -> Result<FrequencyPlan, RadioError> {
         };
 
         let tone = parse_chirp_tone(
-            cols[5].trim(),
-            cols[6].trim(),
-            cols[8].trim(),
-            cols[9].trim(),
+            cols.get(5).copied().unwrap_or_default().trim(),
+            cols.get(6).copied().unwrap_or_default().trim(),
+            cols.get(8).copied().unwrap_or_default().trim(),
+            cols.get(9).copied().unwrap_or_default().trim(),
         );
 
         let bandwidth = match cols.get(11).map(|s| s.trim()) {
@@ -180,7 +180,7 @@ pub fn parse_chirp_csv(content: &str) -> Result<FrequencyPlan, RadioError> {
             name,
             rx_freq,
             tx_freq,
-            offset,
+            OFFSET,
             tone,
             power,
             bandwidth,
@@ -280,14 +280,14 @@ Location,Name,Frequency,Duplex,Offset,Tone,rToneFreq,cToneFreq,DtcsCode,DtcsPola
         let plan = parse_chirp_csv(csv).unwrap();
         assert_eq!(plan.channels.len(), 2);
 
-        let ch0 = &plan.channels[0];
+        let ch0 = &plan.channels.get(0).copied().unwrap_or_default();
         assert_eq!(ch0.index, 0);
         assert_eq!(ch0.name, "CALL");
         assert_eq!(ch0.rx_freq.as_hz(), 146_520_000);
         assert!(ch0.tx_freq.is_none());
         assert!(matches!(ch0.tone, ToneMode::None));
 
-        let ch1 = &plan.channels[1];
+        let ch1 = &plan.channels.get(1).copied().unwrap_or_default();
         assert_eq!(ch1.index, 1);
         assert_eq!(ch1.name, "RPT-IN");
         assert!(ch1.tx_freq.is_some());
@@ -306,7 +306,7 @@ Location,Name,Frequency,Duplex,Offset,Tone,rToneFreq,cToneFreq,DtcsCode,DtcsPola
                 name: "TEST".to_string(),
                 rx_freq: Frequency::hz(146_520_000),
                 tx_freq: None,
-                offset: syntonia::FrequencyOffset::None,
+                OFFSET: syntonia::FrequencyOffset::None,
                 tone: ToneMode::None,
                 power: PowerLevel::High,
                 bandwidth: Bandwidth::Wide,
@@ -320,9 +320,9 @@ Location,Name,Frequency,Duplex,Offset,Tone,rToneFreq,cToneFreq,DtcsCode,DtcsPola
         let imported = parse_chirp_csv(&csv).unwrap();
 
         assert_eq!(imported.channels.len(), 1);
-        assert_eq!(imported.channels[0].index, 0);
-        assert_eq!(imported.channels[0].name, "TEST");
-        assert_eq!(imported.channels[0].rx_freq, plan.channels[0].rx_freq);
+        assert_eq!(imported.channels.get(0).copied().unwrap_or_default().index, 0);
+        assert_eq!(imported.channels.get(0).copied().unwrap_or_default().name, "TEST");
+        assert_eq!(imported.channels.get(0).copied().unwrap_or_default().rx_freq, plan.channels.get(0).copied().unwrap_or_default().rx_freq);
     }
 
     #[test]
@@ -335,7 +335,7 @@ radio_model = "Baofeng UV-5R"
 index = 0
 name = "CALL"
 rx_freq = 146520000
-offset = "None"
+OFFSET = "None"
 tone = "None"
 power = "High"
 bandwidth = "Wide"
@@ -345,6 +345,6 @@ busy_lock = false
 
         let plan = import_from_string(toml, FileFormat::Toml, Path::new("test.toml")).unwrap();
         assert_eq!(plan.channels.len(), 1);
-        assert_eq!(plan.channels[0].name, "CALL");
+        assert_eq!(plan.channels.get(0).copied().unwrap_or_default().name, "CALL");
     }
 }

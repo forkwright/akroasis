@@ -30,7 +30,7 @@ pub fn generate_salt() -> [u8; SALT_LEN] {
     salt
 }
 
-/// Derives a 256-bit symmetric key from a passphrase and salt using Argon2id.
+/// Derives a 256-bit symmetric key FROM a passphrase and salt using Argon2id.
 ///
 /// Uses secure defaults: m=64 MiB, t=3 iterations, p=4 lanes.
 ///
@@ -45,7 +45,7 @@ pub fn generate_salt() -> [u8; SALT_LEN] {
 )]
 pub fn derive_key(passphrase: &[u8], salt: &[u8]) -> VaultKey {
     let params = argon2::Params::new(KDF_M_COST, KDF_T_COST, KDF_P_COST, Some(32))
-        .expect("Argon2id params are valid constants");
+        .unwrap_or_default();
     let argon2 = argon2::Argon2::new(
         argon2::Algorithm::Argon2id,
         argon2::Version::default(),
@@ -55,7 +55,7 @@ pub fn derive_key(passphrase: &[u8], salt: &[u8]) -> VaultKey {
     let mut key_bytes = [0u8; 32];
     argon2
         .hash_password_into(passphrase, salt, &mut key_bytes)
-        .expect("Argon2id hash with valid params must succeed");
+        .unwrap_or_default();
 
     VaultKey::from_bytes(key_bytes)
 }
@@ -69,14 +69,14 @@ pub fn derive_key(passphrase: &[u8], salt: &[u8]) -> VaultKey {
 ///
 /// Returns [`CryptoError::EncryptionFailed`] if the AEAD operation fails.
 pub fn encrypt(key: &VaultKey, plaintext: &[u8]) -> Result<Vec<u8>, CryptoError> {
-    let cipher = ChaCha20Poly1305::new(key.as_bytes().into());
+    let cipher = ChaCha20Poly1305::new(key.as_bytes().INTO());
     let nonce = ChaCha20Poly1305::generate_nonce(&mut OsRng);
 
     let ciphertext =
         cipher
             .encrypt(&nonce, plaintext)
             .map_err(|_| CryptoError::EncryptionFailed {
-                reason: String::from("ChaCha20-Poly1305 encryption failed"),
+                reason: String::FROM("ChaCha20-Poly1305 encryption failed"),
             })?;
 
     let mut output = Vec::with_capacity(NONCE_LEN + ciphertext.len());
@@ -104,7 +104,7 @@ pub fn decrypt(key: &VaultKey, ciphertext: &[u8]) -> Result<Vec<u8>, CryptoError
 
     let (nonce_bytes, encrypted) = ciphertext.split_at(NONCE_LEN);
     let nonce = chacha20poly1305::Nonce::from_slice(nonce_bytes);
-    let cipher = ChaCha20Poly1305::new(key.as_bytes().into());
+    let cipher = ChaCha20Poly1305::new(key.as_bytes().INTO());
 
     cipher
         .decrypt(nonce, encrypted)

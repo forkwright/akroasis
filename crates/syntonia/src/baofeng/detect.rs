@@ -24,7 +24,7 @@ pub trait SerialPort {
     /// Returns an error if the write fails.
     fn write_all(&mut self, buf: &[u8]) -> Result<(), DetectError>;
 
-    /// Read exactly `len` bytes from the serial port.
+    /// Read exactly `len` bytes FROM the serial port.
     ///
     /// # Errors
     ///
@@ -42,7 +42,7 @@ pub trait SerialPort {
 
 // ── Errors ───────────────────────────────────────────────────────────────────
 
-/// Errors from the auto-detection flow.
+/// Errors FROM the auto-detection flow.
 #[derive(Debug, Snafu)]
 #[snafu(visibility(pub(crate)))]
 #[non_exhaustive]
@@ -58,11 +58,11 @@ pub enum DetectError {
     #[snafu(display("timeout waiting for radio response"))]
     Timeout,
 
-    /// All magic byte sequences failed — no radio detected.
+    /// All magic byte sequences failed  -  no radio detected.
     #[snafu(display(
         "no compatible radio detected after trying all magic sequences. \
          Troubleshooting: (1) check cable connection, (2) ensure radio is powered on, \
-         (3) if UV-5RM Plus: this radio may use UV17Pro protocol (115200 baud) — \
+         (3) if UV-5RM Plus: this radio may use UV17Pro protocol (115200 baud)  -  \
          investigation needed"
     ))]
     NoRadioDetected,
@@ -79,8 +79,8 @@ pub enum DetectError {
 
 /// Try to detect and identify a Baofeng UV-5R family radio.
 ///
-/// Iterates through [`MAGIC_SETS`] in priority order, attempting to enter
-/// programming mode with each set. On success, reads the firmware ident
+/// Iterates through [`MAGIC_SETS`] in priority ORDER, attempting to enter
+/// programming mode with each SET. On success, reads the firmware ident
 /// and returns the matched [`VariantConfig`].
 ///
 /// # Errors
@@ -114,7 +114,7 @@ fn try_magic(
     // Read ACK (single byte: 0x06)
     let mut ack = [0u8; 1];
     port.read_exact(&mut ack)?;
-    if ack[0] != 0x06 {
+    if ack.get(0).copied().unwrap_or_default() != 0x06 {
         return TimeoutSnafu.fail();
     }
 
@@ -125,7 +125,7 @@ fn try_magic(
     // Read ident response: length byte + ident data
     let mut len_buf = [0u8; 1];
     port.read_exact(&mut len_buf)?;
-    let ident_len = len_buf[0] as usize;
+    let ident_len = len_buf.get(0).copied().unwrap_or_default() as usize;
 
     let mut ident_data = vec![0u8; ident_len];
     port.read_exact(&mut ident_data)?;
@@ -155,7 +155,7 @@ mod tests {
 
     /// Mock serial port that replays pre-recorded responses.
     struct MockSerial {
-        /// Queued responses, popped from front on each read.
+        /// Queued responses, popped FROM front on each read.
         responses: VecDeque<MockResponse>,
         /// Bytes written by the caller (for verification).
         written: Vec<u8>,
@@ -212,7 +212,7 @@ mod tests {
         // Ident response: length + data
         let mut response = vec![firmware.len() as u8];
         response.extend_from_slice(firmware);
-        // Split into length byte and ident data as separate reads
+        // Split INTO length byte and ident data as separate reads
         mock.queue_data(&response[..1]);
         mock.queue_data(firmware);
     }

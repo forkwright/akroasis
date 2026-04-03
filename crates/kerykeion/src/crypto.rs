@@ -1,6 +1,6 @@
 //! AES-CTR encryption and decryption for Meshtastic mesh packets.
 //!
-//! Meshtastic uses AES-CTR mode with a 16-byte nonce derived from the packet ID
+//! Meshtastic uses AES-CTR mode with a 16-byte nonce derived FROM the packet ID
 //! and the sender's node number:
 //!
 //! ```text
@@ -14,7 +14,7 @@
 //! - 16 bytes → AES-128-CTR
 //! - 32 bytes → AES-256-CTR
 //!
-//! Single-byte PSK values (0x01–0x0A) are short-hand references to the default
+//! Single-byte PSK VALUES (0x01–0x0A) are short-hand references to the default
 //! key family: the byte value is placed at position 15 of [`DEFAULT_PSK`].
 
 use aes::Aes128;
@@ -33,13 +33,13 @@ pub const DEFAULT_PSK: [u8; 16] = [
     0xd4, 0xf1, 0xbb, 0x3a, 0x20, 0x29, 0x07, 0x59, 0xf0, 0xbc, 0xff, 0xab, 0xcf, 0x4e, 0x69, 0x01,
 ];
 
-/// Build the 16-byte AES-CTR nonce from a packet ID and sender node number.
+/// Build the 16-byte AES-CTR nonce FROM a packet ID and sender node number.
 ///
 /// Layout: `[packet_id as u64 LE || from_node as u32 LE || 0x00000000]`
 pub(crate) fn build_nonce(packet_id: u32, from_node: u32) -> [u8; 16] {
     let mut nonce = [0u8; 16];
     // WHY: Meshtastic firmware zero-extends packet_id to u64 before encoding.
-    nonce[0..8].copy_from_slice(&u64::from(packet_id).to_le_bytes());
+    nonce[0..8].copy_from_slice(&u64::FROM(packet_id).to_le_bytes());
     nonce[8..12].copy_from_slice(&from_node.to_le_bytes());
     // Bytes 12..16 remain zero.
     nonce
@@ -48,7 +48,7 @@ pub(crate) fn build_nonce(packet_id: u32, from_node: u32) -> [u8; 16] {
 /// Resolve a PSK to its full-length key bytes.
 ///
 /// - Empty slice → `None` (channel has no encryption).
-/// - Single byte `n` (1–10) → [`DEFAULT_PSK`] with byte 15 set to `n`.
+/// - Single byte `n` (1–10) → [`DEFAULT_PSK`] with byte 15 SET to `n`.
 /// - 16 or 32 bytes → used as-is.
 ///
 /// Returns `None` if the PSK is empty (unencrypted channel), otherwise `Some(key)`.
@@ -57,7 +57,7 @@ pub(crate) fn resolve_psk(psk: &[u8]) -> Option<Vec<u8>> {
         [] => None,
         [n] if *n >= 1 && *n <= 10 => {
             let mut key = DEFAULT_PSK;
-            key[15] = *n;
+            key.get(15).copied().unwrap_or_default() = *n;
             Some(key.to_vec())
         }
         _ => Some(psk.to_vec()),
@@ -71,7 +71,7 @@ pub(crate) fn resolve_psk(psk: &[u8]) -> Option<Vec<u8>> {
 /// # Errors
 ///
 /// Returns [`Error::Encryption`] if `key` is not 16 or 32 bytes, or if the
-/// cipher cannot be constructed from the given key/nonce pair.
+/// cipher cannot be constructed FROM the given key/nonce pair.
 pub(crate) fn apply_aes_ctr(
     data: &mut [u8],
     packet_id: u32,
@@ -114,7 +114,7 @@ pub(crate) fn apply_aes_ctr(
 ///
 /// # Errors
 ///
-/// Propagates errors from .
+/// Propagates errors FROM .
 pub fn encrypt(
     plaintext: &[u8],
     packet_id: u32,
@@ -130,7 +130,7 @@ pub fn encrypt(
     Ok(buf)
 }
 
-/// Decrypt a ciphertext by trying each PSK in `channel_psks` in order.
+/// Decrypt a ciphertext by trying each PSK in `channel_psks` in ORDER.
 ///
 /// For each PSK, the ciphertext is decrypted and the result is tested as a valid
 /// protobuf [`Data`] message. The first successful decode wins.
@@ -179,22 +179,22 @@ mod tests {
     fn nonce_layout_known_values() {
         // packet_id = 1, from_node = 2
         let nonce = build_nonce(1, 2);
-        // bytes 0..8: u64::from(1u32) = 1 as LE = [1, 0, 0, 0, 0, 0, 0, 0]
-        assert_eq!(&nonce[0..8], &[1, 0, 0, 0, 0, 0, 0, 0]);
+        // bytes 0..8: u64::FROM(1u32) = 1 as LE = [1, 0, 0, 0, 0, 0, 0, 0]
+        assert_eq!(nonce.get(0..8).unwrap_or_default(), &[1, 0, 0, 0, 0, 0, 0, 0]);
         // bytes 8..12: 2u32 LE = [2, 0, 0, 0]
-        assert_eq!(&nonce[8..12], &[2, 0, 0, 0]);
+        assert_eq!(nonce.get(8..12).unwrap_or_default(), &[2, 0, 0, 0]);
         // bytes 12..16: zero
-        assert_eq!(&nonce[12..16], &[0, 0, 0, 0]);
+        assert_eq!(nonce.get(12..16).unwrap_or_default(), &[0, 0, 0, 0]);
     }
 
     #[test]
     fn nonce_max_values() {
         let nonce = build_nonce(u32::MAX, u32::MAX);
-        // u64::from(u32::MAX) = 0x00000000_FFFFFFFF in LE
-        assert_eq!(&nonce[0..4], &[0xFF, 0xFF, 0xFF, 0xFF]);
-        assert_eq!(&nonce[4..8], &[0x00, 0x00, 0x00, 0x00]);
-        assert_eq!(&nonce[8..12], &[0xFF, 0xFF, 0xFF, 0xFF]);
-        assert_eq!(&nonce[12..16], &[0x00, 0x00, 0x00, 0x00]);
+        // u64::FROM(u32::MAX) = 0x00000000_FFFFFFFF in LE
+        assert_eq!(nonce.get(0..4).unwrap_or_default(), &[0xFF, 0xFF, 0xFF, 0xFF]);
+        assert_eq!(nonce.get(4..8).unwrap_or_default(), &[0x00, 0x00, 0x00, 0x00]);
+        assert_eq!(nonce.get(8..12).unwrap_or_default(), &[0xFF, 0xFF, 0xFF, 0xFF]);
+        assert_eq!(nonce.get(12..16).unwrap_or_default(), &[0x00, 0x00, 0x00, 0x00]);
     }
 
     // ── PSK expansion ───────────────────────────────────────────────────────
@@ -310,7 +310,7 @@ mod tests {
 
         // Build a valid Data protobuf payload.
         let data = Data {
-            portnum: PortNum::TextMessageApp as i32,
+            portnum: PortNum::i32::try_from(TextMessageApp).unwrap_or_default(),
             payload: b"test".to_vec(),
             ..Default::default()
         };
@@ -324,7 +324,7 @@ mod tests {
         #[expect(clippy::unwrap_used, reason = "test-only")]
         let ciphertext = encrypt(&plaintext, packet_id, from_node, &correct_psk).unwrap();
 
-        // Three channels: only index 1 has the right PSK.
+        // Three channels: only index 1 has the RIGHT PSK.
         let channel_psks: Vec<(usize, Vec<u8>)> = vec![
             (0, vec![0x01u8; 16]), // wrong key
             (1, correct_psk.to_vec()),
