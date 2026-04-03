@@ -527,7 +527,7 @@ pub(crate) fn decrypt(
 
 The `ChannelSettings.psk` field holds raw PSK bytes. Three cases:
 
-**Default channel key** (`psk == [0x01]`): expand to the well-known 16-byte default key. Verify the exact bytes against the pinned firmware tag's `Default.h` constant `DEFAULT_PSK` — do not hardcode from memory.
+**Default channel key** (`psk == [0x01]`): expand to the well-known 16-byte default key. Verify the exact bytes against the pinned firmware tag's `Default.h` constant `DEFAULT_PSK`  -  do not hardcode from memory.
 
 ```rust
 /// Meshtastic default channel key, expanded from PSK byte 0x01.
@@ -568,7 +568,7 @@ pub(crate) enum Psk {
 
 ### 3.7 Multi-Channel Decryption
 
-For broadcasts on an unknown channel, try each registered channel's PSK. A successful decrypt produces parseable protobuf; an invalid decode means the wrong key. This is a heuristic — AES-CTR has no authentication tag. A valid `Data::decode` is necessary but not sufficient; in practice, false positives are rare.
+For broadcasts on an unknown channel, try each registered channel's PSK. A successful decrypt produces parseable protobuf; an invalid decode means the wrong key. This is a heuristic  -  AES-CTR has no authentication tag. A valid `Data::decode` is necessary but not sufficient; in practice, false positives are rare.
 
 ```rust
 pub(crate) fn decrypt_any_channel(
@@ -812,8 +812,8 @@ States: Disconnected  Connecting  Handshaking  Ready  Error
 | `Ready` | `FromRadio` received | `Ready` | process, reset stale timer |
 | `Ready` | stale timer fires (300 s) | `Error` | log stale |
 | `Ready` | OS error on read/write | `Error` | log |
-| `Error` | cleanup complete | `Disconnected` | — |
-| `Disconnected` | backoff elapsed | `Connecting` | — |
+| `Error` | cleanup complete | `Disconnected` |  -  |
+| `Disconnected` | backoff elapsed | `Connecting` |  -  |
 
 **Handshake sub-states:**
 
@@ -999,9 +999,9 @@ File header:
   reserved[2]    = 0x0000
 
 Record:
-  timestamp_us[8]   u64 LE — microseconds since Unix epoch
+  timestamp_us[8]   u64 LE  -  microseconds since Unix epoch
   direction[1]      0x00 = device→host, 0x01 = host→device
-  length[2]         u16 LE — raw frame bytes (header + payload)
+  length[2]         u16 LE  -  raw frame bytes (header + payload)
   data[length]      raw bytes as they appeared on the wire
 ```
 

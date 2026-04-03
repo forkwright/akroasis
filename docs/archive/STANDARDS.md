@@ -51,5 +51,5 @@ Add `#[allow(clippy::expect_used, clippy::unwrap_used)]` to `#[cfg(test)]` modul
 - Unit tests live in the same file, inside `#[cfg(test)] mod tests { ... }`.
 - Integration tests live under `tests/` in the crate root.
 - Test names describe what is being verified: `fn valid_coordinates_accepted()`.
-- Use `assert!`, `assert_eq!`, `assert_ne!` — do not write custom assertion logic unless necessary.
+- Use `assert!`, `assert_eq!`, `assert_ne!`  -  do not write custom assertion logic unless necessary.
 - Doc-tests (`cargo test --workspace --doc`) must also pass.
