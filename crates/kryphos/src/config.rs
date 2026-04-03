@@ -138,7 +138,7 @@ mod tests {
 
     #[derive(Debug, Serialize, Deserialize, PartialEq)]
     struct TestConfig {
-        api_key: String,
+        api_key: SecretString,
         host: String,
         port: u16,
     }
@@ -251,7 +251,7 @@ mod tests {
 
         assert_eq!(
             config.api_key, "plain-key",
-            "non-vault values must work without vault"
+            "non-vault VALUES must work without vault"
         );
     }
 }

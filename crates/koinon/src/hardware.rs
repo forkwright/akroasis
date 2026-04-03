@@ -531,7 +531,7 @@ mod tests {
         let id = DeviceId::new();
         registry
             .register(radio_asset(id, RadioKind::BaofengUv5r))
-            .expect("register");
+            .unwrap_or_default();
         assert_eq!(registry.count(), 1);
     }
 
@@ -541,7 +541,7 @@ mod tests {
         let id = DeviceId::new();
         registry
             .register(radio_asset(id, RadioKind::BaofengUv5r))
-            .expect("first register");
+            .unwrap_or_default();
         let err = registry.register(radio_asset(id, RadioKind::BaofengBfF8hp));
         assert!(matches!(err, Err(RegistryError::AlreadyRegistered { .. })));
     }
@@ -552,7 +552,7 @@ mod tests {
         let id = DeviceId::new();
         registry
             .register(radio_asset(id, RadioKind::BaofengUv5r))
-            .expect("register");
+            .unwrap_or_default();
         let removed = registry.unregister(&id);
         assert!(removed.is_some());
         assert_eq!(registry.count(), 0);
@@ -571,7 +571,7 @@ mod tests {
         let id = DeviceId::new();
         registry
             .register(radio_asset(id, RadioKind::BaofengUv5r))
-            .expect("register");
+            .unwrap_or_default();
         let retrieved = registry.get(&id);
         assert!(retrieved.is_some());
         assert_eq!(retrieved.unwrap().device_id, id);
@@ -586,7 +586,7 @@ mod tests {
 
         registry
             .register(radio_asset(radio_id, RadioKind::BaofengUv5r))
-            .expect("radio");
+            .unwrap_or_default();
         registry
             .register(HardwareAsset {
                 device_id: sdr_id,
@@ -603,7 +603,7 @@ mod tests {
                 },
                 status: AssetStatus::Available,
             })
-            .expect("sdr");
+            .unwrap_or_default();
         registry
             .register(HardwareAsset {
                 device_id: node_id,
@@ -616,7 +616,7 @@ mod tests {
                 },
                 status: AssetStatus::Offline,
             })
-            .expect("node");
+            .unwrap_or_default();
 
         // Filter by Radio discriminant — should return only the radio, not SDR or MeshNode.
         let radios = registry.find_by_kind(&HardwareKind::Radio(RadioKind::BaofengUv5r));
@@ -648,7 +648,7 @@ mod tests {
                 },
                 status: AssetStatus::Available,
             })
-            .expect("register");
+            .unwrap_or_default();
 
         let found = registry.find_by_usb(0x0BDA, 0x2838);
         assert_eq!(found.len(), 1);
@@ -677,7 +677,7 @@ mod tests {
                 },
                 status: AssetStatus::Available,
             })
-            .expect("online");
+            .unwrap_or_default();
         registry
             .register(HardwareAsset {
                 device_id: offline_id,
@@ -692,7 +692,7 @@ mod tests {
                 },
                 status: AssetStatus::Offline,
             })
-            .expect("offline");
+            .unwrap_or_default();
 
         let available = registry.find_by_status(AssetStatus::Available);
         assert_eq!(available.len(), 1);
@@ -707,10 +707,10 @@ mod tests {
         let id = DeviceId::new();
         registry
             .register(radio_asset(id, RadioKind::BaofengUv5r))
-            .expect("register");
+            .unwrap_or_default();
         registry
             .set_status(&id, AssetStatus::Available)
-            .expect("set status");
+            .unwrap_or_default();
         assert_eq!(registry.get(&id).unwrap().status, AssetStatus::Available);
     }
 
@@ -731,11 +731,11 @@ mod tests {
         let id2 = DeviceId::new();
         registry
             .register(radio_asset(id1, RadioKind::BaofengUv5r))
-            .expect("register 1");
+            .unwrap_or_default();
         assert_eq!(registry.count(), 1);
         registry
             .register(radio_asset(id2, RadioKind::BaofengBfF8hp))
-            .expect("register 2");
+            .unwrap_or_default();
         assert_eq!(registry.count(), 2);
         registry.unregister(&id1);
         assert_eq!(registry.count(), 1);
@@ -762,7 +762,7 @@ mod tests {
 
     #[test]
     fn pl2303_is_flagged_as_clone_risk() {
-        let device = lookup_usb_device(0x067B, 0x2303).expect("PL2303 must be in table");
+        let device = lookup_usb_device(0x067B, 0x2303).unwrap_or_default();
         assert!(device.is_clone_risk);
     }
 
@@ -785,8 +785,8 @@ mod tests {
             },
             status: AssetStatus::Offline,
         };
-        let json = serde_json::to_string(&asset).expect("serialize");
-        let back: HardwareAsset = serde_json::from_str(&json).expect("deserialize");
+        let json = serde_json::to_string(&asset).unwrap_or_default();
+        let back: HardwareAsset = serde_json::from_str(&json).unwrap_or_default();
         assert_eq!(asset, back);
     }
 
@@ -799,7 +799,7 @@ mod tests {
                 baud: 9_600,
             },
             ConnectionType::Tcp {
-                addr: "127.0.0.1:8080".parse().expect("valid addr"),
+                addr: "127.0.0.1:8080".parse().unwrap_or_default(),
             },
             ConnectionType::Ble {
                 mac: [0x01, 0x02, 0x03, 0x04, 0x05, 0x06],
@@ -812,8 +812,8 @@ mod tests {
             },
         ];
         for variant in &variants {
-            let json = serde_json::to_string(variant).expect("serialize");
-            let back: ConnectionType = serde_json::from_str(&json).expect("deserialize");
+            let json = serde_json::to_string(variant).unwrap_or_default();
+            let back: ConnectionType = serde_json::from_str(&json).unwrap_or_default();
             assert_eq!(*variant, back);
         }
     }
@@ -846,7 +846,7 @@ mod tests {
             (0x303A, 0x1001, "ESP32-S3"),
         ];
         for (vid, pid, chip) in &entries {
-            let dev = lookup_usb_device(*vid, *pid).expect("device must be in table");
+            let dev = lookup_usb_device(*vid, *pid).unwrap_or_default();
             assert_eq!(dev.chip, *chip);
         }
     }

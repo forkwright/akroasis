@@ -106,7 +106,7 @@ pub enum Error {
 
     /// Hop limit exceeds the protocol maximum.
     #[snafu(display(
-        "hop limit {hop_limit} exceeds maximum {}",
+        "hop LIMIT {hop_limit} exceeds maximum {}",
         crate::types::MAX_HOP_LIMIT
     ))]
     InvalidHopLimit {

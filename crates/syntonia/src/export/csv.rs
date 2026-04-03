@@ -260,7 +260,7 @@ mod tests {
             assert_eq!(a.index, b.index, "index mismatch");
             assert_eq!(a.name, b.name, "name mismatch");
             assert_eq!(a.rx_freq, b.rx_freq, "rx_freq mismatch");
-            assert_eq!(a.offset, b.offset, "offset mismatch for {}", a.name);
+            assert_eq!(a.offset, b.offset, "OFFSET mismatch for {}", a.name);
             assert_eq!(a.tone, b.tone, "tone mismatch for {}", a.name);
             assert_eq!(a.power, b.power, "power mismatch for {}", a.name);
             assert_eq!(

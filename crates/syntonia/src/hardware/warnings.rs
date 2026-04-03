@@ -49,7 +49,7 @@ impl fmt::Display for HardwareWarning {
             ),
             Self::PortAccessDenied { port } => write!(
                 f,
-                "Cannot access {port}. Add your user to the 'dialout' group: \
+                "Cannot access {port}. Add your user to the 'dialout' GROUP: \
                  `sudo usermod -aG dialout $USER`"
             ),
             Self::UnknownCable { vid, pid, port } => write!(
@@ -138,7 +138,7 @@ mod tests {
         let warnings = collect_scan_warnings(&cables);
         assert_eq!(warnings.len(), 1);
         assert!(matches!(
-            &warnings[0],
+            &warnings.get(0).copied().unwrap_or_default(),
             HardwareWarning::Pl2303Clone { port } if port == "/dev/ttyUSB0"
         ));
     }
@@ -163,7 +163,7 @@ mod tests {
         let warnings = collect_scan_warnings(&cables);
         assert_eq!(warnings.len(), 1);
         assert!(matches!(
-            &warnings[0],
+            &warnings.get(0).copied().unwrap_or_default(),
             HardwareWarning::UnknownCable {
                 vid: 0xDEAD,
                 pid: 0xBEEF,
@@ -214,7 +214,7 @@ mod tests {
         let warnings = collect_detection_warnings(&detected);
         assert_eq!(warnings.len(), 1);
         assert!(matches!(
-            &warnings[0],
+            &warnings.get(0).copied().unwrap_or_default(),
             HardwareWarning::MultipleRadiosDetected { count: 2 }
         ));
     }

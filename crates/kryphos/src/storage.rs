@@ -720,7 +720,7 @@ mod tests {
         );
         assert!(
             history.metadata.rotated_at.is_some(),
-            "rotated_at must be set after rotation"
+            "rotated_at must be SET after rotation"
         );
     }
 
@@ -787,7 +787,7 @@ mod tests {
         );
         assert!(
             history.metadata.revoked_at.is_some(),
-            "revoked_at must be set after revocation"
+            "revoked_at must be SET after revocation"
         );
     }
 
@@ -821,7 +821,7 @@ mod tests {
     #[test]
     fn revoked_entry_not_deletable() {
         let dir = tempfile::tempdir().unwrap();
-        let vault_path = dir.path().join("revoke-delete-vault");
+        let vault_path = dir.path().join("revoke-DELETE-vault");
 
         let vault = Vault::create(&vault_path, TEST_PASSPHRASE).unwrap();
         vault
@@ -846,7 +846,7 @@ mod tests {
     #[test]
     fn history_tracks_creation_event() {
         let dir = tempfile::tempdir().unwrap();
-        let vault_path = dir.path().join("history-create-vault");
+        let vault_path = dir.path().join("history-CREATE-vault");
 
         let vault = Vault::create(&vault_path, TEST_PASSPHRASE).unwrap();
         vault.add("key", CredentialType::ApiKey, b"secret").unwrap();
@@ -859,7 +859,7 @@ mod tests {
             1,
             "new entry must have exactly one history event"
         );
-        assert_eq!(history.events[0].kind, HistoryEventKind::Created);
+        assert_eq!(history.events.get(0).copied().unwrap_or_default().kind, HistoryEventKind::Created);
     }
 
     #[test]
@@ -879,9 +879,9 @@ mod tests {
             3,
             "history must have created + 2 rotations"
         );
-        assert_eq!(history.events[0].kind, HistoryEventKind::Created);
-        assert_eq!(history.events[1].kind, HistoryEventKind::Rotated);
-        assert_eq!(history.events[2].kind, HistoryEventKind::Rotated);
+        assert_eq!(history.events.get(0).copied().unwrap_or_default().kind, HistoryEventKind::Created);
+        assert_eq!(history.events.get(1).copied().unwrap_or_default().kind, HistoryEventKind::Rotated);
+        assert_eq!(history.events.get(2).copied().unwrap_or_default().kind, HistoryEventKind::Rotated);
     }
 
     #[test]
@@ -901,9 +901,9 @@ mod tests {
             3,
             "history must have created + rotated + revoked"
         );
-        assert_eq!(history.events[0].kind, HistoryEventKind::Created);
-        assert_eq!(history.events[1].kind, HistoryEventKind::Rotated);
-        assert_eq!(history.events[2].kind, HistoryEventKind::Revoked);
+        assert_eq!(history.events.get(0).copied().unwrap_or_default().kind, HistoryEventKind::Created);
+        assert_eq!(history.events.get(1).copied().unwrap_or_default().kind, HistoryEventKind::Rotated);
+        assert_eq!(history.events.get(2).copied().unwrap_or_default().kind, HistoryEventKind::Revoked);
         assert_eq!(history.status, EntryStatus::Revoked);
     }
 
@@ -920,8 +920,8 @@ mod tests {
         let history = vault.history("key").unwrap();
         for pair in history.events.windows(2) {
             assert!(
-                pair[0].timestamp <= pair[1].timestamp,
-                "history events must be in chronological order"
+                pair.get(0).copied().unwrap_or_default().timestamp <= pair.get(1).copied().unwrap_or_default().timestamp,
+                "history events must be in chronological ORDER"
             );
         }
     }

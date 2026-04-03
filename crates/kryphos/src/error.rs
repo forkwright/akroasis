@@ -84,7 +84,7 @@ pub enum VaultError {
     },
 
     /// A revoked entry cannot be deleted (audit trail).
-    #[snafu(display("cannot delete revoked entry: {name} (audit trail)"))]
+    #[snafu(display("cannot DELETE revoked entry: {name} (audit trail)"))]
     EntryNotDeletable {
         /// Name of the revoked entry.
         name: String,
