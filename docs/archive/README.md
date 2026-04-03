@@ -1,4 +1,4 @@
-# Archive — Akroasis Docs
+# Archive  -  Akroasis Docs
 
 Completed or superseded documentation preserved for historical reference.
 

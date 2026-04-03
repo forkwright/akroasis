@@ -1,6 +1,6 @@
 # P2-R2: Mesh Topology and Routing
 
-**Phase:** 2 — Kerykeion
+**Phase:** 2  -  Kerykeion
 **Block:** P2-03, P2-04
 **Depends on:** P2-R1 (Meshtastic routing mechanics), P2-R27 (DTN patterns)
 
@@ -19,7 +19,7 @@
 | Maintenance | Active, widely used | Slow | N/A |
 | `no_std` path | No (not needed) | No | Possible |
 
-`graphlib` is a thin wrapper with a sparser API. A custom adjacency list is warranted only if the graph structure is specialized (it is not here — this is a sparse, small, weighted digraph). `petgraph` covers the use case and does not require writing traversal algorithms.
+`graphlib` is a thin wrapper with a sparser API. A custom adjacency list is warranted only if the graph structure is specialized (it is not here  -  this is a sparse, small, weighted digraph). `petgraph` covers the use case and does not require writing traversal algorithms.
 
 **Concrete types:**
 
@@ -186,7 +186,7 @@ Every packet the server receives carries:
 - `hop_start`: hops remaining when the packet left the originator
 - `hop_limit`: hops remaining when the server received the packet
 
-From these: `hops_traversed = hop_start - hop_limit`. If `relay_node` is non-zero, we know the final hop is `relay_node → server_connected_node` with SNR `rx_snr`. Add that directed edge to the graph immediately — no traceroute required.
+From these: `hops_traversed = hop_start - hop_limit`. If `relay_node` is non-zero, we know the final hop is `relay_node → server_connected_node` with SNR `rx_snr`. Add that directed edge to the graph immediately  -  no traceroute required.
 
 ### 3.2 Update Frequency
 
@@ -269,9 +269,9 @@ Thresholds:
 
 | Score | Classification |
 |-------|---------------|
-| 0–15 | Good — direct or short path with strong SNR |
-| 16–35 | Degraded — long path or weak links |
-| 36–60 | Poor — marginally usable; prefer store-and-forward |
+| 0–15 | Good  -  direct or short path with strong SNR |
+| 16–35 | Degraded  -  long path or weak links |
+| 36–60 | Poor  -  marginally usable; prefer store-and-forward |
 | 61+ | Effectively disconnected |
 
 ### 4.4 Multi-Path Tracking
@@ -434,7 +434,7 @@ The engine checks gateway health every 30 seconds (cheap in-memory scan, no mesh
 
 ### 6.5 Bridge Architecture
 
-The gateway is an RF-to-internet bridge. kerykeion does not speak directly to the internet from the gateway node's perspective — it routes a Meshtastic packet to the gateway, which then forwards it outbound via MQTT or a direct API call. The return path is symmetric.
+The gateway is an RF-to-internet bridge. kerykeion does not speak directly to the internet from the gateway node's perspective  -  it routes a Meshtastic packet to the gateway, which then forwards it outbound via MQTT or a direct API call. The return path is symmetric.
 
 **Outbound (server → internet):**
 
@@ -511,7 +511,7 @@ This information informs PACE planning: a sub-mesh may have internal mesh commun
 
 ### 8.1 What opsis Needs
 
-opsis (ratatui TUI) renders the mesh topology. It needs a serializable snapshot that decouples the topology engine from the rendering layer — ratatui runs in the terminal event loop, not the async mesh loop.
+opsis (ratatui TUI) renders the mesh topology. It needs a serializable snapshot that decouples the topology engine from the rendering layer  -  ratatui runs in the terminal event loop, not the async mesh loop.
 
 ```rust
 /// Snapshot of the mesh topology, suitable for rendering without locking the graph.
@@ -677,7 +677,7 @@ pub enum MessageFailureReason {
 }
 ```
 
-These signals flow into the `GeoSignal` broadcast channel and are consumed by semaino (aggregation) and opsis (display). No signal is emitted without a corresponding state change in the graph — events are not re-emitted on polling, only on transition.
+These signals flow into the `GeoSignal` broadcast channel and are consumed by semaino (aggregation) and opsis (display). No signal is emitted without a corresponding state change in the graph  -  events are not re-emitted on polling, only on transition.
 
 ---
 
@@ -685,7 +685,7 @@ These signals flow into the `GeoSignal` broadcast channel and are consumed by se
 
 ### 10.1 Assumptions
 
-- LoRa SF10, BW125 kHz, CR 4/5 — typical Meshtastic default for longer range
+- LoRa SF10, BW125 kHz, CR 4/5  -  typical Meshtastic default for longer range
 - Effective data rate: ~980 bps (SF10 BW125)
 - Duty cycle limit: 1% per LoRa regulatory requirement (EU); US has no duty cycle limit but we budget conservatively
 - 7 nodes total; 4 have regular activity (2 T-Deck Plus personal carry, RAK gateway, WisBlock)
@@ -729,7 +729,7 @@ If the firmware reports `channel_utilization > 20%`:
 
 If `channel_utilization > 30%`:
 - Suspend Default-priority S&F messages.
-- Emit `ChannelCongestion` signal (new `MeshDetail` variant, not defined above — add when implementing congestion handling).
+- Emit `ChannelCongestion` signal (new `MeshDetail` variant, not defined above  -  add when implementing congestion handling).
 
 This keeps kerykeion from amplifying congestion loops.
 

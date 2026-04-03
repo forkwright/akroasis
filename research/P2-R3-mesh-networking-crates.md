@@ -1,7 +1,7 @@
 # P2-R3: Mesh networking crates for kerykeion
 
 **Date:** 2026-03-18
-**Scope:** Rust crate selection for kerykeion — the clean-room Meshtastic stack within Akroasis. Covers serial, BLE, protobuf, crypto, graph, discovery, and test infrastructure. Excludes the official `meshtastic` crate (0.1.8, GPL-3.0) per project constraints.
+**Scope:** Rust crate selection for kerykeion  -  the clean-room Meshtastic stack within Akroasis. Covers serial, BLE, protobuf, crypto, graph, discovery, and test infrastructure. Excludes the official `meshtastic` crate (0.1.8, GPL-3.0) per project constraints.
 
 kerykeion (from Greek keryx, the herald's staff carried by Hermes) handles the physical-to-application boundary: receiving LoRa packets from Meshtastic radio hardware, decrypting and decoding them, and presenting structured mesh topology to the rest of Akroasis.
 
@@ -42,7 +42,7 @@ kerykeion (from Greek keryx, the herald's staff carried by Hermes) handles the p
 
 Use `tokio-serial 5.4.5` with `tokio-util 0.7.18` codec framing.
 
-`tokio-serial` wraps `serialport 4.9.0` (the established synchronous serial library) with a Tokio async layer using `mio-serial` under the hood. Linux support for CP2102, CH340, and CH9102 USB serial chipsets is OS-driver level — all three present as `/dev/ttyUSBn` on Linux and work without special crate handling. Baud rate configuration, hardware flow control (RTS/CTS, DTR/DSR), and 8N1 framing are all supported through `serialport::SerialPortBuilder`.
+`tokio-serial` wraps `serialport 4.9.0` (the established synchronous serial library) with a Tokio async layer using `mio-serial` under the hood. Linux support for CP2102, CH340, and CH9102 USB serial chipsets is OS-driver level  -  all three present as `/dev/ttyUSBn` on Linux and work without special crate handling. Baud rate configuration, hardware flow control (RTS/CTS, DTR/DSR), and 8N1 framing are all supported through `serialport::SerialPortBuilder`.
 
 `serialport` uses MPL-2.0. This is file-level copyleft: modifications to `serialport`'s own source files must be shared, but code that calls it is not affected. AGPL-3.0 is compatible with this.
 
@@ -172,7 +172,7 @@ pub(crate) async fn open_radio(
 
 Use `btleplug 0.12.0`.
 
-Both `btleplug` and `bluer` use D-Bus to talk to BlueZ on Linux — neither is truly free of system daemon coupling. The choice comes down to API ergonomics and cross-platform future.
+Both `btleplug` and `bluer` use D-Bus to talk to BlueZ on Linux  -  neither is truly free of system daemon coupling. The choice comes down to API ergonomics and cross-platform future.
 
 `btleplug` provides a `Central` trait for scanning and a `Peripheral` trait for GATT operations. Characteristic discovery, read/write, and notification subscribe all have clean async interfaces. The triple license (MIT/Apache-2.0/BSD-3-Clause) causes no AGPL complications. The 2026-03-09 update date confirms active maintenance.
 
@@ -386,7 +386,7 @@ bytes 12..15 : extraNonce as u32, little-endian (0 for normal packets)
 
 This is a 128-bit nonce used as the initial counter value. The intended layout uses a u64 packet ID (not u32).
 
-**Firmware bug (confirmed in `CryptoEngine.cpp`):** The `extraNonce` branch writes to offset `sizeof(uint32_t)` (offset 4) instead of `sizeof(uint64_t) + sizeof(uint32_t)` (offset 12). When `extraNonce != 0`, it overwrites bytes 4–7 (the high word of `packetId`) rather than bytes 12–15. This is a latent firmware defect. For normal mesh packets `extraNonce` is always 0, so this bug is harmless in practice — the nonce layout above is correct for all packets kerykeion will receive.
+**Firmware bug (confirmed in `CryptoEngine.cpp`):** The `extraNonce` branch writes to offset `sizeof(uint32_t)` (offset 4) instead of `sizeof(uint64_t) + sizeof(uint32_t)` (offset 12). When `extraNonce != 0`, it overwrites bytes 4–7 (the high word of `packetId`) rather than bytes 12–15. This is a latent firmware defect. For normal mesh packets `extraNonce` is always 0, so this bug is harmless in practice  -  the nonce layout above is correct for all packets kerykeion will receive.
 
 ### CTR variant selection
 
