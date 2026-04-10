@@ -32,7 +32,7 @@ cargo clippy --workspace               # Lint (zero warnings)
 - **Async:** Tokio
 - **Lints:** `#[expect(lint, reason = "...")]` over `#[allow]`
 - **Visibility:** `pub(crate)` by default
-- **Naming:** Greek names per [docs/gnomon.md](docs/gnomon.md), registry at [docs/lexicon.md](docs/lexicon.md)
+- **Naming:** Greek names per [standards/GNOMON.md](standards/GNOMON.md), registry at [docs/lexicon.md](docs/lexicon.md)
 
 ## Before submitting
 
