@@ -11,7 +11,7 @@ Writing: [standards/WRITING.md](standards/WRITING.md)
 
 ## Structure
 
-17 crates, 10 capability domains. See README.md for the full domain map.
+6 crates shipped (koinon, kryphos, syntonia, kerykeion, semaino, akroasis), 12 planned. 10 capability domains. See README.md for the full domain map with status markers.
 
 Foundation: `koinon` (shared types, signal model), `kryphos` (encryption, identity).
 

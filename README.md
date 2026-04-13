@@ -10,29 +10,32 @@ Akroasis is the attempt to fix that.
 
 One system. One signal model. Every domain produces typed signals into the same pipeline. Radio anomalies correlate with network threats correlate with proximity intelligence correlate with OSINT. The convergence is where the intelligence lives - not in any single domain but in the relationships between them.
 
-17 crates. 10 capability domains. Rust from the ground up.
+6 crates shipped, 12 planned. 10 capability domains. Rust from the ground up.
 
 ---
 
 ## What it does
 
-| Domain | Crate | What |
-|--------|-------|------|
-| **Radio Management** | syntonia | Frequency plans, channel programming, serial protocols - clean-room CHIRP replacement. Programs Baofeng UV-5R family and Yaesu FTM-510DR directly. |
-| **Mesh Networking** | kerykeion | Full Meshtastic protocol stack. Node management, topology awareness, message routing. Delay-tolerant networking - messages survive hours-long network partitions. PACE communications with automated failover. |
-| **SDR / Reception** | dektis | Spectrum monitoring, FM/AM/SSB demodulation, protocol decoding (APRS, ADS-B, P25). Jamming detection, direction finding, emitter fingerprinting. The electromagnetic environment as a contested space. |
-| **Proximity Intelligence** | engys | WiFi, BLE, Zigbee, Z-Wave, NFC, RFID. Everything broadcasting within range - every phone, beacon, smart lock, tracker. Presence analytics, rogue device detection, counter-surveillance input. |
-| **Network Defense** | aspis | Full IDS/IPS - Suricata and Zeek orchestration with active response. CAN bus security for vehicle networks. IoT device monitoring. |
-| **OSINT** | skopos | Feed aggregation, threat intelligence (STIX/TAXII), asset discovery, web scraping, dark web monitoring. All collection routed through anonymization infrastructure. |
-| **Offensive Security** | peira | Penetration testing, vulnerability scanning, wireless security testing. Every operation scope-locked with full audit trail. |
-| **Signal Intelligence** | semaino + ichneutes | Signal aggregation, convergence detection, anomaly baselines (Welford's algorithm), entity correlation, focal point synthesis, threat scoring. Forensic timeline reconstruction across all domains. |
-| **Automation** | praxis | Event-driven triggers, named playbooks, PACE communications, operational state machines. The layer that turns awareness into action - not just monitoring, responding. |
-| **Navigation** | chorografia | RF propagation modeling, infrastructure dependency graphs, cascade analysis. Vehicle and foot navigation with offline OSM maps. Military planning overlays. Space weather integration for HF propagation prediction. |
-| **Knowledge** | pinax | Offline knowledge repository - frequency databases, protocol specs, equipment manuals, topo maps, emergency procedures, vulnerability databases. Compressed, indexed, searchable. When the internet dies, the knowledge survives. |
-| **Privacy** | lethe | VPN/proxy management, anonymization, metadata scrubbing, IMSI catcher detection, continuous OPSEC scoring. The etymological complement to [Aletheia](https://github.com/forkwright/aletheia) - same root (λήθη), opposite directions. |
-| **Interface** | opsis | TUI (ratatui), native app (Dioxus), web UI (Axum over Tailscale). Spectrum waterfall, mesh topology, intelligence dashboard, map display, after-action replay. |
+| Domain | Crate | Status | What |
+|--------|-------|--------|------|
+| **Foundation** | koinon | ✓ | Shared types, signal model (7 domains), entity index, temporal baseline engine (Welford's algorithm), tamper-evident logging. |
+| **Foundation** | kryphos | ✓ | Encryption (ChaCha20-Poly1305), key management (Ed25519), credential vault, Argon2id derivation, identity segregation. |
+| **Radio Management** | syntonia | ✓ | Frequency plans, channel programming, serial protocols — clean-room CHIRP replacement. Programs Baofeng UV-5R family directly. Yaesu FTM-510DR planned. |
+| **Mesh Networking** | kerykeion | ✓ | Full Meshtastic protocol stack. Node management, topology awareness, message routing. Delay-tolerant networking with PACE automated failover. |
+| **Signal Intelligence** | semaino | ✓ | Signal aggregation, convergence detection, anomaly baselines, alert pipeline with deduplication and severity classification. |
+| **SDR / Reception** | dektis | ◻ | Spectrum monitoring, FM/AM/SSB demodulation, protocol decoding (APRS, ADS-B, P25). Jamming detection, direction finding, emitter fingerprinting. |
+| **Proximity Intelligence** | engys | ◻ | WiFi, BLE, Zigbee, Z-Wave, NFC, RFID. Presence analytics, rogue device detection, counter-surveillance input. |
+| **Network Defense** | aspis | ◻ | IDS/IPS — Suricata and Zeek orchestration with active response. CAN bus security for vehicle networks. IoT monitoring. |
+| **OSINT** | skopos | ◻ | Feed aggregation, threat intelligence (STIX/TAXII), asset discovery. All collection routed through anonymization infrastructure. |
+| **Offensive Security** | peira | ◻ | Penetration testing, vulnerability scanning, wireless security testing. Scope-locked with full audit trail. |
+| **Signal Intelligence** | ichneutes | ◻ | Entity correlation, focal point synthesis, threat scoring. Forensic timeline reconstruction across all domains. |
+| **Automation** | praxis | ◻ | Event-driven triggers, named playbooks, PACE communications, operational state machines. |
+| **Navigation** | chorografia | ◻ | RF propagation modeling, infrastructure graphs, offline OSM navigation, space weather HF prediction. |
+| **Knowledge** | pinax | ◻ | Offline knowledge repository — frequency databases, protocol specs, equipment manuals, topo maps. |
+| **Privacy** | lethe | ◻ | VPN/proxy management, anonymization, IMSI catcher detection, OPSEC scoring. The etymological complement to [Aletheia](https://github.com/forkwright/aletheia). |
+| **Interface** | opsis | ◻ | TUI (ratatui), native app (Dioxus), web UI (Axum). Spectrum waterfall, mesh topology, intelligence dashboard. |
 
-Foundation crates: **koinon** (shared types, signal model, entity index, temporal engine), **kryphos** (encryption, key management, credential vault, identity segregation).
+✓ = shipped, ◻ = planned
 
 ---
 
@@ -109,7 +112,7 @@ Every collection crate produces typed `GeoSignal` objects into koinon. Semaino a
 
 ## Status
 
-Wave 1 (kryphos, 7 PRs) and Wave 2 (syntonia, 7 PRs) are complete. Architecture finalized. Active development ongoing.
+Wave 1 (kryphos), Wave 2 (syntonia + kerykeion), and Wave 3 (semaino) are complete. 6 crates shipping ~25K LOC with 600+ tests. Architecture finalized. Active development ongoing.
 
 The scope is massive. The architecture makes each domain independent: a crate with clear boundaries, producing typed signals into the shared model. The pieces don't need to arrive simultaneously. They just need to speak the same language when they do.
 
