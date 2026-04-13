@@ -19,6 +19,8 @@
 //! - [`baofeng`] — Baofeng UV-5R EEPROM codec
 
 pub mod baofeng;
+pub(crate) mod serial;
+pub mod yaesu;
 pub mod channel;
 pub mod error;
 pub mod export;
