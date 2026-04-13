@@ -296,4 +296,142 @@ mod tests {
 
         assert_ne!(s1, s2, "two generated salts must differ");
     }
+
+    // -----------------------------------------------------------------
+    // IETF known-answer vector tests
+    // -----------------------------------------------------------------
+
+    /// RFC 8439 Section 2.8.2 known-answer vector for ChaCha20-Poly1305.
+    ///
+    /// Proves the underlying `chacha20poly1305` crate produces the correct
+    /// ciphertext and authentication tag for the authoritative IETF test
+    /// vector, including AAD authentication. Uses the raw AEAD API with a
+    /// fixed nonce so the output is deterministic and comparable.
+    ///
+    /// Reference: <https://www.rfc-editor.org/rfc/rfc8439#section-2.8.2>
+    #[allow(clippy::expect_used, reason = "RFC vector test — construction cannot fail")]
+    #[test]
+    fn chacha20poly1305_rfc8439_test_vector() {
+        use chacha20poly1305::aead::{Aead, KeyInit, Payload};
+        use chacha20poly1305::ChaCha20Poly1305;
+
+        // RFC 8439 Section 2.8.2 test vector.
+        const RFC_KEY: [u8; 32] = [
+            0x80, 0x81, 0x82, 0x83, 0x84, 0x85, 0x86, 0x87, 0x88, 0x89, 0x8a, 0x8b, 0x8c, 0x8d,
+            0x8e, 0x8f, 0x90, 0x91, 0x92, 0x93, 0x94, 0x95, 0x96, 0x97, 0x98, 0x99, 0x9a, 0x9b,
+            0x9c, 0x9d, 0x9e, 0x9f,
+        ];
+        const RFC_NONCE: [u8; 12] = [
+            0x07, 0x00, 0x00, 0x00, 0x40, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47,
+        ];
+        const RFC_AAD: [u8; 12] = [
+            0x50, 0x51, 0x52, 0x53, 0xc0, 0xc1, 0xc2, 0xc3, 0xc4, 0xc5, 0xc6, 0xc7,
+        ];
+        const RFC_PLAINTEXT: &[u8] = b"Ladies and Gentlemen of the class of '99: \
+            If I could offer you only one tip for the future, sunscreen would be it.";
+        // Expected ciphertext (without tag) from RFC 8439 Section 2.8.2.
+        const RFC_CIPHERTEXT: [u8; 114] = [
+            0xd3, 0x1a, 0x8d, 0x34, 0x64, 0x8e, 0x60, 0xdb, 0x7b, 0x86, 0xaf, 0xbc, 0x53, 0xef,
+            0x7e, 0xc2, 0xa4, 0xad, 0xed, 0x51, 0x29, 0x6e, 0x08, 0xfe, 0xa9, 0xe2, 0xb5, 0xa7,
+            0x36, 0xee, 0x62, 0xd6, 0x3d, 0xbe, 0xa4, 0x5e, 0x8c, 0xa9, 0x67, 0x12, 0x82, 0xfa,
+            0xfb, 0x69, 0xda, 0x92, 0x72, 0x8b, 0x1a, 0x71, 0xde, 0x0a, 0x9e, 0x06, 0x0b, 0x29,
+            0x05, 0xd6, 0xa5, 0xb6, 0x7e, 0xcd, 0x3b, 0x36, 0x92, 0xdd, 0xbd, 0x7f, 0x2d, 0x77,
+            0x8b, 0x8c, 0x98, 0x03, 0xae, 0xe3, 0x28, 0x09, 0x1b, 0x58, 0xfa, 0xb3, 0x24, 0xe4,
+            0xfa, 0xd6, 0x75, 0x94, 0x55, 0x85, 0x80, 0x8b, 0x48, 0x31, 0xd7, 0xbc, 0x3f, 0xf4,
+            0xde, 0xf0, 0x8e, 0x4b, 0x7a, 0x9d, 0xe5, 0x76, 0xd2, 0x65, 0x86, 0xce, 0xc6, 0x4b,
+            0x61, 0x16,
+        ];
+        // Poly1305 authentication tag from RFC 8439 Section 2.8.2.
+        const RFC_TAG: [u8; 16] = [
+            0x1a, 0xe1, 0x0b, 0x59, 0x4f, 0x09, 0xe2, 0x6a, 0x7e, 0x90, 0x2e, 0xcb, 0xd0, 0x60,
+            0x06, 0x91,
+        ];
+
+        let key = chacha20poly1305::Key::from(RFC_KEY);
+        let nonce = chacha20poly1305::Nonce::from(RFC_NONCE);
+        let cipher = ChaCha20Poly1305::new(&key);
+
+        // Encrypt with AAD — the output is ciphertext || tag (postfix tag).
+        let output = cipher
+            .encrypt(&nonce, Payload { msg: RFC_PLAINTEXT, aad: &RFC_AAD })
+            .expect("RFC 8439 test vector encryption must succeed");
+
+        assert_eq!(
+            output.len(),
+            RFC_PLAINTEXT.len() + 16,
+            "encrypted output must be plaintext length + 16-byte tag"
+        );
+        assert_eq!(
+            &output[..RFC_PLAINTEXT.len()],
+            RFC_CIPHERTEXT,
+            "ciphertext bytes must match RFC 8439 Section 2.8.2 vector"
+        );
+        assert_eq!(
+            &output[RFC_PLAINTEXT.len()..],
+            RFC_TAG,
+            "Poly1305 tag must match RFC 8439 Section 2.8.2 vector"
+        );
+
+        // Verify decryption recovers the original plaintext.
+        let mut ct_with_tag = Vec::from(RFC_CIPHERTEXT.as_slice());
+        ct_with_tag.extend_from_slice(&RFC_TAG);
+        let decrypted = cipher
+            .decrypt(&nonce, Payload { msg: &ct_with_tag, aad: &RFC_AAD })
+            .expect("RFC 8439 test vector decryption must succeed");
+        assert_eq!(
+            decrypted, RFC_PLAINTEXT,
+            "decrypted RFC vector must equal original plaintext"
+        );
+    }
+
+    /// RFC 9106 known-answer vector for Argon2id version 0x13.
+    ///
+    /// Proves the underlying `argon2` crate produces the correct output for
+    /// the authoritative IETF test vector (Argon2id, m=32 KiB, t=3, p=4,
+    /// with secret and associated data). Bypasses the `derive_key` wrapper
+    /// to exercise the primitive directly.
+    ///
+    /// Reference: <https://www.rfc-editor.org/rfc/rfc9106#appendix-B>
+    #[allow(clippy::expect_used, reason = "RFC vector test — construction cannot fail")]
+    #[test]
+    fn argon2id_rfc9106_test_vector() {
+        // RFC 9106 Appendix B, Argon2id version 0x13 test vector.
+        // Memory: 32 KiB, Iterations: 3, Parallelism: 4 lanes, Tag: 32 bytes.
+        const RFC_PASSWORD: [u8; 32] = [0x01; 32];
+        const RFC_SALT: [u8; 16] = [0x02; 16];
+        const RFC_SECRET: [u8; 8] = [0x03; 8];
+        const RFC_AD: [u8; 12] = [0x04; 12];
+        // Expected 32-byte output tag from RFC 9106 Appendix B.
+        const RFC_TAG: [u8; 32] = [
+            0x0d, 0x64, 0x0d, 0xf5, 0x8d, 0x78, 0x76, 0x6c, 0x08, 0xc0, 0x37, 0xa3, 0x4a, 0x8b,
+            0x53, 0xc9, 0xd0, 0x1e, 0xf0, 0x45, 0x2d, 0x75, 0xb6, 0x5e, 0xb5, 0x25, 0x20, 0xe9,
+            0x6b, 0x01, 0xe6, 0x59,
+        ];
+
+        let ad = argon2::AssociatedData::new(&RFC_AD).expect("valid AD length");
+        let mut builder = argon2::ParamsBuilder::new();
+        builder.m_cost(32);
+        builder.t_cost(3);
+        builder.p_cost(4);
+        builder.data(ad);
+        builder.output_len(32);
+        let params = builder.build().expect("RFC 9106 Argon2id params must be valid");
+
+        let ctx = argon2::Argon2::new_with_secret(
+            &RFC_SECRET,
+            argon2::Algorithm::Argon2id,
+            argon2::Version::V0x13,
+            params,
+        )
+        .expect("RFC 9106 Argon2id context construction must succeed");
+
+        let mut out = [0u8; 32];
+        ctx.hash_password_into(&RFC_PASSWORD, &RFC_SALT, &mut out)
+            .expect("RFC 9106 Argon2id KDF must not fail with valid inputs");
+
+        assert_eq!(
+            out, RFC_TAG,
+            "Argon2id output must match RFC 9106 Appendix B test vector"
+        );
+    }
 }
