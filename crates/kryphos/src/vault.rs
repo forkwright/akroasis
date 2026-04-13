@@ -454,7 +454,7 @@ mod tests {
         let nonce = [0x01; NONCE_LEN];
 
         let mut ciphertext = seal_signing_key(&identity, &vault_key, &nonce).unwrap();
-        ciphertext.get(0).copied().unwrap_or_default() ^= 0xFF;
+        ciphertext[0] ^= 0xFF;
         let result = unseal_signing_key(&ciphertext, &vault_key, &nonce);
         assert!(
             result.is_err(),

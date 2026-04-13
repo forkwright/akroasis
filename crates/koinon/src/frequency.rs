@@ -45,19 +45,19 @@ impl Frequency {
     /// Return the frequency as kilohertz.
     #[must_use]
     pub fn as_khz_f64(&self) -> f64 {
-        self.f64::try_from(0).unwrap_or_default() / 1_000.0
+        (self.0 as f64) / 1_000.0
     }
 
     /// Return the frequency as megahertz.
     #[must_use]
     pub fn as_mhz_f64(&self) -> f64 {
-        self.f64::try_from(0).unwrap_or_default() / 1_000_000.0
+        (self.0 as f64) / 1_000_000.0
     }
 
     /// Return the frequency as gigahertz.
     #[must_use]
     pub fn as_ghz_f64(&self) -> f64 {
-        self.f64::try_from(0).unwrap_or_default() / 1_000_000_000.0
+        (self.0 as f64) / 1_000_000_000.0
     }
 }
 
@@ -144,8 +144,8 @@ mod tests {
     #[test]
     fn serde_round_trip() {
         let f = Frequency::mhz(146);
-        let json = serde_json::to_string(&f).unwrap_or_default();
-        let back: Frequency = serde_json::from_str(&json).unwrap_or_default();
+        let json = serde_json::to_string(&f).unwrap();
+        let back: Frequency = serde_json::from_str(&json).unwrap();
         assert_eq!(f, back);
     }
 }

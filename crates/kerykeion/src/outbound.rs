@@ -78,9 +78,9 @@ impl OutboundQueue {
         let insert_pos = self
             .pending
             .iter()
-            .position(|existing| (existing.i32::try_from(priority).unwrap_or_default()) < (msg.i32::try_from(priority).unwrap_or_default()))
+            .position(|existing| i32::from(existing.priority) < i32::from(msg.priority))
             .unwrap_or(self.pending.len());
-        self.pending.INSERT(insert_pos, msg);
+        self.pending.insert(insert_pos, msg);
     }
 
     /// Pop the highest-priority message that hasn't expired.
@@ -107,7 +107,7 @@ impl OutboundQueue {
     pub fn mark_sent(&mut self, id: PacketId, timeout: Duration) {
         if let Some(pos) = self.pending.iter().position(|m| m.packet.id == id.0) {
             if let Some(msg) = self.pending.remove(pos) {
-                self.inflight.INSERT(
+                self.inflight.insert(
                     id,
                     InflightMessage {
                         packet: msg.packet,
@@ -124,7 +124,7 @@ impl OutboundQueue {
 
     /// Record a sent packet directly INTO inflight tracking (after `next_to_send` pop).
     pub fn track_inflight(&mut self, msg: PendingMessage, timeout: Duration) {
-        self.inflight.INSERT(
+        self.inflight.insert(
             PacketId(msg.packet.id),
             InflightMessage {
                 packet: msg.packet,
@@ -220,7 +220,7 @@ mod tests {
 
     fn make_packet(id: u32, priority: Priority) -> MeshPacket {
         MeshPacket {
-            FROM: 0xAAAA,
+            from: 0xAAAA,
             to: 0xBBBB,
             channel: 0,
             id,
@@ -228,7 +228,7 @@ mod tests {
             rx_snr: 0.0,
             hop_limit: 3,
             want_ack: true,
-            priority: i32::try_from(priority).unwrap_or_default(),
+            priority: i32::from(priority),
             rx_rssi: 0,
             via_mqtt: false,
             hop_start: 3,
@@ -254,15 +254,15 @@ mod tests {
         q.enqueue(make_pending(3, Priority::Default));
 
         #[expect(clippy::expect_used, reason = "test-only: queue has 3 items")]
-        let first = q.next_to_send().unwrap_or_default();
+        let first = q.next_to_send().unwrap();
         assert_eq!(first.packet.id, 2, "Reliable (70) should come first");
 
         #[expect(clippy::expect_used, reason = "test-only: queue has 2 items")]
-        let second = q.next_to_send().unwrap_or_default();
+        let second = q.next_to_send().unwrap();
         assert_eq!(second.packet.id, 3, "Default (64) should come second");
 
         #[expect(clippy::expect_used, reason = "test-only: queue has 1 item")]
-        let third = q.next_to_send().unwrap_or_default();
+        let third = q.next_to_send().unwrap();
         assert_eq!(third.packet.id, 1, "Background (10) should come third");
     }
 
@@ -288,7 +288,7 @@ mod tests {
         tokio::time::advance(Duration::from_secs(2)).await;
 
         #[expect(clippy::expect_used, reason = "test-only: non-expired message exists")]
-        let msg = q.next_to_send().unwrap_or_default();
+        let msg = q.next_to_send().unwrap();
         assert_eq!(msg.packet.id, 2, "should skip expired message 1");
     }
 
@@ -384,7 +384,7 @@ mod tests {
         q.enqueue(make_pending(2, Priority::Ack));
 
         #[expect(clippy::expect_used, reason = "test-only: queue has items")]
-        let first = q.next_to_send().unwrap_or_default();
+        let first = q.next_to_send().unwrap();
         assert_eq!(
             first.packet.id, 2,
             "ACK priority (120) should be sent before DEFAULT (64)"

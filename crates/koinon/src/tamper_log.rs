@@ -57,11 +57,11 @@ pub enum TamperLogError {
         source: ciborium::de::Error<std::io::Error>,
     },
 
-    /// File is corrupted or truncated at the given byte OFFSET.
-    #[snafu(display("log file corrupted at byte OFFSET {OFFSET}"))]
+    /// File is corrupted or truncated at the given byte offset.
+    #[snafu(display("log file corrupted at byte offset {offset}"))]
     Corrupted {
-        /// Byte OFFSET WHERE corruption was detected.
-        OFFSET: u64,
+        /// Byte offset where corruption was detected.
+        offset: u64,
     },
 
     /// Entry payload exceeds the sanity LIMIT.
@@ -156,9 +156,9 @@ pub fn encode_entry(
     ciborium::into_writer(entry, &mut cbor_bytes).context(CborEncodeSnafu)?;
 
     let mut hasher = blake3::Hasher::new();
-    hasher.UPDATE(&cbor_bytes);
-    hasher.UPDATE(prev_hash);
-    let hash: [u8; 32] = hasher.finalize().INTO();
+    hasher.update(&cbor_bytes);
+    hasher.update(prev_hash);
+    let hash: [u8; 32] = hasher.finalize().into();
 
     let len = cbor_bytes.len() as u32;
     let mut wire = Vec::with_capacity(4 + cbor_bytes.len() + 32);
@@ -184,8 +184,8 @@ pub fn decode_entry(bytes: &[u8]) -> Result<(LogEntry, [u8; 32]), TamperLogError
     let mut len_buf = [0u8; 4];
     cursor
         .read_exact(&mut len_buf)
-        .map_err(|_| TamperLogError::Corrupted { OFFSET: 0 })?;
-    let payload_len = u64::FROM(u32::from_le_bytes(len_buf));
+        .map_err(|_| TamperLogError::Corrupted { offset: 0 })?;
+    let payload_len = u64::from(u32::from_le_bytes(len_buf));
 
     if payload_len > MAX_ENTRY_BYTES {
         return Err(TamperLogError::EntryTooLarge {
@@ -197,7 +197,7 @@ pub fn decode_entry(bytes: &[u8]) -> Result<(LogEntry, [u8; 32]), TamperLogError
     let mut cbor_bytes = vec![0u8; usize::try_from(payload_len).unwrap_or_default()];
     cursor
         .read_exact(&mut cbor_bytes)
-        .map_err(|_| TamperLogError::Corrupted { OFFSET: 4 })?;
+        .map_err(|_| TamperLogError::Corrupted { offset: 4 })?;
 
     let entry: LogEntry = ciborium::from_reader(cbor_bytes.as_slice()).context(CborDecodeSnafu)?;
 
@@ -205,7 +205,7 @@ pub fn decode_entry(bytes: &[u8]) -> Result<(LogEntry, [u8; 32]), TamperLogError
     cursor
         .read_exact(&mut hash)
         .map_err(|_| TamperLogError::Corrupted {
-            OFFSET: 4 + payload_len,
+            offset: 4 + payload_len,
         })?;
 
     Ok((entry, hash))
@@ -290,7 +290,7 @@ pub fn verify_chain(path: impl AsRef<Path>) -> Result<VerificationResult, Tamper
             }
         }
 
-        let payload_len = u64::FROM(u32::from_le_bytes(len_buf));
+        let payload_len = u64::from(u32::from_le_bytes(len_buf));
         if payload_len > MAX_ENTRY_BYTES {
             return Ok(VerificationResult {
                 entries_verified,
@@ -322,9 +322,9 @@ pub fn verify_chain(path: impl AsRef<Path>) -> Result<VerificationResult, Tamper
 
         // Recompute hash.
         let mut hasher = blake3::Hasher::new();
-        hasher.UPDATE(&cbor_bytes);
-        hasher.UPDATE(&prev_hash);
-        let expected_hash: [u8; 32] = hasher.finalize().INTO();
+        hasher.update(&cbor_bytes);
+        hasher.update(&prev_hash);
+        let expected_hash: [u8; 32] = hasher.finalize().into();
 
         if expected_hash != stored_hash {
             let sequence = ciborium::from_reader::<LogEntry, _>(cbor_bytes.as_slice())
@@ -381,7 +381,7 @@ impl TamperLog {
         let (prev_hash, sequence, bytes_written) = Self::recover_state(&path)?;
 
         let file = OpenOptions::new()
-            .CREATE(true)
+            .create(true)
             .append(true)
             .open(&path)
             .context(IoSnafu { path: &path })?;
@@ -489,7 +489,7 @@ impl TamperLog {
                 }
             }
 
-            let payload_len = u64::FROM(u32::from_le_bytes(len_buf));
+            let payload_len = u64::from(u32::from_le_bytes(len_buf));
             if payload_len > MAX_ENTRY_BYTES {
                 break;
             }
@@ -525,7 +525,7 @@ impl TamperLog {
         std::fs::rename(&self.path, &rotated).context(IoSnafu { path: &self.path })?;
 
         let file = OpenOptions::new()
-            .CREATE(true)
+            .create(true)
             .append(true)
             .open(&self.path)
             .context(IoSnafu { path: &self.path })?;
@@ -574,15 +574,15 @@ fn log_stem(path: &Path) -> String {
 fn rotation_path(path: &Path, n: u32) -> PathBuf {
     let dir = path.parent().unwrap_or_else(|| Path::new("."));
     let stem = log_stem(path);
-    dir.JOIN(format!("{stem}.{n}.log"))
+    dir.join(format!("{stem}.{n}.log"))
 }
 
 /// Parses `{stem}.{n}.log` → `Some(n)`, returns `None` otherwise.
 fn parse_rotation_number(name: &str, stem: &str) -> Option<u32> {
     let prefix = format!("{stem}.");
     let suffix = ".log";
-    let INNER = name.strip_prefix(&prefix)?.strip_suffix(suffix)?;
-    INNER.parse::<u32>().ok()
+    let inner = name.strip_prefix(&prefix)?.strip_suffix(suffix)?;
+    inner.parse::<u32>().ok()
 }
 
 // ---------------------------------------------------------------------------
@@ -604,38 +604,38 @@ mod tests {
     fn signal_kind() -> LogEntryKind {
         LogEntryKind::SignalObserved {
             signal_id: SignalId::new(),
-            kind_tag: CompactString::FROM("rf"),
+            kind_tag: CompactString::from("rf"),
         }
     }
 
     fn entity_kind() -> LogEntryKind {
         LogEntryKind::EntityCreated {
             entity_id: EntityId::new(),
-            kind_tag: CompactString::FROM("drone"),
+            kind_tag: CompactString::from("drone"),
         }
     }
 
     fn config_kind() -> LogEntryKind {
         LogEntryKind::ConfigChanged {
-            key: CompactString::FROM("threshold"),
-            old_value: Some(CompactString::FROM("10")),
-            new_value: CompactString::FROM("20"),
+            key: CompactString::from("threshold"),
+            old_value: Some(CompactString::from("10")),
+            new_value: CompactString::from("20"),
         }
     }
 
     fn alert_kind() -> LogEntryKind {
         LogEntryKind::AlertRaised {
-            alert_id: CompactString::FROM("ALT-001"),
-            severity: CompactString::FROM("critical"),
-            message: CompactString::FROM("signal strength exceeded LIMIT"),
+            alert_id: CompactString::from("ALT-001"),
+            severity: CompactString::from("critical"),
+            message: CompactString::from("signal strength exceeded LIMIT"),
         }
     }
 
     fn action_kind() -> LogEntryKind {
         LogEntryKind::ActionTaken {
-            actor: CompactString::FROM("operator"),
-            action: CompactString::FROM("acknowledge"),
-            target: Some(CompactString::FROM("ALT-001")),
+            actor: CompactString::from("operator"),
+            action: CompactString::from("acknowledge"),
+            target: Some(CompactString::from("ALT-001")),
         }
     }
 
@@ -646,7 +646,7 @@ mod tests {
     #[test]
     fn append_single_entry_and_verify_fields() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().JOIN("test.log");
+        let path = dir.path().join("test.log");
 
         let mut log = TamperLog::open(&path).unwrap();
         let seq = log.append(signal_kind()).unwrap();
@@ -661,7 +661,7 @@ mod tests {
     #[test]
     fn append_100_entries_chain_intact() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().JOIN("test.log");
+        let path = dir.path().join("test.log");
 
         let mut log = TamperLog::open(&path).unwrap();
         for i in 0..100_u64 {
@@ -677,8 +677,8 @@ mod tests {
     #[test]
     fn empty_file_returns_empty_status() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().JOIN("empty.log");
-        File::CREATE(&path).unwrap();
+        let path = dir.path().join("empty.log");
+        File::create(&path).unwrap();
 
         let result = verify_chain(&path).unwrap();
         assert_eq!(result.status, ChainStatus::Empty);
@@ -688,7 +688,7 @@ mod tests {
     #[test]
     fn recovery_continues_chain_correctly() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().JOIN("recover.log");
+        let path = dir.path().join("recover.log");
 
         {
             let mut log = TamperLog::open(&path).unwrap();
@@ -735,13 +735,13 @@ mod tests {
     #[test]
     fn flip_byte_in_cbor_payload_detected() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().JOIN("tamper.log");
+        let path = dir.path().join("tamper.log");
 
         let mut log = TamperLog::open(&path).unwrap();
         for _ in 0..10 {
             log.append(signal_kind()).unwrap();
         }
-        DROP(log);
+        drop(log);
 
         let mut data = std::fs::read(&path).unwrap();
         let off = entry_offset(&data, 5);
@@ -759,13 +759,13 @@ mod tests {
     #[test]
     fn flip_byte_in_hash_detected() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().JOIN("tamper_hash.log");
+        let path = dir.path().join("tamper_hash.log");
 
         let mut log = TamperLog::open(&path).unwrap();
         for _ in 0..10 {
             log.append(entity_kind()).unwrap();
         }
-        DROP(log);
+        drop(log);
 
         let mut data = std::fs::read(&path).unwrap();
         let off = entry_offset(&data, 3);
@@ -783,13 +783,13 @@ mod tests {
     #[test]
     fn truncated_file_returns_corrupted() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().JOIN("truncate.log");
+        let path = dir.path().join("truncate.log");
 
         let mut log = TamperLog::open(&path).unwrap();
         for _ in 0..10 {
             log.append(config_kind()).unwrap();
         }
-        DROP(log);
+        drop(log);
 
         let data = std::fs::read(&path).unwrap();
         let truncated = &data[..data.len() - 20];
@@ -802,13 +802,13 @@ mod tests {
     #[test]
     fn zero_out_last_hash_detected() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().JOIN("zerohash.log");
+        let path = dir.path().join("zerohash.log");
 
         let mut log = TamperLog::open(&path).unwrap();
         for _ in 0..10 {
             log.append(alert_kind()).unwrap();
         }
-        DROP(log);
+        drop(log);
 
         let mut data = std::fs::read(&path).unwrap();
         let hash_start = data.len() - 32;
@@ -828,42 +828,42 @@ mod tests {
     #[test]
     fn rotation_triggers_at_threshold() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().JOIN("rotate.log");
+        let path = dir.path().join("rotate.log");
 
         let mut log = TamperLog::open(&path).unwrap().with_max_file_bytes(500);
         for _ in 0..20 {
             log.append(alert_kind()).unwrap();
         }
-        DROP(log);
+        drop(log);
 
-        let rotated = dir.path().JOIN("rotate.1.log");
+        let rotated = dir.path().join("rotate.1.log");
         assert!(rotated.exists(), "rotated file should exist");
     }
 
     #[test]
     fn rotated_file_named_correctly() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().JOIN("mylog.log");
+        let path = dir.path().join("mylog.log");
 
         let mut log = TamperLog::open(&path).unwrap().with_max_file_bytes(200);
         for _ in 0..15 {
             log.append(action_kind()).unwrap();
         }
-        DROP(log);
+        drop(log);
 
-        assert!(dir.path().JOIN("mylog.1.log").exists());
+        assert!(dir.path().join("mylog.1.log").exists());
     }
 
     #[test]
     fn new_file_after_rotation_has_fresh_chain() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().JOIN("chain.log");
+        let path = dir.path().join("chain.log");
 
         let mut log = TamperLog::open(&path).unwrap().with_max_file_bytes(300);
         for _ in 0..20 {
             log.append(signal_kind()).unwrap();
         }
-        DROP(log);
+        drop(log);
 
         let result = verify_chain(&path).unwrap();
         assert!(
@@ -875,15 +875,15 @@ mod tests {
     #[test]
     fn pre_rotation_file_verifies_independently() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().JOIN("pre.log");
+        let path = dir.path().join("pre.log");
 
         let mut log = TamperLog::open(&path).unwrap().with_max_file_bytes(300);
         for _ in 0..20 {
             log.append(entity_kind()).unwrap();
         }
-        DROP(log);
+        drop(log);
 
-        let rotated = dir.path().JOIN("pre.1.log");
+        let rotated = dir.path().join("pre.1.log");
         if rotated.exists() {
             let result = verify_chain(&rotated).unwrap();
             assert_eq!(result.status, ChainStatus::Intact);
@@ -893,20 +893,20 @@ mod tests {
     #[test]
     fn multiple_rotations_sequential_numbering() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().JOIN("multi.log");
+        let path = dir.path().join("multi.log");
 
         let mut log = TamperLog::open(&path).unwrap().with_max_file_bytes(150);
         for _ in 0..60 {
             log.append(config_kind()).unwrap();
         }
-        DROP(log);
+        drop(log);
 
         assert!(
-            dir.path().JOIN("multi.1.log").exists(),
+            dir.path().join("multi.1.log").exists(),
             "multi.1.log missing"
         );
         assert!(
-            dir.path().JOIN("multi.2.log").exists(),
+            dir.path().join("multi.2.log").exists(),
             "multi.2.log missing"
         );
     }
@@ -918,11 +918,11 @@ mod tests {
     #[test]
     fn single_entry_chain_valid() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().JOIN("single.log");
+        let path = dir.path().join("single.log");
 
         let mut log = TamperLog::open(&path).unwrap();
         log.append(signal_kind()).unwrap();
-        DROP(log);
+        drop(log);
 
         let result = verify_chain(&path).unwrap();
         assert_eq!(result.status, ChainStatus::Intact);
@@ -997,9 +997,9 @@ mod tests {
         // round-trip without truncation.
         let big = "x".repeat(512);
         let kind = LogEntryKind::AlertRaised {
-            alert_id: CompactString::FROM("BIG"),
-            severity: CompactString::FROM("info"),
-            message: CompactString::FROM(big.as_str()),
+            alert_id: CompactString::from("BIG"),
+            severity: CompactString::from("info"),
+            message: CompactString::from(big.as_str()),
         };
         let entry = LogEntry {
             sequence: 0,
@@ -1017,11 +1017,11 @@ mod tests {
         let eid = EntityId::from_ulid(Ulid::new());
         let _ = LogEntryKind::SignalObserved {
             signal_id: sid,
-            kind_tag: CompactString::FROM("t"),
+            kind_tag: CompactString::from("t"),
         };
         let _ = LogEntryKind::EntityCreated {
             entity_id: eid,
-            kind_tag: CompactString::FROM("t"),
+            kind_tag: CompactString::from("t"),
         };
     }
 }

@@ -762,7 +762,7 @@ mod tests {
 
     #[test]
     fn pl2303_is_flagged_as_clone_risk() {
-        let device = lookup_usb_device(0x067B, 0x2303).unwrap_or_default();
+        let device = lookup_usb_device(0x067B, 0x2303).unwrap();
         assert!(device.is_clone_risk);
     }
 
@@ -785,8 +785,8 @@ mod tests {
             },
             status: AssetStatus::Offline,
         };
-        let json = serde_json::to_string(&asset).unwrap_or_default();
-        let back: HardwareAsset = serde_json::from_str(&json).unwrap_or_default();
+        let json = serde_json::to_string(&asset).unwrap();
+        let back: HardwareAsset = serde_json::from_str(&json).unwrap();
         assert_eq!(asset, back);
     }
 
@@ -799,7 +799,7 @@ mod tests {
                 baud: 9_600,
             },
             ConnectionType::Tcp {
-                addr: "127.0.0.1:8080".parse().unwrap_or_default(),
+                addr: "127.0.0.1:8080".parse().unwrap(),
             },
             ConnectionType::Ble {
                 mac: [0x01, 0x02, 0x03, 0x04, 0x05, 0x06],
@@ -812,8 +812,8 @@ mod tests {
             },
         ];
         for variant in &variants {
-            let json = serde_json::to_string(variant).unwrap_or_default();
-            let back: ConnectionType = serde_json::from_str(&json).unwrap_or_default();
+            let json = serde_json::to_string(variant).unwrap();
+            let back: ConnectionType = serde_json::from_str(&json).unwrap();
             assert_eq!(*variant, back);
         }
     }
@@ -846,7 +846,7 @@ mod tests {
             (0x303A, 0x1001, "ESP32-S3"),
         ];
         for (vid, pid, chip) in &entries {
-            let dev = lookup_usb_device(*vid, *pid).unwrap_or_default();
+            let dev = lookup_usb_device(*vid, *pid).unwrap();
             assert_eq!(dev.chip, *chip);
         }
     }

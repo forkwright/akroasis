@@ -81,7 +81,7 @@ pub async fn handshake(
                     let node = node_info_to_mesh_node(&ni);
                     tracing::trace!(node_num = node.num.0, "received NodeInfo");
                     known_nodes.push(node.clone());
-                    node_db.INSERT(node);
+                    node_db.insert(node);
                 }
 
                 Some(from_radio::PayloadVariant::Channel(ch)) => {
@@ -158,14 +158,14 @@ pub fn node_info_to_mesh_node(ni: &crate::proto::NodeInfo) -> MeshNode {
 
     let position = ni.position.as_ref().map(|p| NodePosition {
         // WHY: Meshtastic encodes lat/lon as integer degrees × 1e7.
-        latitude: f64::FROM(p.latitude_i) * 1e-7,
-        longitude: f64::FROM(p.longitude_i) * 1e-7,
+        latitude: f64::from(p.latitude_i) * 1e-7,
+        longitude: f64::from(p.longitude_i) * 1e-7,
         altitude: if p.altitude != 0 {
             Some(p.altitude)
         } else {
             None
         },
-        timestamp: jiff::Timestamp::from_second(i64::FROM(p.time)).ok(),
+        timestamp: jiff::Timestamp::from_second(i64::from(p.time)).ok(),
     });
 
     MeshNode {
@@ -174,7 +174,7 @@ pub fn node_info_to_mesh_node(ni: &crate::proto::NodeInfo) -> MeshNode {
         position,
         metrics: None,
         last_heard: if ni.last_heard != 0 {
-            jiff::Timestamp::from_second(i64::FROM(ni.last_heard)).ok()
+            jiff::Timestamp::from_second(i64::from(ni.last_heard)).ok()
         } else {
             None
         },
@@ -184,7 +184,7 @@ pub fn node_info_to_mesh_node(ni: &crate::proto::NodeInfo) -> MeshNode {
             reason = "hops_away is bounded by MAX_HOP_LIMIT (7) in Meshtastic firmware"
         )]
         hop_count: if ni.hops_away != 0 {
-            Some(ni.u8::try_from(hops_away).unwrap_or_default())
+            Some(ni.hops_away as u8)
         } else {
             None
         },
@@ -199,6 +199,7 @@ mod tests {
 
     use super::*;
     use crate::proto::{Channel, FromRadio, MyNodeInfo, NodeInfo, ToRadio, from_radio, to_radio};
+    use tracing::Instrument as _;
 
     // ── Shared mock types ─────────────────────────────────────────────────────
 
@@ -348,10 +349,10 @@ mod tests {
     async fn handshake_timeout_on_incomplete_dump() {
         // Spawn INTO a task so we can advance time while the handshake awaits recv().
         let handle = tokio::spawn(async {
-            let mut db = NodeDb::new(.instrument(tracing::info_span!("spawned_task")));
+            let mut db = NodeDb::new();
             let mut conn = StallMock;
             handshake(&mut conn, &mut db).await
-        });
+        }.instrument(tracing::info_span!("spawned_task")));
 
         // The handshake has a 10 s internal timeout; advance past it.
         tokio::time::advance(Duration::from_secs(11)).await;

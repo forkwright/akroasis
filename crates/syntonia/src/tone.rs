@@ -61,7 +61,7 @@ impl Eq for CtcssTone {}
 
 impl<'de> Deserialize<'de> for CtcssTone {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
-    WHERE
+    where
         D: serde::Deserializer<'de>,
     {
         let value = f32::deserialize(deserializer)?;
@@ -100,7 +100,7 @@ impl DcsCode {
 
 impl<'de> Deserialize<'de> for DcsCode {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
-    WHERE
+    where
         D: serde::Deserializer<'de>,
     {
         let value = u16::deserialize(deserializer)?;

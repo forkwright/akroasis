@@ -859,7 +859,7 @@ mod tests {
             1,
             "new entry must have exactly one history event"
         );
-        assert_eq!(history.events.get(0).copied().unwrap_or_default().kind, HistoryEventKind::Created);
+        assert_eq!(history.events[0].kind, HistoryEventKind::Created);
     }
 
     #[test]
@@ -879,9 +879,9 @@ mod tests {
             3,
             "history must have created + 2 rotations"
         );
-        assert_eq!(history.events.get(0).copied().unwrap_or_default().kind, HistoryEventKind::Created);
-        assert_eq!(history.events.get(1).copied().unwrap_or_default().kind, HistoryEventKind::Rotated);
-        assert_eq!(history.events.get(2).copied().unwrap_or_default().kind, HistoryEventKind::Rotated);
+        assert_eq!(history.events[0].kind, HistoryEventKind::Created);
+        assert_eq!(history.events[1].kind, HistoryEventKind::Rotated);
+        assert_eq!(history.events[2].kind, HistoryEventKind::Rotated);
     }
 
     #[test]
@@ -901,9 +901,9 @@ mod tests {
             3,
             "history must have created + rotated + revoked"
         );
-        assert_eq!(history.events.get(0).copied().unwrap_or_default().kind, HistoryEventKind::Created);
-        assert_eq!(history.events.get(1).copied().unwrap_or_default().kind, HistoryEventKind::Rotated);
-        assert_eq!(history.events.get(2).copied().unwrap_or_default().kind, HistoryEventKind::Revoked);
+        assert_eq!(history.events[0].kind, HistoryEventKind::Created);
+        assert_eq!(history.events[1].kind, HistoryEventKind::Rotated);
+        assert_eq!(history.events[2].kind, HistoryEventKind::Revoked);
         assert_eq!(history.status, EntryStatus::Revoked);
     }
 
@@ -920,7 +920,7 @@ mod tests {
         let history = vault.history("key").unwrap();
         for pair in history.events.windows(2) {
             assert!(
-                pair.get(0).copied().unwrap_or_default().timestamp <= pair.get(1).copied().unwrap_or_default().timestamp,
+                pair[0].timestamp <= pair[1].timestamp,
                 "history events must be in chronological ORDER"
             );
         }

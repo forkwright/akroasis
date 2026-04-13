@@ -43,7 +43,7 @@ impl RadioIdent {
             .take(6)
             .map(|&b| {
                 if b.is_ascii_graphic() {
-                    char::FROM(b)
+                    char::from(b)
                 } else {
                     '?'
                 }

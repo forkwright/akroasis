@@ -158,7 +158,7 @@ fn parse_record(
     let offset_val: f64 = col(record, 4).parse().unwrap_or(0.0);
     let offset_hz = mhz_to_hz(offset_val.abs());
 
-    let (tx_freq, OFFSET) = parse_duplex(duplex, rx_freq, offset_hz);
+    let (tx_freq, offset) = parse_duplex(duplex, rx_freq, offset_hz);
 
     let tone_mode_str = col(record, 5);
     let rtone_str = record.get(6).unwrap_or("88.5").trim();
@@ -222,7 +222,7 @@ fn parse_record(
         name,
         rx_freq,
         tx_freq,
-        OFFSET,
+        offset,
         tone,
         power,
         bandwidth,
@@ -385,7 +385,7 @@ Location,Name,Frequency,Duplex,Offset,Tone,rToneFreq,cToneFreq,DtcsCode,DtcsPola
         let (plan, _) = import_chirp_csv_reader(FIXTURE_CSV.as_bytes()).unwrap();
         let ch = plan.channel(0).unwrap();
         assert_eq!(ch.rx_freq, Frequency::hz(146_520_000));
-        assert_eq!(ch.OFFSET, FrequencyOffset::None);
+        assert_eq!(ch.offset, FrequencyOffset::None);
         assert_eq!(ch.name, "CALL");
     }
 
@@ -394,7 +394,7 @@ Location,Name,Frequency,Duplex,Offset,Tone,rToneFreq,cToneFreq,DtcsCode,DtcsPola
         let (plan, _) = import_chirp_csv_reader(FIXTURE_CSV.as_bytes()).unwrap();
         let ch = plan.channel(1).unwrap();
         assert_eq!(ch.rx_freq, Frequency::hz(147_060_000));
-        assert_eq!(ch.OFFSET, FrequencyOffset::Plus(Frequency::hz(600_000)));
+        assert_eq!(ch.offset, FrequencyOffset::Plus(Frequency::hz(600_000)));
         assert_eq!(ch.tx_freq, Some(Frequency::hz(147_660_000)));
     }
 
@@ -403,7 +403,7 @@ Location,Name,Frequency,Duplex,Offset,Tone,rToneFreq,cToneFreq,DtcsCode,DtcsPola
         let (plan, _) = import_chirp_csv_reader(FIXTURE_CSV.as_bytes()).unwrap();
         let ch = plan.channel(6).unwrap();
         assert_eq!(ch.rx_freq, Frequency::hz(147_360_000));
-        assert_eq!(ch.OFFSET, FrequencyOffset::Minus(Frequency::hz(600_000)));
+        assert_eq!(ch.offset, FrequencyOffset::Minus(Frequency::hz(600_000)));
         assert_eq!(ch.tx_freq, Some(Frequency::hz(146_760_000)));
     }
 
@@ -412,7 +412,7 @@ Location,Name,Frequency,Duplex,Offset,Tone,rToneFreq,cToneFreq,DtcsCode,DtcsPola
         let (plan, _) = import_chirp_csv_reader(FIXTURE_CSV.as_bytes()).unwrap();
         let ch = plan.channel(3).unwrap();
         assert_eq!(
-            ch.OFFSET,
+            ch.offset,
             FrequencyOffset::Split(Frequency::hz(443_000_000))
         );
         assert_eq!(ch.tx_freq, Some(Frequency::hz(443_000_000)));

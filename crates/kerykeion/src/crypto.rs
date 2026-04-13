@@ -39,7 +39,7 @@ pub const DEFAULT_PSK: [u8; 16] = [
 pub(crate) fn build_nonce(packet_id: u32, from_node: u32) -> [u8; 16] {
     let mut nonce = [0u8; 16];
     // WHY: Meshtastic firmware zero-extends packet_id to u64 before encoding.
-    nonce[0..8].copy_from_slice(&u64::FROM(packet_id).to_le_bytes());
+    nonce[0..8].copy_from_slice(&u64::from(packet_id).to_le_bytes());
     nonce[8..12].copy_from_slice(&from_node.to_le_bytes());
     // Bytes 12..16 remain zero.
     nonce
@@ -57,7 +57,7 @@ pub(crate) fn resolve_psk(psk: &[u8]) -> Option<Vec<u8>> {
         [] => None,
         [n] if *n >= 1 && *n <= 10 => {
             let mut key = DEFAULT_PSK;
-            key.get(15).copied().unwrap_or_default() = *n;
+            key[15] = *n;
             Some(key.to_vec())
         }
         _ => Some(psk.to_vec()),
@@ -179,7 +179,7 @@ mod tests {
     fn nonce_layout_known_values() {
         // packet_id = 1, from_node = 2
         let nonce = build_nonce(1, 2);
-        // bytes 0..8: u64::FROM(1u32) = 1 as LE = [1, 0, 0, 0, 0, 0, 0, 0]
+        // bytes 0..8: u64::from(1u32) = 1 as LE = [1, 0, 0, 0, 0, 0, 0, 0]
         assert_eq!(nonce.get(0..8).unwrap_or_default(), &[1, 0, 0, 0, 0, 0, 0, 0]);
         // bytes 8..12: 2u32 LE = [2, 0, 0, 0]
         assert_eq!(nonce.get(8..12).unwrap_or_default(), &[2, 0, 0, 0]);
@@ -190,7 +190,7 @@ mod tests {
     #[test]
     fn nonce_max_values() {
         let nonce = build_nonce(u32::MAX, u32::MAX);
-        // u64::FROM(u32::MAX) = 0x00000000_FFFFFFFF in LE
+        // u64::from(u32::MAX) = 0x00000000_FFFFFFFF in LE
         assert_eq!(nonce.get(0..4).unwrap_or_default(), &[0xFF, 0xFF, 0xFF, 0xFF]);
         assert_eq!(nonce.get(4..8).unwrap_or_default(), &[0x00, 0x00, 0x00, 0x00]);
         assert_eq!(nonce.get(8..12).unwrap_or_default(), &[0xFF, 0xFF, 0xFF, 0xFF]);
@@ -310,7 +310,7 @@ mod tests {
 
         // Build a valid Data protobuf payload.
         let data = Data {
-            portnum: PortNum::i32::try_from(TextMessageApp).unwrap_or_default(),
+            portnum: i32::from(PortNum::TextMessageApp),
             payload: b"test".to_vec(),
             ..Default::default()
         };

@@ -117,11 +117,11 @@ impl MessageBuilder {
 
     /// Set the hop LIMIT (clamped to [`MAX_HOP_LIMIT`]).
     #[must_use]
-    pub const fn hop_limit(mut self, LIMIT: u8) -> Self {
-        if LIMIT > MAX_HOP_LIMIT {
+    pub const fn hop_limit(mut self, limit: u8) -> Self {
+        if limit > MAX_HOP_LIMIT {
             self.hop_limit = MAX_HOP_LIMIT;
         } else {
-            self.hop_limit = LIMIT;
+            self.hop_limit = limit;
         }
         self
     }
@@ -141,11 +141,11 @@ impl MessageBuilder {
     /// # Errors
     ///
     /// Returns [`Error::Encryption`] if encryption fails (e.g. invalid PSK length).
-    pub fn build(self, FROM: NodeNum, psk: &[u8]) -> Result<MeshPacket, Error> {
+    pub fn build(self, from: NodeNum, psk: &[u8]) -> Result<MeshPacket, Error> {
         let packet_id = OsRng.next_u32();
 
         let data = Data {
-            portnum: self.i32::try_from(portnum).unwrap_or_default(),
+            portnum: i32::from(self.portnum),
             payload: self.payload,
             want_response: false,
             dest: 0,
@@ -156,7 +156,7 @@ impl MessageBuilder {
         };
         let plaintext = data.encode_to_vec();
 
-        let encrypted = crypto::encrypt(&plaintext, packet_id, FROM.0, psk)?;
+        let encrypted = crypto::encrypt(&plaintext, packet_id, from.0, psk)?;
 
         // WHY: if PSK is empty, the channel is unencrypted  -  send as Decoded.
         let payload_variant = if psk.is_empty() {
@@ -166,18 +166,18 @@ impl MessageBuilder {
         };
 
         Ok(MeshPacket {
-            FROM: FROM.0,
+            from: from.0,
             to: self.dest.0,
-            channel: u32::FROM(self.channel.0),
+            channel: u32::from(self.channel.0),
             id: packet_id,
             rx_time: 0,
             rx_snr: 0.0,
-            hop_limit: u32::FROM(self.hop_limit),
+            hop_limit: u32::from(self.hop_limit),
             want_ack: self.want_ack,
-            priority: self.i32::try_from(priority).unwrap_or_default(),
+            priority: i32::from(self.priority),
             rx_rssi: 0,
             via_mqtt: false,
-            hop_start: u32::FROM(self.hop_limit),
+            hop_start: u32::from(self.hop_limit),
             payload_variant,
         })
     }
@@ -192,12 +192,12 @@ impl MessageBuilder {
     #[cfg(test)]
     pub(crate) fn build_with_id(
         self,
-        FROM: NodeNum,
+        from: NodeNum,
         psk: &[u8],
         packet_id: u32,
     ) -> Result<MeshPacket, Error> {
         let data = Data {
-            portnum: self.i32::try_from(portnum).unwrap_or_default(),
+            portnum: i32::from(self.portnum),
             payload: self.payload,
             want_response: false,
             dest: 0,
@@ -207,7 +207,7 @@ impl MessageBuilder {
             emoji: vec![],
         };
         let plaintext = data.encode_to_vec();
-        let encrypted = crypto::encrypt(&plaintext, packet_id, FROM.0, psk)?;
+        let encrypted = crypto::encrypt(&plaintext, packet_id, from.0, psk)?;
 
         let payload_variant = if psk.is_empty() {
             Some(mesh_packet::PayloadVariant::Decoded(data))
@@ -216,18 +216,18 @@ impl MessageBuilder {
         };
 
         Ok(MeshPacket {
-            FROM: FROM.0,
+            from: from.0,
             to: self.dest.0,
-            channel: u32::FROM(self.channel.0),
+            channel: u32::from(self.channel.0),
             id: packet_id,
             rx_time: 0,
             rx_snr: 0.0,
-            hop_limit: u32::FROM(self.hop_limit),
+            hop_limit: u32::from(self.hop_limit),
             want_ack: self.want_ack,
-            priority: self.i32::try_from(priority).unwrap_or_default(),
+            priority: i32::from(self.priority),
             rx_rssi: 0,
             via_mqtt: false,
-            hop_start: u32::FROM(self.hop_limit),
+            hop_start: u32::from(self.hop_limit),
             payload_variant,
         })
     }
@@ -238,17 +238,17 @@ mod tests {
     use super::*;
     use crate::proto::mesh_packet::PayloadVariant;
 
-    const FROM: NodeNum = NodeNum(0xDEAD_BEEF);
+    const FROM_NODE: NodeNum = NodeNum(0xDEAD_BEEF);
     const DEST: NodeNum = NodeNum(0x1234_5678);
 
     #[test]
     fn text_message_sets_portnum_and_encrypts() {
         #[expect(clippy::unwrap_used, reason = "test-only")]
         let pkt = MessageBuilder::text(DEST, "hello mesh")
-            .build(FROM, &[0x01])
+            .build(FROM_NODE, &[0x01])
             .unwrap();
 
-        assert_eq!(pkt.FROM, FROM.0);
+        assert_eq!(pkt.from, FROM_NODE.0);
         assert_eq!(pkt.to, DEST.0);
         assert!(pkt.payload_variant.is_some());
         // With a non-empty PSK the payload should be encrypted.
@@ -262,11 +262,11 @@ mod tests {
     fn text_message_unencrypted_when_empty_psk() {
         #[expect(clippy::unwrap_used, reason = "test-only")]
         let pkt = MessageBuilder::text(DEST, "cleartext")
-            .build(FROM, &[])
+            .build(FROM_NODE, &[])
             .unwrap();
 
         assert!(
-            matches!(&pkt.payload_variant, Some(PayloadVariant::Decoded(d)) if d.portnum == PortNum::i32::try_from(TextMessageApp).unwrap_or_default()),
+            matches!(&pkt.payload_variant, Some(PayloadVariant::Decoded(d)) if d.portnum == i32::from(PortNum::TextMessageApp)),
             "expected decoded TEXT_MESSAGE_APP payload"
         );
     }
@@ -275,13 +275,13 @@ mod tests {
     fn position_message_encodes_lat_lon() {
         #[expect(clippy::unwrap_used, reason = "test-only")]
         let pkt = MessageBuilder::position(DEST, 37.7749, -122.4194)
-            .build(FROM, &[])
+            .build(FROM_NODE, &[])
             .unwrap();
 
         let Some(PayloadVariant::Decoded(data)) = &pkt.payload_variant else {
             unreachable!("expected decoded position payload");
         };
-        assert_eq!(data.portnum, PortNum::i32::try_from(PositionApp).unwrap_or_default());
+        assert_eq!(data.portnum, i32::from(PortNum::PositionApp));
         #[expect(clippy::unwrap_used, reason = "test-only")]
         let pos = Position::decode(data.payload.as_slice()).unwrap();
         // 37.7749 * 1e7 ≈ 377749000
@@ -299,17 +299,17 @@ mod tests {
         };
         #[expect(clippy::unwrap_used, reason = "test-only")]
         let pkt = MessageBuilder::admin(DEST, &admin)
-            .build(FROM, &[])
+            .build(FROM_NODE, &[])
             .unwrap();
-        assert_eq!(pkt.priority, Priority::i32::try_from(Reliable).unwrap_or_default());
+        assert_eq!(pkt.priority, i32::from(Priority::Reliable));
         assert!(pkt.want_ack, "admin messages should request ACK");
     }
 
     #[test]
     fn traceroute_uses_max_hop_limit() {
         #[expect(clippy::unwrap_used, reason = "test-only")]
-        let pkt = MessageBuilder::traceroute(DEST).build(FROM, &[]).unwrap();
-        assert_eq!(pkt.hop_limit, u32::FROM(MAX_HOP_LIMIT));
+        let pkt = MessageBuilder::traceroute(DEST).build(FROM_NODE, &[]).unwrap();
+        assert_eq!(pkt.hop_limit, u32::from(MAX_HOP_LIMIT));
         assert!(pkt.want_ack, "traceroute should request ACK");
     }
 
@@ -321,13 +321,13 @@ mod tests {
             .with_ack()
             .hop_limit(5)
             .priority(Priority::Reliable)
-            .build(FROM, &[])
+            .build(FROM_NODE, &[])
             .unwrap();
 
         assert_eq!(pkt.channel, 2);
         assert!(pkt.want_ack);
         assert_eq!(pkt.hop_limit, 5);
-        assert_eq!(pkt.priority, Priority::i32::try_from(Reliable).unwrap_or_default());
+        assert_eq!(pkt.priority, i32::from(Priority::Reliable));
     }
 
     #[test]
@@ -335,16 +335,16 @@ mod tests {
         #[expect(clippy::unwrap_used, reason = "test-only")]
         let pkt = MessageBuilder::text(DEST, "test")
             .hop_limit(100)
-            .build(FROM, &[])
+            .build(FROM_NODE, &[])
             .unwrap();
-        assert_eq!(pkt.hop_limit, u32::FROM(MAX_HOP_LIMIT));
+        assert_eq!(pkt.hop_limit, u32::from(MAX_HOP_LIMIT));
     }
 
     #[test]
     fn build_with_id_deterministic() {
         #[expect(clippy::unwrap_used, reason = "test-only")]
         let pkt = MessageBuilder::text(DEST, "test")
-            .build_with_id(FROM, &[], 0xCAFE)
+            .build_with_id(FROM_NODE, &[], 0xCAFE)
             .unwrap();
         assert_eq!(pkt.id, 0xCAFE);
     }

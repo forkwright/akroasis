@@ -52,7 +52,7 @@ pub enum Error {
     },
 
     /// Slice access out of bounds.
-    #[snafu(display("slice out of bounds: OFFSET {OFFSET}, len {len}, image size {size}"))]
+    #[snafu(display("slice out of bounds: offset {offset}, len {len}, image size {size}"))]
     SliceOutOfBounds {
         /// Requested offset.
         offset: usize,

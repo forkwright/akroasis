@@ -138,7 +138,7 @@ mod tests {
 
     #[derive(Debug, Serialize, Deserialize, PartialEq)]
     struct TestConfig {
-        api_key: SecretString,
+        api_key: String,
         host: String,
         port: u16,
     }

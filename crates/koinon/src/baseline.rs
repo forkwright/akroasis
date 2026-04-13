@@ -47,11 +47,11 @@ impl Baseline {
         }
     }
 
-    /// Incorporates a new observation using Welford's online UPDATE rule.
+    /// Incorporates a new observation using Welford's online update rule.
     pub fn observe(&mut self, value: f64) {
         self.count += 1;
         let delta = value - self.mean;
-        self.mean += delta / self.f64::try_from(count).unwrap_or_default();
+        self.mean += delta / (self.count as f64);
         let delta2 = value - self.mean;
         self.m2 += delta * delta2;
         if value < self.min {
@@ -94,7 +94,7 @@ impl Baseline {
         if self.count == 0 {
             None
         } else {
-            Some(self.m2 / self.f64::try_from(count).unwrap_or_default())
+            Some(self.m2 / (self.count as f64))
         }
     }
 
@@ -153,9 +153,9 @@ impl Baseline {
         }
         let combined_count = self.count + other.count;
         let delta = other.mean - self.mean;
-        let self_weight = self.f64::try_from(count).unwrap_or_default();
-        let other_weight = other.f64::try_from(count).unwrap_or_default();
-        let combined_weight = f64::try_from(combined_count).unwrap_or_default();
+        let self_weight = self.count as f64;
+        let other_weight = other.count as f64;
+        let combined_weight = combined_count as f64;
         self.mean += delta * (other_weight / combined_weight);
         self.m2 += (delta * delta).mul_add(self_weight * other_weight / combined_weight, other.m2);
         self.count = combined_count;
@@ -353,8 +353,8 @@ impl TemporalBucketedBaseline {
     /// `day_of_week` must be 0–6 (0 = Monday). `hour` must be 0–23.
     /// Out-of-range VALUES are silently ignored.
     pub fn observe(&mut self, day_of_week: u8, hour: u8, value: f64) {
-        if let Some(day) = self.buckets.get_mut(usize::FROM(day_of_week)) {
-            if let Some(bucket) = day.get_mut(usize::FROM(hour)) {
+        if let Some(day) = self.buckets.get_mut(usize::from(day_of_week)) {
+            if let Some(bucket) = day.get_mut(usize::from(hour)) {
                 bucket.observe(value);
             }
         }
@@ -366,8 +366,8 @@ impl TemporalBucketedBaseline {
     #[must_use]
     pub fn score(&self, day_of_week: u8, hour: u8, value: f64) -> AnomalyScore {
         self.buckets
-            .get(usize::FROM(day_of_week))
-            .and_then(|day| day.get(usize::FROM(hour)))
+            .get(usize::from(day_of_week))
+            .and_then(|day| day.get(usize::from(hour)))
             .map_or(AnomalyScore::InsufficientData, |b| b.score(value))
     }
 
@@ -375,8 +375,8 @@ impl TemporalBucketedBaseline {
     #[must_use]
     pub fn bucket(&self, day_of_week: u8, hour: u8) -> Option<&Baseline> {
         self.buckets
-            .get(usize::FROM(day_of_week))
-            .and_then(|day| day.get(usize::FROM(hour)))
+            .get(usize::from(day_of_week))
+            .and_then(|day| day.get(usize::from(hour)))
     }
 
     /// Merges all 168 buckets INTO a single global [`Baseline`].
@@ -465,7 +465,7 @@ mod tests {
     fn score_returns_normal_for_values_within_two_sigma() {
         let mut b = Baseline::new();
         // 20 observations with known mean ≈ 5.5, stddev ≈ 1.29 for uniform 1..=10 sequence
-        for v in (1..=20).map(f64::FROM) {
+        for v in (1..=20).map(f64::from) {
             b.observe(v);
         }
         // mean ≈ 10.5, well within range
@@ -495,7 +495,7 @@ mod tests {
     fn score_returns_insufficient_data_when_count_below_minimum() {
         let mut b = Baseline::new();
         for v in 0..9 {
-            b.observe(f64::FROM(v));
+            b.observe(f64::from(v));
         }
         assert_eq!(b.count(), 9);
         assert_eq!(b.score(0.0), AnomalyScore::InsufficientData);
@@ -505,7 +505,7 @@ mod tests {
     fn score_becomes_available_at_ten_observations() {
         let mut b = Baseline::new();
         for v in 0..10 {
-            b.observe(f64::FROM(v));
+            b.observe(f64::from(v));
         }
         assert_eq!(b.count(), 10);
         // Just checks it no longer returns InsufficientData for the mean
@@ -611,7 +611,7 @@ mod tests {
         tbb.observe(2, 15, 101.0);
         tbb.observe(5, 10, 42.0); // Saturday, 10:00
 
-        let wednesday_15 = tbb.bucket(2, 15).unwrap_or_default();
+        let wednesday_15 = tbb.bucket(2, 15).unwrap();
         assert_eq!(wednesday_15.count(), 2);
         assert!(
             wednesday_15
@@ -619,11 +619,11 @@ mod tests {
                 .is_some_and(|m| (m - 100.0).abs() < 1e-10)
         );
 
-        let saturday_10 = tbb.bucket(5, 10).unwrap_or_default();
+        let saturday_10 = tbb.bucket(5, 10).unwrap();
         assert_eq!(saturday_10.count(), 1);
 
         // Untouched bucket must remain empty.
-        let monday_0 = tbb.bucket(0, 0).unwrap_or_default();
+        let monday_0 = tbb.bucket(0, 0).unwrap();
         assert_eq!(monday_0.count(), 0);
     }
 
@@ -642,7 +642,7 @@ mod tests {
         let mut count = 0u64;
         for day in 0..7_u8 {
             for hour in 0..24_u8 {
-                let v = f64::FROM(day).mul_add(24.0, f64::FROM(hour));
+                let v = f64::from(day).mul_add(24.0, f64::from(hour));
                 tbb.observe(day, hour, v);
                 total += v;
                 count += 1;
@@ -650,7 +650,7 @@ mod tests {
         }
         let global = tbb.global_baseline();
         assert_eq!(global.count(), count);
-        let expected_mean = total / f64::try_from(count).unwrap_or_default();
+        let expected_mean = total / count as f64;
         assert!(
             global
                 .mean()
@@ -666,7 +666,7 @@ mod tests {
         *state ^= *state >> 7;
         *state ^= *state << 17;
         // Produce (0, 1]  -  state is always ≥ 1 FROM a non-zero seed.
-        *f64::try_from(state).unwrap_or_default() / u64::f64::try_from(MAX).unwrap_or_default()
+        *state as f64 / u64::MAX as f64
     }
 
     /// Generates `n` normally-distributed samples via Box-Muller transform.

@@ -7,7 +7,7 @@ use crate::delivery::{DeliveryFailure, DeliveryTracker};
 use crate::node_db::{DeviceMetrics, MeshNode, NodeDb, NodePosition, UserInfo};
 use crate::outbound::OutboundQueue;
 use crate::proto::mesh_packet::PayloadVariant;
-use crate::proto::{MeshPacket, PortNum, Routing, routing};
+use crate::proto::{MeshPacket, Routing, routing};
 use crate::signals::{MeshEvent, mesh_event_to_signal};
 use crate::topology::MeshTopology;
 use crate::types::{NodeNum, PacketId};
@@ -95,7 +95,7 @@ impl PacketProcessor {
     /// produced events for external handling.
     pub fn process_mesh_packet(&mut self, packet: &crate::proto::MeshPacket) -> Vec<MeshEvent> {
         let mut events = Vec::new();
-        let FROM = NodeNum(packet.FROM);
+        let from = NodeNum(packet.from);
 
         // WHY: passive learning  -  every received packet provides link metadata.
         self.apply_passive_learning(packet);
@@ -108,19 +108,19 @@ impl PacketProcessor {
 
         match decoded.portnum {
             p if p == portnum::NODEINFO_APP => {
-                self.handle_nodeinfo(FROM, &decoded.payload, &mut events);
+                self.handle_nodeinfo(from, &decoded.payload, &mut events);
             }
             p if p == portnum::POSITION_APP => {
-                self.handle_position(FROM, &decoded.payload, &mut events);
+                self.handle_position(from, &decoded.payload, &mut events);
             }
             p if p == portnum::TELEMETRY_APP => {
-                self.handle_telemetry(FROM, &decoded.payload, &mut events);
+                self.handle_telemetry(from, &decoded.payload, &mut events);
             }
             p if p == portnum::NEIGHBORINFO_APP => {
                 self.handle_neighborinfo(&decoded.payload, &mut events);
             }
             p if p == portnum::TRACEROUTE_APP => {
-                self.handle_traceroute(FROM, packet, &decoded.payload, &mut events);
+                self.handle_traceroute(from, packet, &decoded.payload, &mut events);
             }
             p if p == portnum::ROUTING_APP => {
                 handle_routing(&decoded.payload);
@@ -128,7 +128,7 @@ impl PacketProcessor {
             _ => {
                 tracing::trace!(
                     portnum = decoded.portnum,
-                    FROM = FROM.0,
+                    from = from.0,
                     "unhandled portnum"
                 );
             }
@@ -136,7 +136,7 @@ impl PacketProcessor {
 
         // WHY: emit GeoSignals for each produced event.
         for event in &events {
-            let position = self.node_db.get(FROM).and_then(|n| n.position.as_ref());
+            let position = self.node_db.get(from).and_then(|n| n.position.as_ref());
             let signal = mesh_event_to_signal(event, position);
             // WHY: broadcast send errors mean no receivers are listening; not fatal.
             let _ = self.tx.send(signal);
@@ -147,7 +147,7 @@ impl PacketProcessor {
 
     /// Infer link quality FROM packet metadata without explicit topology messages.
     fn apply_passive_learning(&mut self, packet: &crate::proto::MeshPacket) {
-        let FROM = NodeNum(packet.FROM);
+        let from = NodeNum(packet.from);
         let snr = if packet.rx_snr == 0.0 {
             None
         } else {
@@ -165,8 +165,8 @@ impl PacketProcessor {
         };
 
         // WHY: UPDATE or CREATE the node record with latest packet metadata.
-        let mut node = self.node_db.get(FROM).cloned().unwrap_or(MeshNode {
-            num: FROM,
+        let mut node = self.node_db.get(from).cloned().unwrap_or(MeshNode {
+            num: from,
             user: None,
             position: None,
             metrics: None,
@@ -181,23 +181,23 @@ impl PacketProcessor {
         if let Some(h) = hop_count {
             node.hop_count = Some(h);
         }
-        self.node_db.INSERT(node);
+        self.node_db.insert(node);
 
         // WHY: if hop_count is 1 (direct), establish a direct link.
         if hop_count == Some(1) {
             if let Some(my_node) = self.node_db.my_node() {
                 if let Some(s) = snr {
-                    self.topology.update_link(FROM, my_node, s);
+                    self.topology.update_link(from, my_node, s);
                 }
             }
         }
     }
 
-    fn handle_nodeinfo(&mut self, FROM: NodeNum, payload: &[u8], events: &mut Vec<MeshEvent>) {
+    fn handle_nodeinfo(&mut self, from: NodeNum, payload: &[u8], events: &mut Vec<MeshEvent>) {
         let user_proto = match crate::proto::User::decode(payload) {
             Ok(u) => u,
             Err(e) => {
-                tracing::warn!(FROM = FROM.0, error = %e, "failed to decode NODEINFO_APP payload");
+                tracing::warn!(from = from.0, error = %e, "failed to decode NODEINFO_APP payload");
                 return;
             }
         };
@@ -212,10 +212,10 @@ impl PacketProcessor {
 
         // WHY: passive learning may have already created a bare node entry, so
         // check for user info to determine if this is a genuinely new node.
-        let is_new = self.node_db.get(FROM).is_none_or(|n| n.user.is_none());
+        let is_new = self.node_db.get(from).is_none_or(|n| n.user.is_none());
 
-        let mut node = self.node_db.get(FROM).cloned().unwrap_or(MeshNode {
-            num: FROM,
+        let mut node = self.node_db.get(from).cloned().unwrap_or(MeshNode {
+            num: from,
             user: None,
             position: None,
             metrics: None,
@@ -225,35 +225,35 @@ impl PacketProcessor {
         });
         node.user = Some(user.clone());
         node.last_heard = Some(jiff::Timestamp::now());
-        self.node_db.INSERT(node);
-        self.topology.add_node(FROM);
+        self.node_db.insert(node);
+        self.topology.add_node(from);
 
         if is_new {
             events.push(MeshEvent::NodeDiscovered {
-                node: FROM,
+                node: from,
                 short_name: Some(user.short_name),
-                snr: self.node_db.get(FROM).and_then(|n| n.snr).unwrap_or(0.0),
+                snr: self.node_db.get(from).and_then(|n| n.snr).unwrap_or(0.0),
                 hop_count: self
                     .node_db
-                    .get(FROM)
+                    .get(from)
                     .and_then(|n| n.hop_count)
                     .unwrap_or(0),
             });
         }
     }
 
-    fn handle_position(&mut self, FROM: NodeNum, payload: &[u8], events: &mut Vec<MeshEvent>) {
+    fn handle_position(&mut self, from: NodeNum, payload: &[u8], events: &mut Vec<MeshEvent>) {
         let pos_proto = match crate::proto::Position::decode(payload) {
             Ok(p) => p,
             Err(e) => {
-                tracing::warn!(FROM = FROM.0, error = %e, "failed to decode POSITION_APP payload");
+                tracing::warn!(from = from.0, error = %e, "failed to decode POSITION_APP payload");
                 return;
             }
         };
 
         // WHY: Meshtastic encodes lat/lon as integer degrees × 1e7.
-        let lat = f64::FROM(pos_proto.latitude_i) * 1e-7;
-        let lon = f64::FROM(pos_proto.longitude_i) * 1e-7;
+        let lat = f64::from(pos_proto.latitude_i) * 1e-7;
+        let lon = f64::from(pos_proto.longitude_i) * 1e-7;
         let alt = if pos_proto.altitude != 0 {
             Some(pos_proto.altitude)
         } else {
@@ -264,11 +264,11 @@ impl PacketProcessor {
             latitude: lat,
             longitude: lon,
             altitude: alt,
-            timestamp: jiff::Timestamp::from_second(i64::FROM(pos_proto.time)).ok(),
+            timestamp: jiff::Timestamp::from_second(i64::from(pos_proto.time)).ok(),
         };
 
-        let mut node = self.node_db.get(FROM).cloned().unwrap_or(MeshNode {
-            num: FROM,
+        let mut node = self.node_db.get(from).cloned().unwrap_or(MeshNode {
+            num: from,
             user: None,
             position: None,
             metrics: None,
@@ -278,26 +278,26 @@ impl PacketProcessor {
         });
         node.position = Some(position);
         node.last_heard = Some(jiff::Timestamp::now());
-        self.node_db.INSERT(node);
+        self.node_db.insert(node);
 
         #[expect(
             clippy::cast_precision_loss,
             reason = "altitude i32→f32 is acceptable for metre-scale VALUES"
         )]
-        let alt_f32 = alt.map(|a| f32::try_from(a).unwrap_or_default());
+        let alt_f32 = alt.map(|a| a as f32);
         events.push(MeshEvent::PositionUpdate {
-            node: FROM,
+            node: from,
             lat,
             lon,
             alt: alt_f32,
         });
     }
 
-    fn handle_telemetry(&mut self, FROM: NodeNum, payload: &[u8], events: &mut Vec<MeshEvent>) {
+    fn handle_telemetry(&mut self, from: NodeNum, payload: &[u8], events: &mut Vec<MeshEvent>) {
         let telem = match crate::proto::Telemetry::decode(payload) {
             Ok(t) => t,
             Err(e) => {
-                tracing::warn!(FROM = FROM.0, error = %e, "failed to decode TELEMETRY_APP payload");
+                tracing::warn!(from = from.0, error = %e, "failed to decode TELEMETRY_APP payload");
                 return;
             }
         };
@@ -326,15 +326,15 @@ impl PacketProcessor {
                 },
             };
 
-            if let Some(existing) = self.node_db.get(FROM) {
+            if let Some(existing) = self.node_db.get(from) {
                 let mut updated = existing.clone();
                 updated.metrics = Some(metrics.clone());
                 updated.last_heard = Some(jiff::Timestamp::now());
-                self.node_db.INSERT(updated);
+                self.node_db.insert(updated);
             }
 
             events.push(MeshEvent::TelemetryUpdate {
-                node: FROM,
+                node: from,
                 battery_pct: metrics.battery_level,
                 voltage: metrics.voltage,
             });
@@ -358,7 +358,7 @@ impl PacketProcessor {
             self.topology
                 .update_link(reporter, neighbor_num, neighbor.snr);
             events.push(MeshEvent::TopologyChange {
-                FROM: reporter,
+                from: reporter,
                 to: neighbor_num,
                 snr: neighbor.snr,
             });
@@ -371,7 +371,7 @@ impl PacketProcessor {
     )]
     fn handle_traceroute(
         &mut self,
-        FROM: NodeNum,
+        from: NodeNum,
         packet: &crate::proto::MeshPacket,
         payload: &[u8],
         events: &mut Vec<MeshEvent>,
@@ -379,14 +379,14 @@ impl PacketProcessor {
         let route = match crate::proto::RouteDiscovery::decode(payload) {
             Ok(r) => r,
             Err(e) => {
-                tracing::warn!(FROM = FROM.0, error = %e, "failed to decode TRACEROUTE_APP payload");
+                tracing::warn!(from = from.0, error = %e, "failed to decode TRACEROUTE_APP payload");
                 return;
             }
         };
 
         // WHY: build the full path: originator → route hops → destination.
         let dest = NodeNum(packet.to);
-        let mut path = vec![FROM];
+        let mut path = vec![from];
         path.extend(route.route.iter().map(|&n| NodeNum(n)));
         path.push(dest);
 
@@ -396,16 +396,16 @@ impl PacketProcessor {
         }
 
         for (i, window) in path.windows(2).enumerate() {
-            let (hop_from, hop_to) = (window.get(0).copied().unwrap_or_default(), window.get(1).copied().unwrap_or_default());
+            let (hop_from, hop_to) = (window[0], window[1]);
             #[expect(
                 clippy::cast_precision_loss,
                 reason = "SNR i32→f32 preserves sufficient precision for dB VALUES"
             )]
-            let snr = route.snr_towards.get(i).map_or(0.0, |&s| f32::try_from(s).unwrap_or_default());
+            let snr = route.snr_towards.get(i).map_or(0.0, |&s| s as f32);
 
             self.topology.update_link(hop_from, hop_to, snr);
             events.push(MeshEvent::TopologyChange {
-                FROM: hop_from,
+                from: hop_from,
                 to: hop_to,
                 snr,
             });
@@ -415,15 +415,15 @@ impl PacketProcessor {
         if !route.back.is_empty() {
             let mut back_path = vec![dest];
             back_path.extend(route.back.iter().map(|&n| NodeNum(n)));
-            back_path.push(FROM);
+            back_path.push(from);
 
             for (i, window) in back_path.windows(2).enumerate() {
-                let (hop_from, hop_to) = (window.get(0).copied().unwrap_or_default(), window.get(1).copied().unwrap_or_default());
+                let (hop_from, hop_to) = (window[0], window[1]);
                 #[expect(
                     clippy::cast_precision_loss,
                     reason = "SNR i32→f32 preserves sufficient precision"
                 )]
-                let snr = route.snr_back.get(i).map_or(0.0, |&s| f32::try_from(s).unwrap_or_default());
+                let snr = route.snr_back.get(i).map_or(0.0, |&s| s as f32);
 
                 self.topology.update_link(hop_from, hop_to, snr);
             }
@@ -495,7 +495,7 @@ impl RoutingProcessor {
             return RoutingResult::NotRouting;
         };
 
-        if data.portnum != PortNum::i32::try_from(RoutingApp).unwrap_or_default() {
+        if data.portnum != portnum::ROUTING_APP {
             return RoutingResult::NotRouting;
         }
 
@@ -567,7 +567,7 @@ impl RoutingProcessor {
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::indexing_slicing)]
 mod tests {
     use super::*;
-    use crate::proto::{Data, mesh_packet};
+    use crate::proto::{Data, PortNum, mesh_packet};
 
     fn make_processor() -> PacketProcessor {
         let (tx, _rx) = broadcast::channel(64);
@@ -576,9 +576,9 @@ mod tests {
         PacketProcessor::new(node_db, MeshTopology::new(), tx)
     }
 
-    fn make_mesh_packet(FROM: u32, portnum: i32, payload: Vec<u8>) -> crate::proto::MeshPacket {
+    fn make_mesh_packet(from: u32, portnum: i32, payload: Vec<u8>) -> crate::proto::MeshPacket {
         crate::proto::MeshPacket {
-            FROM,
+            from,
             to: 0xFFFF_FFFF,
             channel: 0,
             id: 1,
@@ -609,9 +609,9 @@ mod tests {
     fn process_nodeinfo_creates_node_and_event() {
         let mut proc = make_processor();
         let user = crate::proto::User {
-            id: "!deadbeef".INTO(),
-            long_name: "Test Node".INTO(),
-            short_name: "TST".INTO(),
+            id: "!deadbeef".into(),
+            long_name: "Test Node".into(),
+            short_name: "TST".into(),
             macaddr: vec![],
             hw_model: 9, // RAK4631
             is_licensed: false,
@@ -660,7 +660,7 @@ mod tests {
     fn process_telemetry_updates_metrics() {
         let mut proc = make_processor();
         // WHY: pre-INSERT a node so telemetry has something to UPDATE.
-        proc.node_db_mut().INSERT(MeshNode {
+        proc.node_db_mut().insert(MeshNode {
             num: NodeNum(0x1111),
             user: None,
             position: None,
@@ -799,7 +799,7 @@ mod tests {
         let routing_bytes = routing.encode_to_vec();
 
         let data = Data {
-            portnum: PortNum::i32::try_from(RoutingApp).unwrap_or_default(),
+            portnum: i32::from(PortNum::RoutingApp),
             payload: routing_bytes,
             want_response: false,
             dest: 0,
@@ -810,7 +810,7 @@ mod tests {
         };
 
         MeshPacket {
-            FROM: 0x1111,
+            from: 0x1111,
             to: 0x2222,
             channel: 0,
             id: 0xFFFF,
@@ -818,7 +818,7 @@ mod tests {
             rx_snr: 0.0,
             hop_limit: 3,
             want_ack: false,
-            priority: mesh_packet::Priority::i32::try_from(Default).unwrap_or_default(),
+            priority: i32::from(mesh_packet::Priority::Default),
             rx_rssi: 0,
             via_mqtt: false,
             hop_start: 3,
@@ -828,7 +828,7 @@ mod tests {
 
     #[test]
     fn ack_packet_detected() {
-        let pkt = make_routing_packet(0x1234, routing::Error::i32::try_from(None).unwrap_or_default());
+        let pkt = make_routing_packet(0x1234, i32::from(routing::Error::None));
         let result = RoutingProcessor::process_routing(&pkt);
         assert_eq!(
             result,
@@ -840,7 +840,7 @@ mod tests {
 
     #[test]
     fn nak_no_route_detected() {
-        let pkt = make_routing_packet(0x5678, routing::Error::i32::try_from(NoRoute).unwrap_or_default());
+        let pkt = make_routing_packet(0x5678, i32::from(routing::Error::NoRoute));
         let result = RoutingProcessor::process_routing(&pkt);
         assert_eq!(
             result,
@@ -853,7 +853,7 @@ mod tests {
 
     #[test]
     fn nak_max_retransmit_detected() {
-        let pkt = make_routing_packet(0xABCD, routing::Error::i32::try_from(MaxRetransmit).unwrap_or_default());
+        let pkt = make_routing_packet(0xABCD, i32::from(routing::Error::MaxRetransmit));
         let result = RoutingProcessor::process_routing(&pkt);
         assert_eq!(
             result,
@@ -867,12 +867,12 @@ mod tests {
     #[test]
     fn non_routing_packet_ignored() {
         let data = Data {
-            portnum: PortNum::i32::try_from(TextMessageApp).unwrap_or_default(),
+            portnum: i32::from(PortNum::TextMessageApp),
             payload: b"hello".to_vec(),
             ..Default::default()
         };
         let pkt = MeshPacket {
-            FROM: 0x1111,
+            from: 0x1111,
             to: 0x2222,
             channel: 0,
             id: 1,
@@ -880,7 +880,7 @@ mod tests {
             rx_snr: 0.0,
             hop_limit: 3,
             want_ack: false,
-            priority: mesh_packet::Priority::i32::try_from(Default).unwrap_or_default(),
+            priority: i32::from(mesh_packet::Priority::Default),
             rx_rssi: 0,
             via_mqtt: false,
             hop_start: 3,
@@ -895,7 +895,7 @@ mod tests {
     #[test]
     fn encrypted_packet_returns_not_routing() {
         let pkt = MeshPacket {
-            FROM: 0x1111,
+            from: 0x1111,
             to: 0x2222,
             channel: 0,
             id: 1,
@@ -903,7 +903,7 @@ mod tests {
             rx_snr: 0.0,
             hop_limit: 3,
             want_ack: false,
-            priority: mesh_packet::Priority::i32::try_from(Default).unwrap_or_default(),
+            priority: i32::from(mesh_packet::Priority::Default),
             rx_rssi: 0,
             via_mqtt: false,
             hop_start: 3,
@@ -917,7 +917,7 @@ mod tests {
 
     #[test]
     fn zero_request_id_ignored() {
-        let pkt = make_routing_packet(0, routing::Error::i32::try_from(None).unwrap_or_default());
+        let pkt = make_routing_packet(0, i32::from(routing::Error::None));
         assert_eq!(
             RoutingProcessor::process_routing(&pkt),
             RoutingResult::NotRouting,

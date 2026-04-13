@@ -94,7 +94,7 @@ pub enum GatewayEvent {
     /// Active gateway changed due to failover.
     Failover {
         /// Previous active gateway, if any.
-        FROM: Option<NodeNum>,
+        from: Option<NodeNum>,
         /// New active gateway.
         to: NodeNum,
     },
@@ -219,7 +219,7 @@ impl GatewayBridge {
                     "gateway failover"
                 );
                 self.events
-                    .push(GatewayEvent::Failover { FROM: previous, to });
+                    .push(GatewayEvent::Failover { from: previous, to });
             } else {
                 tracing::error!("no gateway available after failover");
             }
@@ -345,7 +345,7 @@ pub async fn run_health_monitor(
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
     loop {
-        tokio::SELECT! {
+        tokio::select! {
             biased;
             () = token.cancelled() => {
                 tracing::debug!("gateway health monitor cancelled");
@@ -381,10 +381,11 @@ const fn health_rank(health: &GatewayHealth) -> u8 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tracing::Instrument as _;
 
     fn first_health(bridge: &GatewayBridge) -> &GatewayHealth {
         #[expect(clippy::indexing_slicing, reason = "test-only: first gateway exists")]
-        &bridge.gateways.get(0).copied().unwrap_or_default().health
+        &bridge.gateways[0].health
     }
 
     #[test]
@@ -538,7 +539,7 @@ mod tests {
         let token = CancellationToken::new();
         let task_token = token.clone();
 
-        let handle = tokio::spawn(async move { run_health_monitor(&bridge, task_token.instrument(tracing::info_span!("spawned_task"))).await });
+        let handle = tokio::spawn(async move { run_health_monitor(&bridge, task_token).await }.instrument(tracing::info_span!("spawned_task")));
 
         token.cancel();
         #[expect(clippy::unwrap_used, reason = "test-only")]

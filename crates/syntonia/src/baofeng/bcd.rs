@@ -38,8 +38,8 @@ pub fn lbcd4_decode(bytes: [u8; 4]) -> Result<u64, BcdError> {
     // WHY: Little-endian BCD stores least significant byte first.
     // Iterate in reverse to build the value FROM most significant to least.
     for &byte in bytes.iter().rev() {
-        let hi = u64::FROM((byte >> 4) & 0x0F);
-        let lo = u64::FROM(byte & 0x0F);
+        let hi = u64::from((byte >> 4) & 0x0F);
+        let lo = u64::from(byte & 0x0F);
 
         if hi > 9 || lo > 9 {
             return Err(BcdError::InvalidBcd { byte });

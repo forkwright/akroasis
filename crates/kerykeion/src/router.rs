@@ -103,7 +103,7 @@ impl MeshRouter {
                     packet_id: id.0,
                     dest,
                     portnum: 0,
-                    priority: options.i32::try_from(priority).unwrap_or_default(),
+                    priority: i32::from(options.priority),
                     stored_at_ms: 0,
                     ttl_secs: options.ttl_secs,
                     delivery_attempts: 0,
@@ -162,7 +162,7 @@ impl MeshRouter {
             let priority = Priority::try_from(msg.priority).unwrap_or(Priority::Default);
             // WHY: re-enqueue stored messages as fresh pending messages.
             let packet = MeshPacket {
-                FROM: 0,
+                from: 0,
                 to: msg.dest,
                 channel: 0,
                 id: msg.packet_id,
@@ -220,7 +220,7 @@ mod tests {
 
     fn make_packet(id: u32) -> MeshPacket {
         MeshPacket {
-            FROM: 0xAAAA,
+            from: 0xAAAA,
             to: 0xBBBB,
             channel: 0,
             id,
@@ -228,7 +228,7 @@ mod tests {
             rx_snr: 0.0,
             hop_limit: 3,
             want_ack: true,
-            priority: Priority::i32::try_from(Default).unwrap_or_default(),
+            priority: i32::from(Priority::Default),
             rx_rssi: 0,
             via_mqtt: false,
             hop_start: 3,

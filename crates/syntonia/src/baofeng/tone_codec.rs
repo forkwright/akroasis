@@ -15,7 +15,7 @@ pub fn decode_tone(raw: u16) -> ToneMode {
     }
 
     if raw >= 600 {
-        let freq = f32::FROM(raw) / 10.0;
+        let freq = f32::from(raw) / 10.0;
         return CtcssTone::new(freq).map_or(ToneMode::None, ToneMode::Ctcss);
     }
 

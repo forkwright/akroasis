@@ -393,7 +393,7 @@ mod tests {
     }
 
     fn sample_coords() -> Coordinates {
-        Coordinates::new(51.5074, -0.1278, None).unwrap_or_default()
+        Coordinates::new(51.5074, -0.1278, None).unwrap()
     }
 
     // --- SignalKind construction ---
@@ -666,8 +666,8 @@ mod tests {
         .with_device(DeviceId::new())
         .with_confidence(Confidence::new(0.75))
         .with_metadata("floor", serde_json::json!(3));
-        let json = serde_json::to_string(&signal).unwrap_or_default();
-        let back: GeoSignal = serde_json::from_str(&json).unwrap_or_default();
+        let json = serde_json::to_string(&signal).unwrap();
+        let back: GeoSignal = serde_json::from_str(&json).unwrap();
         assert_eq!(signal, back);
     }
 
@@ -682,8 +682,8 @@ mod tests {
             sample_timestamp(),
             None,
         );
-        let json = serde_json::to_string(&signal).unwrap_or_default();
-        let back: GeoSignal = serde_json::from_str(&json).unwrap_or_default();
+        let json = serde_json::to_string(&signal).unwrap();
+        let back: GeoSignal = serde_json::from_str(&json).unwrap();
         assert_eq!(signal, back);
     }
 
@@ -697,8 +697,8 @@ mod tests {
             modulation: "FM".into(),
             bandwidth: Frequency::khz(25),
         });
-        let json = serde_json::to_string(&kind).unwrap_or_default();
-        let back: SignalKind = serde_json::from_str(&json).unwrap_or_default();
+        let json = serde_json::to_string(&kind).unwrap();
+        let back: SignalKind = serde_json::from_str(&json).unwrap();
         assert_eq!(kind, back);
     }
 
@@ -709,8 +709,8 @@ mod tests {
             to_node: None,
             channel: 0,
         });
-        let json = serde_json::to_string(&kind).unwrap_or_default();
-        let back: SignalKind = serde_json::from_str(&json).unwrap_or_default();
+        let json = serde_json::to_string(&kind).unwrap();
+        let back: SignalKind = serde_json::from_str(&json).unwrap();
         assert_eq!(kind, back);
     }
 
@@ -720,8 +720,8 @@ mod tests {
             rule_id: 100,
             severity: AlertSeverity::Critical,
         });
-        let json = serde_json::to_string(&kind).unwrap_or_default();
-        let back: SignalKind = serde_json::from_str(&json).unwrap_or_default();
+        let json = serde_json::to_string(&kind).unwrap();
+        let back: SignalKind = serde_json::from_str(&json).unwrap();
         assert_eq!(kind, back);
     }
 
@@ -731,8 +731,8 @@ mod tests {
             kind: TrackerKind::Tile,
             mac: [0x11, 0x22, 0x33, 0x44, 0x55, 0x66],
         });
-        let json = serde_json::to_string(&kind).unwrap_or_default();
-        let back: SignalKind = serde_json::from_str(&json).unwrap_or_default();
+        let json = serde_json::to_string(&kind).unwrap();
+        let back: SignalKind = serde_json::from_str(&json).unwrap();
         assert_eq!(kind, back);
     }
 
@@ -741,16 +741,16 @@ mod tests {
         let kind = SignalKind::Gps(GpsDetail::SpoofingSuspected {
             reason: "clock-jump".into(),
         });
-        let json = serde_json::to_string(&kind).unwrap_or_default();
-        let back: SignalKind = serde_json::from_str(&json).unwrap_or_default();
+        let json = serde_json::to_string(&kind).unwrap();
+        let back: SignalKind = serde_json::from_str(&json).unwrap();
         assert_eq!(kind, back);
     }
 
     #[test]
     fn signal_kind_environmental_serde_roundtrip() {
         let kind = SignalKind::Environmental(EnvironmentalDetail::Barometric { hpa: 1_013.25 });
-        let json = serde_json::to_string(&kind).unwrap_or_default();
-        let back: SignalKind = serde_json::from_str(&json).unwrap_or_default();
+        let json = serde_json::to_string(&kind).unwrap();
+        let back: SignalKind = serde_json::from_str(&json).unwrap();
         assert_eq!(kind, back);
     }
 
@@ -760,8 +760,8 @@ mod tests {
             indicator_type: "domain".into(),
             value: "evil.test.invalid".into(),
         });
-        let json = serde_json::to_string(&kind).unwrap_or_default();
-        let back: SignalKind = serde_json::from_str(&json).unwrap_or_default();
+        let json = serde_json::to_string(&kind).unwrap();
+        let back: SignalKind = serde_json::from_str(&json).unwrap();
         assert_eq!(kind, back);
     }
 }
