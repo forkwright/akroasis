@@ -140,3 +140,9 @@ Names follow [gnomon](https://github.com/forkwright/aletheia/blob/main/docs/gnom
 ---
 
 *See [docs/gnomon.md](docs/gnomon.md) for the complete name registry.*
+
+---
+
+## Disclaimer
+
+This software is for research and educational purposes. See [DISCLAIMER.md](DISCLAIMER.md) for details on user responsibility, licensing, and legal considerations. The authors accept no responsibility for any specific use of this software.
