@@ -131,4 +131,41 @@ mod tests {
         assert!((c.latitude - back.latitude).abs() < f64::EPSILON);
         assert!((c.longitude - back.longitude).abs() < f64::EPSILON);
     }
+
+    // --- Behavioral tests ---
+
+    /// London (51.5074°N, 0.1278°W) to Paris (48.8566°N, 2.3522°E) is ~343 km.
+    /// Tolerance ±500 m accounts for differing Earth-radius conventions.
+    #[test]
+    fn haversine_distance_known_pair() {
+        let london = Coordinates::new(51.5074, -0.1278, None).unwrap();
+        let paris = Coordinates::new(48.8566, 2.3522, None).unwrap();
+        let dist_m = london.haversine_distance_m(&paris);
+        // Expected ~343 556 m; accept ±500 m.
+        assert!(
+            (dist_m - 343_556.0).abs() < 500.0,
+            "London→Paris distance {dist_m:.0} m is outside expected range"
+        );
+    }
+
+    #[test]
+    fn haversine_distance_same_point_is_zero() {
+        let c = Coordinates::new(35.6895, 139.6917, None).unwrap(); // Tokyo
+        assert!(
+            c.haversine_distance_m(&c) < f64::EPSILON,
+            "distance to self must be zero"
+        );
+    }
+
+    #[test]
+    fn haversine_distance_is_symmetric() {
+        let london = Coordinates::new(51.5074, -0.1278, None).unwrap();
+        let paris = Coordinates::new(48.8566, 2.3522, None).unwrap();
+        let a_to_b = london.haversine_distance_m(&paris);
+        let b_to_a = paris.haversine_distance_m(&london);
+        assert!(
+            (a_to_b - b_to_a).abs() < 1e-6,
+            "dist(A,B)={a_to_b} ≠ dist(B,A)={b_to_a}"
+        );
+    }
 }

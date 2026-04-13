@@ -696,6 +696,79 @@ mod tests {
         b
     }
 
+    // --- Behavioral tests ---
+
+    /// Feed N copies of the same value → mean = that value, population stddev = 0.
+    #[test]
+    fn baseline_mean_of_constant_sequence() {
+        let mut b = Baseline::new();
+        for _ in 0..50 {
+            b.observe(42.0);
+        }
+        assert_eq!(b.count(), 50);
+        assert!(
+            b.mean().is_some_and(|m| (m - 42.0).abs() < 1e-10),
+            "expected mean 42.0, got {:?}",
+            b.mean()
+        );
+        // Population variance of a constant sequence is 0; sample variance requires ≥2 and
+        // for identical values m2 stays 0, so variance() returns Some(0.0).
+        assert!(
+            b.variance().is_some_and(|v| v.abs() < 1e-10),
+            "expected variance 0.0 for constant sequence, got {:?}",
+            b.variance()
+        );
+    }
+
+    /// After 100 observations near 50.0 the baseline is stable; a value of 500.0
+    /// must score as Anomalous (it is far beyond 3 sigma).
+    #[test]
+    fn baseline_detects_outlier_after_stable_period() {
+        let mut b = Baseline::new();
+        // 100 observations drawn from N(50, 1) using the deterministic generator.
+        let samples = generate_normal_samples(0xC0FFEE_DEAD, 50.0, 1.0, 100);
+        for s in samples {
+            b.observe(s);
+        }
+        // 500.0 is hundreds of standard deviations away from 50.0.
+        let score = b.score(500.0);
+        assert!(
+            score.is_anomalous(),
+            "expected Anomalous for 500.0 against baseline ≈ N(50,1), got {score:?}"
+        );
+    }
+
+    /// Merging two baselines with different means produces a merged mean that lies
+    /// strictly between the two individual means.
+    #[test]
+    fn baseline_merge_preserves_global_statistics() {
+        let mut a = Baseline::new();
+        for v in (1..=20).map(f64::from) {
+            a.observe(v); // mean ≈ 10.5
+        }
+        let mut b = Baseline::new();
+        for v in (81..=100).map(f64::from) {
+            b.observe(v); // mean ≈ 90.5
+        }
+        let mean_a = a.mean().unwrap();
+        let mean_b = b.mean().unwrap();
+
+        let mut merged = a.clone();
+        merged.merge(&b);
+        let merged_mean = merged.mean().unwrap();
+
+        assert_eq!(merged.count(), 40);
+        assert!(
+            merged_mean > mean_a && merged_mean < mean_b,
+            "merged mean {merged_mean} must be between {mean_a} and {mean_b}"
+        );
+        // With equal-sized groups the merged mean must be the midpoint ≈ 50.5.
+        assert!(
+            (merged_mean - 50.5).abs() < 1e-9,
+            "expected merged mean 50.5, got {merged_mean}"
+        );
+    }
+
     proptest::proptest! {
         #![proptest_config(proptest::test_runner::Config::with_cases(1000))]
 

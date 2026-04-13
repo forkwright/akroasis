@@ -168,6 +168,48 @@ mod tests {
         assert!(s.starts_with("Device "), "got: {s}");
     }
 
+    // --- Behavioral tests ---
+
+    /// Adding multiple distinct attributes stores all of them.
+    #[test]
+    fn entity_accumulates_attributes() {
+        let mut e = Entity::new(EntityKind::Device);
+        e.set_attribute("mac", serde_json::json!("aa:bb:cc:dd:ee:ff"));
+        e.set_attribute("vendor", serde_json::json!("Acme"));
+        e.set_attribute("firmware", serde_json::json!("1.2.3"));
+        assert_eq!(e.attributes.len(), 3, "expected 3 distinct attributes");
+        assert_eq!(
+            e.attributes.get("mac"),
+            Some(&serde_json::json!("aa:bb:cc:dd:ee:ff"))
+        );
+        assert_eq!(
+            e.attributes.get("vendor"),
+            Some(&serde_json::json!("Acme"))
+        );
+        assert_eq!(
+            e.attributes.get("firmware"),
+            Some(&serde_json::json!("1.2.3"))
+        );
+    }
+
+    /// Setting the same attribute key twice keeps only one entry (last value wins).
+    #[test]
+    fn entity_deduplicates_same_attribute() {
+        let mut e = Entity::new(EntityKind::Device);
+        e.set_attribute("status", serde_json::json!("online"));
+        e.set_attribute("status", serde_json::json!("offline"));
+        assert_eq!(
+            e.attributes.len(),
+            1,
+            "duplicate key must not create a second entry"
+        );
+        assert_eq!(
+            e.attributes.get("status"),
+            Some(&serde_json::json!("offline")),
+            "last write must win"
+        );
+    }
+
     #[test]
     fn entity_kind_display_device() {
         assert_eq!(EntityKind::Device.to_string(), "Device");

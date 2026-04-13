@@ -654,6 +654,64 @@ mod tests {
         assert_eq!(Confidence::new(0.85).to_string(), "85%");
     }
 
+    // --- GeoSignal behavioral tests ---
+
+    /// A signal constructed with coordinates must report Some location.
+    #[test]
+    fn geosignal_with_coordinates_has_location() {
+        let coords = Coordinates::new(51.5074, -0.1278, None).unwrap();
+        let signal = GeoSignal::new(
+            SignalKind::Environmental(EnvironmentalDetail::Temperature { celsius: 20.0 }),
+            sample_timestamp(),
+            Some(coords),
+        );
+        assert!(
+            signal.location.is_some(),
+            "signal constructed with coordinates must have Some(location)"
+        );
+        let loc = signal.location.unwrap();
+        assert!((loc.latitude - 51.5074).abs() < 1e-9);
+        assert!((loc.longitude - (-0.1278)).abs() < 1e-9);
+    }
+
+    /// Metadata keys from multiple `with_metadata` calls all appear in the map.
+    #[test]
+    fn geosignal_metadata_merge() {
+        let signal = GeoSignal::new(
+            SignalKind::Environmental(EnvironmentalDetail::Temperature { celsius: 22.0 }),
+            sample_timestamp(),
+            None,
+        )
+        .with_metadata("sensor", serde_json::json!("roof"))
+        .with_metadata("building", serde_json::json!("HQ"))
+        .with_metadata("floor", serde_json::json!(3));
+
+        assert_eq!(signal.metadata.len(), 3);
+        assert_eq!(signal.metadata["sensor"], serde_json::json!("roof"));
+        assert_eq!(signal.metadata["building"], serde_json::json!("HQ"));
+        assert_eq!(signal.metadata["floor"], serde_json::json!(3));
+    }
+
+    /// Signals with distinct unix-millisecond timestamps sort in chronological order.
+    #[test]
+    fn geosignal_timestamp_ordering() {
+        let kind = || SignalKind::Environmental(EnvironmentalDetail::Temperature { celsius: 20.0 });
+        let t1 = Timestamp::from_unix_millis(1_700_000_000_000).unwrap();
+        let t2 = Timestamp::from_unix_millis(1_700_000_001_000).unwrap();
+        let t3 = Timestamp::from_unix_millis(1_700_000_002_000).unwrap();
+
+        let s1 = GeoSignal::new(kind(), t1, None);
+        let s2 = GeoSignal::new(kind(), t2, None);
+        let s3 = GeoSignal::new(kind(), t3, None);
+
+        let mut signals = vec![s3.clone(), s1.clone(), s2.clone()];
+        signals.sort_by_key(|s| s.timestamp);
+
+        assert_eq!(signals[0].timestamp, t1);
+        assert_eq!(signals[1].timestamp, t2);
+        assert_eq!(signals[2].timestamp, t3);
+    }
+
     // --- GeoSignal serde roundtrips ---
 
     #[test]

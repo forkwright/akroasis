@@ -148,4 +148,45 @@ mod tests {
         let back: Frequency = serde_json::from_str(&json).unwrap();
         assert_eq!(f, back);
     }
+
+    // --- Behavioral tests ---
+
+    /// `Frequency::mhz(146)` → `as_mhz_f64()` must round-trip to exactly 146.0.
+    #[test]
+    fn frequency_mhz_round_trip() {
+        let f = Frequency::mhz(146);
+        assert!(
+            (f.as_mhz_f64() - 146.0).abs() < f64::EPSILON,
+            "expected 146.0 MHz, got {}",
+            f.as_mhz_f64()
+        );
+    }
+
+    /// 144 MHz < 146 MHz < 430 MHz — ordering must reflect raw Hz value.
+    #[test]
+    fn frequency_ordering() {
+        let low = Frequency::mhz(144);
+        let mid = Frequency::mhz(146);
+        let high = Frequency::mhz(430);
+        assert!(low < mid, "144 MHz must be less than 146 MHz");
+        assert!(mid < high, "146 MHz must be less than 430 MHz");
+        assert!(low < high, "144 MHz must be less than 430 MHz");
+    }
+
+    /// VHF (146 MHz) displays as MHz; microwave (2.4 GHz) displays as GHz.
+    #[test]
+    fn frequency_display_uses_appropriate_unit() {
+        let vhf = Frequency::mhz(146);
+        let microwave = Frequency::ghz(2);
+        let vhf_str = vhf.to_string();
+        let mw_str = microwave.to_string();
+        assert!(
+            vhf_str.contains("MHz"),
+            "VHF 146 MHz should display with MHz unit, got: {vhf_str}"
+        );
+        assert!(
+            mw_str.contains("GHz"),
+            "2 GHz should display with GHz unit, got: {mw_str}"
+        );
+    }
 }
