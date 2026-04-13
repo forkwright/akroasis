@@ -107,8 +107,8 @@ prost = "0.14.3"
 prost-types = "0.14.3"
 
 # Mesh networking — crypto (pin exact: pre-release)
-aes = "=0.9.0-rc.4"
-ctr = "=0.10.0-rc.4"
+aes = "=0.9.0"
+ctr = "=0.10.0"
 x25519-dalek = { version = "2.0.1", features = ["static_secrets"] }
 
 # Mesh networking — graph
