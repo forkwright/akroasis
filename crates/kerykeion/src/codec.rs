@@ -341,4 +341,108 @@ mod tests {
             u16::from_be_bytes([*raw.get(2).unwrap(), *raw.get(3).unwrap()]) as usize;
         assert_eq!(declared_len + 4, dst.len());
     }
+
+    // ── Property tests ──────────────────────────────────────────────────────
+
+    proptest::proptest! {
+        #![proptest_config(proptest::test_runner::Config::with_cases(256))]
+
+        /// Valid frames survive an encode → frame → decode round-trip intact.
+        ///
+        /// WHY: hand-written tests only exercise a handful of `id` values; proptest
+        /// discovers edge cases (e.g. id=0, u32::MAX, values with special protobuf
+        /// encoding) that static tests miss.
+        #[test]
+        fn codec_frame_round_trips(id in 0_u32..u32::MAX) {
+            let original = make_from_radio(id);
+            let raw = frame_from_radio(&original);
+            let mut buf = BytesMut::from(raw.as_slice());
+            let mut codec = MeshCodec;
+            let result = codec.decode(&mut buf);
+            proptest::prop_assert!(result.is_ok(), "decode returned error: {:?}", result);
+            #[expect(clippy::unwrap_used, reason = "prop_assert above ensures Ok")]
+            let decoded = result.unwrap();
+            proptest::prop_assert!(decoded.is_some(), "decode returned None for a complete frame");
+            #[expect(clippy::unwrap_used, reason = "prop_assert above ensures Some")]
+            let frame = decoded.unwrap();
+            proptest::prop_assert_eq!(frame.id, id);
+        }
+
+        /// Frames whose declared length exceeds `MAX_PACKET_SIZE` are discarded without
+        /// error or panic.  The decoder returns `Ok(None)` because there is no subsequent
+        /// valid frame in the buffer after the oversized one.
+        ///
+        /// WHY: untrusted radio input can contain corrupted length fields; the codec must
+        /// not propagate them as errors or panic — it must discard and continue seeking.
+        #[test]
+        fn codec_rejects_oversized_length(
+            // Length values strictly above MAX_PACKET_SIZE (512).
+            bad_len in (crate::types::MAX_PACKET_SIZE as u16 + 1)..=u16::MAX,
+        ) {
+            // Build a frame header with the oversized length field; no payload bytes needed
+            // because the codec discards the frame as soon as it reads the bad length.
+            let msb = (bad_len >> 8) as u8;
+            let lsb = (bad_len & 0xFF) as u8;
+            let data = vec![
+                crate::types::FRAME_MAGIC[0],
+                crate::types::FRAME_MAGIC[1],
+                msb,
+                lsb,
+            ];
+            let mut buf = BytesMut::from(data.as_slice());
+            let mut codec = MeshCodec;
+            let result = codec.decode(&mut buf);
+            // Must not panic and must return Ok (never an error for an oversized length).
+            proptest::prop_assert!(
+                result.is_ok(),
+                "oversized frame triggered an error: {:?}", result
+            );
+        }
+
+        /// Completely arbitrary byte sequences fed to the decoder never panic.
+        ///
+        /// WHY: the codec sits on the input side of a serial/TCP transport and must
+        /// be robust against any byte sequence a malfunctioning radio can produce.
+        /// A panic here would crash the entire Akroasis process.
+        #[test]
+        fn codec_handles_arbitrary_bytes_without_panic(
+            bytes in proptest::collection::vec(0_u8..=255_u8, 0_usize..1024_usize),
+        ) {
+            let mut buf = BytesMut::from(bytes.as_slice());
+            let mut codec = MeshCodec;
+            // The only hard requirement is no panic.  Ok(None) or Ok(Some(_)) or Err(_)
+            // are all acceptable outcomes for arbitrary input.
+            let _ = codec.decode(&mut buf);
+        }
+
+        /// Truncating a valid frame at any byte offset returns `Ok(None)`, never an error.
+        ///
+        /// WHY: partial frames are normal on a serial link — TCP segments and UART FIFOs
+        /// deliver data in chunks.  Returning an error on a partial frame would tear down
+        /// the connection; the codec must wait for the rest.
+        #[test]
+        fn codec_partial_frames_return_none(id in 1_u32..u32::MAX) {
+            let msg = make_from_radio(id);
+            let raw = frame_from_radio(&msg);
+            // Test every truncation point from 0 bytes up to (but not including) the full frame.
+            // A full frame must decode successfully; anything shorter must return Ok(None).
+            for truncated_len in 0..raw.len().saturating_sub(1) {
+                #[expect(clippy::unwrap_used, reason = "truncated_len < raw.len() always holds")]
+                let slice = raw.get(..truncated_len).unwrap();
+                let mut buf = BytesMut::from(slice);
+                let mut codec = MeshCodec;
+                let result = codec.decode(&mut buf);
+                proptest::prop_assert!(
+                    result.is_ok(),
+                    "truncation at {truncated_len} produced an error: {:?}", result
+                );
+                #[expect(clippy::unwrap_used, reason = "prop_assert above ensures Ok")]
+                let decoded = result.unwrap();
+                proptest::prop_assert!(
+                    decoded.is_none(),
+                    "truncation at {truncated_len} unexpectedly produced a decoded frame"
+                );
+            }
+        }
+    }
 }

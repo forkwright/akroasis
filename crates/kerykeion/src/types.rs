@@ -133,4 +133,38 @@ mod tests {
         assert_eq!(MAX_CHANNELS, 8);
         assert_eq!(MAX_HOP_LIMIT, 7);
     }
+
+    // ── Property tests ──────────────────────────────────────────────────────
+
+    proptest::proptest! {
+        #![proptest_config(proptest::test_runner::Config::with_cases(256))]
+
+        /// `PacketId` serialises to JSON and back without loss for any `u32` value.
+        ///
+        /// WHY: `PacketId` is stored in GreptimeDB and round-tripped through JSON signal
+        /// payloads; data loss on any value (including 0 and `u32::MAX`) would silently
+        /// corrupt delivery-tracking state.
+        #[test]
+        fn packet_id_round_trips(raw in 0_u32..=u32::MAX) {
+            #[expect(clippy::unwrap_used, reason = "test-only: PacketId serialisation is infallible")]
+            let serialised = serde_json::to_string(&PacketId(raw)).unwrap();
+            #[expect(clippy::unwrap_used, reason = "test-only: deserialising just-serialised value")]
+            let restored: PacketId = serde_json::from_str(&serialised).unwrap();
+            proptest::prop_assert_eq!(PacketId(raw), restored);
+        }
+
+        /// `NodeNum` serialises to JSON and back without loss for any `u32` value.
+        ///
+        /// WHY: node numbers are MAC-derived u32 values used as primary keys in `NodeDb`
+        /// and emitted in mesh topology signals; a round-trip mismatch would cause nodes
+        /// to be mis-identified or duplicated in the topology graph.
+        #[test]
+        fn node_id_round_trips(raw in 0_u32..=u32::MAX) {
+            #[expect(clippy::unwrap_used, reason = "test-only: NodeNum serialisation is infallible")]
+            let serialised = serde_json::to_string(&NodeNum(raw)).unwrap();
+            #[expect(clippy::unwrap_used, reason = "test-only: deserialising just-serialised value")]
+            let restored: NodeNum = serde_json::from_str(&serialised).unwrap();
+            proptest::prop_assert_eq!(NodeNum(raw), restored);
+        }
+    }
 }
