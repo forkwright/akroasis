@@ -79,14 +79,13 @@ pub(crate) fn cables_from_ports(ports: &[serialport::SerialPortInfo]) -> Vec<Usb
 
 /// Check PL2303 cables for clone indicators via USB descriptors.
 fn check_pl2303_clones(cables: &mut [UsbCable]) {
-    let Ok(devices) = nusb::list_devices() else {
+    let Ok(devices) = rusb::devices() else {
         return;
     };
-    let usb_devices: Vec<_> = devices.collect();
 
     for cable in cables.iter_mut() {
         if cable.chip == CableChip::Pl2303 {
-            cable.is_clone = Some(is_pl2303_clone(&usb_devices, cable.vid, cable.pid));
+            cable.is_clone = Some(is_pl2303_clone(&devices, cable.vid, cable.pid));
         }
     }
 }
@@ -95,12 +94,15 @@ fn check_pl2303_clones(cables: &mut [UsbCable]) {
 ///
 /// Genuine PL2303 chips (TA, TB, RA series) report `bcdDevice` >= 0x0400.
 /// Clones (HX, HXA) typically report `bcdDevice` 0x0300.
-fn is_pl2303_clone(devices: &[nusb::DeviceInfo], vid: u16, pid: u16) -> bool {
+fn is_pl2303_clone(devices: &rusb::DeviceList<rusb::GlobalContext>, vid: u16, pid: u16) -> bool {
     // WHY: PL2303 clones work on Linux but fail on modern Windows drivers.
     // Checking bcdDevice distinguishes genuine chips from counterfeits.
-    for dev in devices {
-        if dev.vendor_id() == vid && dev.product_id() == pid {
-            return dev.device_version() < 0x0400;
+    for dev in devices.iter() {
+        let Ok(desc) = dev.device_descriptor() else {
+            continue;
+        };
+        if desc.vendor_id() == vid && desc.product_id() == pid {
+            return desc.device_version() < rusb::Version(0, 4, 0);
         }
     }
     false
