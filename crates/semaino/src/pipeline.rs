@@ -1,0 +1,364 @@
+//! Top-level async orchestrator wiring aggregation, convergence, and alerting.
+//!
+//! [`SemainoPipeline`] owns all three processing stages and drives them from a
+//! single `broadcast::Receiver<GeoSignal>`. Run it with [`SemainoPipeline::run`].
+
+use std::time::Duration;
+
+use koinon::GeoSignal;
+use tokio::sync::{broadcast, mpsc};
+
+use crate::{
+    SignalAggregator, aggregator::AggregatedSignal, alert::AlertPipeline,
+    convergence::ConvergenceGrid,
+};
+
+// ---------------------------------------------------------------------------
+// SemainoConfig
+// ---------------------------------------------------------------------------
+
+/// Runtime configuration for the semaino pipeline.
+#[derive(Debug, Clone)]
+pub struct SemainoConfig {
+    /// Grid quantization factor. 10 000 ≈ 10 m resolution.
+    pub grid_resolution: u32,
+    /// Sliding convergence detection window in seconds.
+    pub time_window_secs: u64,
+    /// Alert suppression window in seconds.
+    pub suppression_window_secs: u64,
+    /// Minimum distinct signal domains in a cell to trigger convergence.
+    pub min_convergence_domains: usize,
+}
+
+impl Default for SemainoConfig {
+    /// Returns production-safe defaults: 10 m grid, 30 s window, 60 s suppression, 2 domains.
+    fn default() -> Self {
+        Self {
+            grid_resolution: 10_000,
+            time_window_secs: 30,
+            suppression_window_secs: 60,
+            min_convergence_domains: 2,
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// SemainoPipeline
+// ---------------------------------------------------------------------------
+
+/// Async orchestrator integrating aggregation, convergence, and alerting.
+///
+/// Call [`run`](SemainoPipeline::run) to process signals from a
+/// `broadcast::Receiver<GeoSignal>` until the channel closes.
+pub struct SemainoPipeline {
+    grid: ConvergenceGrid,
+    alerts: AlertPipeline,
+    time_window: Duration,
+    min_convergence_domains: usize,
+}
+
+impl SemainoPipeline {
+    /// Construct a pipeline from `config`.
+    #[must_use]
+    pub fn new(config: &SemainoConfig) -> Self {
+        Self {
+            grid: ConvergenceGrid::new(config.grid_resolution),
+            alerts: AlertPipeline::new(config.suppression_window_secs),
+            time_window: Duration::from_secs(config.time_window_secs),
+            min_convergence_domains: config.min_convergence_domains,
+        }
+    }
+
+    /// Register an alert sink on the internal [`AlertPipeline`].
+    pub fn add_sink(&mut self, sink: impl crate::alert::AlertSink + 'static) {
+        self.alerts.add_sink(sink);
+    }
+
+    /// Drive the pipeline until the broadcast channel is closed.
+    ///
+    /// Architecture:
+    ///
+    /// 1. A cloned broadcast receiver feeds the aggregator's `run()` loop in a
+    ///    spawned task, emitting [`AggregatedSignal`]s via an mpsc channel.
+    /// 2. The main task fans out each incoming [`GeoSignal`] to the convergence
+    ///    grid and consumes [`AggregatedSignal`]s from the mpsc channel to run
+    ///    the alert pipeline.
+    pub async fn run(&mut self, rx: broadcast::Receiver<GeoSignal>) {
+        // WHY: We need two consumers of the broadcast:
+        //   (a) the aggregator, for baseline scoring, and
+        //   (b) the grid ingestion path.
+        // broadcast::Receiver is not Clone, but Sender::subscribe() produces a
+        // new receiver. The caller provides one receiver; we subscribe a second
+        // one from the same sender would require a Sender reference. Instead we
+        // drive both stages inline to avoid needing an Arc<Sender>.
+        //
+        // Inline approach: receive once per signal, feed aggregator inline (by
+        // duplicating the scoring logic via the public extract_feature API) and
+        // feed the grid from the same signal. The aggregator's public API is
+        // sufficient: extract_feature and the internal baseline are accessed
+        // through run(). We drive the aggregator's channel ourselves here.
+        let (agg_tx, mut agg_rx) = mpsc::channel::<AggregatedSignal>(256);
+        let (signal_tx, signal_rx) = mpsc::channel::<GeoSignal>(256);
+
+        // Spawn aggregator task: receives GeoSignals via mpsc, emits AggregatedSignals.
+        let mut aggregator = SignalAggregator::new();
+        // WHY: We pipe GeoSignals into the aggregator via a local broadcast-backed
+        // channel so we can reuse its run() loop without forking the implementation.
+        let (inner_tx, inner_rx) = broadcast::channel::<GeoSignal>(256);
+        let agg_task = tokio::spawn(async move {
+            aggregator.run(inner_rx, agg_tx).await;
+        });
+
+        // Spawn broadcast drain task: reads the caller's broadcast receiver and
+        // fans the signals to (a) the aggregator and (b) the grid feed channel.
+        let fan_task = tokio::spawn(async move {
+            let mut rx = rx;
+            loop {
+                match rx.recv().await {
+                    Ok(signal) => {
+                        // Fan to aggregator (ignore send error — aggregator exited).
+                        let _ = inner_tx.send(signal.clone());
+                        // Fan to grid channel (ignore send error — pipeline exited).
+                        if signal_tx.send(signal).await.is_err() {
+                            break;
+                        }
+                    }
+                    Err(broadcast::error::RecvError::Closed) => {
+                        tracing::debug!("semaino: broadcast channel closed");
+                        break;
+                    }
+                    Err(broadcast::error::RecvError::Lagged(n)) => {
+                        tracing::warn!(dropped = n, "semaino: pipeline lagged, signals dropped");
+                    }
+                }
+            }
+            // Dropping inner_tx closes the aggregator's broadcast receiver,
+            // causing the aggregator task to exit.
+        });
+
+        // Main loop: interleave grid ingestion and alert processing.
+        let mut signal_rx = signal_rx;
+        loop {
+            tokio::select! {
+                biased;
+
+                // Drain aggregated signals (anomaly → alert path).
+                Some(aggregated) = agg_rx.recv() => {
+                    self.handle_aggregated(&aggregated);
+                }
+
+                // Ingest raw signals into the convergence grid.
+                signal = signal_rx.recv() => {
+                    match signal {
+                        Some(s) => {
+                            self.grid.ingest(&s);
+
+                            // Periodic grid eviction.
+                            // WHY: Duration::as_millis() returns u128; cast to i64 is safe for
+                            // practical time_window values (max u64::MAX ms is far beyond use).
+                            #[allow(clippy::cast_possible_truncation)]
+                            let evict_before_ms = koinon::Timestamp::now().as_unix_millis()
+                                - self.time_window.as_millis() as i64;
+                            if let Ok(ts) = koinon::Timestamp::from_unix_millis(evict_before_ms) {
+                                self.grid.evict(ts);
+                            }
+                        }
+                        None => {
+                            // signal_rx closed — broadcast drain task exited.
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Drain any remaining aggregated signals.
+        drop(agg_rx);
+
+        // Wait for background tasks to complete.
+        if let Err(e) = fan_task.await {
+            tracing::warn!(error = ?e, "semaino: fan task error");
+        }
+        if let Err(e) = agg_task.await {
+            tracing::warn!(error = ?e, "semaino: aggregator task error");
+        }
+    }
+
+    /// Process one [`AggregatedSignal`] through convergence detection and alerting.
+    fn handle_aggregated(&mut self, aggregated: &AggregatedSignal) {
+        let now = koinon::Timestamp::now();
+        let convergences = self
+            .grid
+            .detect(self.min_convergence_domains, self.time_window, now);
+
+        // Use the first convergence event for the cell matching the signal, if any.
+        let matching_convergence = convergences.first();
+
+        if let Some(alert) = self.alerts.process(aggregated, matching_convergence) {
+            tracing::info!(
+                alert_id = %alert.id,
+                severity = ?alert.severity,
+                "semaino: alert produced"
+            );
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::missing_docs_in_private_items
+)]
+mod tests {
+    use koinon::{
+        AnomalyScore, Frequency, GeoSignal, Power, Timestamp,
+        signal::{RfDetail, SignalKind},
+    };
+    use tokio::sync::broadcast;
+
+    use super::*;
+    use crate::alert::{Alert, AlertSink};
+
+    use std::sync::{Arc, Mutex};
+
+    /// A sink that collects alerts for assertion.
+    #[derive(Clone, Default)]
+    struct CollectingSink(Arc<Mutex<Vec<Alert>>>);
+
+    impl AlertSink for CollectingSink {
+        fn emit(&self, alert: &Alert) {
+            self.0.lock().unwrap().push(alert.clone());
+        }
+    }
+
+    fn rf_signal(power_dbm: f64) -> GeoSignal {
+        GeoSignal::new(
+            SignalKind::Rf(RfDetail::Transmission {
+                frequency: Frequency::mhz(146),
+                power: Power::dbm(power_dbm),
+                modulation: "FM".into(),
+                bandwidth: Frequency::khz(25),
+            }),
+            Timestamp::now(),
+            None,
+        )
+    }
+
+    #[tokio::test]
+    async fn end_to_end_broadcast_to_alert() {
+        let (tx, rx) = broadcast::channel::<GeoSignal>(256);
+        let mut pipeline = SemainoPipeline::new(&SemainoConfig {
+            suppression_window_secs: 0, // no suppression for the test
+            min_convergence_domains: 2,
+            ..SemainoConfig::default()
+        });
+
+        let sink = CollectingSink::default();
+        let sink_data = Arc::clone(&sink.0);
+        pipeline.add_sink(sink);
+
+        // Spawn the pipeline.
+        let handle = tokio::spawn(async move {
+            pipeline.run(rx).await;
+        });
+
+        // Build a stable baseline with 20 normal signals.
+        for i in 0..20_i32 {
+            let power = -50.0 + f64::from(i % 3);
+            tx.send(rf_signal(power)).unwrap();
+        }
+
+        // Small pause for the pipeline to process the baseline signals.
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+
+        // Send a clear outlier.
+        tx.send(rf_signal(50.0)).unwrap();
+
+        // Allow time for the pipeline to process the outlier.
+        tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+
+        // Close the broadcast to shut down the pipeline.
+        drop(tx);
+        handle.await.unwrap();
+
+        let (is_non_empty, first_severity) = {
+            let alerts = sink_data.lock().unwrap();
+            let first_sev = alerts.first().map(|a| a.severity.clone());
+            (!alerts.is_empty(), first_sev)
+        };
+        assert!(
+            is_non_empty,
+            "pipeline should have produced at least one alert"
+        );
+        let severity = first_severity.expect("checked non-empty above");
+        assert!(
+            matches!(
+                severity,
+                koinon::signal::AlertSeverity::High | koinon::signal::AlertSeverity::Critical
+            ),
+            "outlier signal should produce High or Critical alert, got {severity:?}",
+        );
+    }
+
+    // ── config defaults ────────────────────────────────────────────────────────
+
+    #[test]
+    fn default_config_has_expected_values() {
+        let cfg = SemainoConfig::default();
+        assert_eq!(cfg.grid_resolution, 10_000);
+        assert_eq!(cfg.time_window_secs, 30);
+        assert_eq!(cfg.suppression_window_secs, 60);
+        assert_eq!(cfg.min_convergence_domains, 2);
+    }
+
+    // ── pipeline ignores OSINT signals gracefully ──────────────────────────────
+
+    #[tokio::test]
+    async fn pipeline_ignores_osint_no_alert() {
+        use koinon::signal::{OsintDetail, SignalKind};
+
+        let (tx, rx) = broadcast::channel::<GeoSignal>(64);
+        let mut pipeline = SemainoPipeline::new(&SemainoConfig::default());
+        let sink = CollectingSink::default();
+        let sink_data = Arc::clone(&sink.0);
+        pipeline.add_sink(sink);
+
+        let handle = tokio::spawn(async move {
+            pipeline.run(rx).await;
+        });
+
+        for _ in 0..5 {
+            tx.send(GeoSignal::new(
+                SignalKind::Osint(OsintDetail::FeedItem {
+                    source: "feed".into(),
+                    title: "item".into(),
+                }),
+                Timestamp::now(),
+                None,
+            ))
+            .unwrap();
+        }
+
+        tokio::time::sleep(tokio::time::Duration::from_millis(20)).await;
+        drop(tx);
+        handle.await.unwrap();
+
+        let is_empty = sink_data.lock().unwrap().is_empty();
+        assert!(is_empty, "OSINT-only signals must not produce alerts");
+    }
+
+    // ── classify_normal_score_returns_none ────────────────────────────────────
+
+    #[test]
+    fn classify_normal_score_returns_none() {
+        use crate::alert::classify;
+
+        let result = classify(&AnomalyScore::Normal, None);
+        assert!(result.is_none());
+    }
+}

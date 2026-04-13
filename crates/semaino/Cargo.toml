@@ -1,0 +1,20 @@
+[package]
+name = "semaino"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+koinon = { path = "../koinon" }
+tokio = { workspace = true }
+snafu = { workspace = true }
+tracing = { workspace = true }
+jiff = { workspace = true }
+ulid = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }
+
+[lints]
+workspace = true
