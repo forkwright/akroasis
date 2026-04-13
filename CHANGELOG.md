@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.1.10](https://github.com/forkwright/akroasis/compare/v0.1.9...v0.1.10) (2026-04-13)
+
+
+### Features
+
+* **semaino:** signal aggregation, convergence detection, alert pipeline ([99335ab](https://github.com/forkwright/akroasis/commit/99335abf7767652f1319b795450b14555bbc0ec0)), closes [#85](https://github.com/forkwright/akroasis/issues/85)
+* **syntonia:** scaffold Yaesu FTM-510DR module ([e2e87fe](https://github.com/forkwright/akroasis/commit/e2e87fed75c56712dbe8cb7694064236cbda4c10)), closes [#80](https://github.com/forkwright/akroasis/issues/80)
+
+
+### Bug Fixes
+
+* **ops:** full AGPL-3.0 text, AI training prohibition, disclaimer ([76e2e49](https://github.com/forkwright/akroasis/commit/76e2e4981d0d2d21b517164928fe78ec62bc2364)), closes [#75](https://github.com/forkwright/akroasis/issues/75)
+* **syntonia:** port hardware/usb.rs from nusb to rusb ([e511170](https://github.com/forkwright/akroasis/commit/e511170764b8ae9379aaa462caa383d65ae83a92)), closes [#82](https://github.com/forkwright/akroasis/issues/82)
+* undo mangled identifiers from botched kanon lint --fix run ([ea46319](https://github.com/forkwright/akroasis/commit/ea4631979b299e2aebc09b6f03d0fb6f26c2c4c2))
+
 ## [0.1.9](https://github.com/forkwright/akroasis/compare/v0.1.8...v0.1.9) (2026-04-04)
 
 
