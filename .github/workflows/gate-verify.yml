@@ -8,12 +8,17 @@ permissions:
   contents: read
 
 jobs:
-  verify-gate:
+  gate-attestation:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
+
+      # WHY: GitHub Actions checkout only fetches the PR branch. We need
+      # main as a ref to compute the commit range for trailer verification.
+      - name: Fetch base branch
+        run: git fetch origin main:refs/remotes/origin/main
 
       - name: Check for bot PR
         id: bot-check
