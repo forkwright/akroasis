@@ -354,7 +354,7 @@ mod tests {
         }
     }
 
-    fn test_variant(kind: RadioKind) -> VariantConfig {
+    fn make_variant(kind: RadioKind) -> VariantConfig {
         VariantConfig {
             kind,
             baud_rate: 9600,
@@ -362,14 +362,14 @@ mod tests {
         }
     }
 
-    fn test_ident(firmware: &str) -> RadioIdent {
+    fn make_ident(firmware: &str) -> RadioIdent {
         RadioIdent {
             firmware: firmware.to_string(),
             raw_response: firmware.as_bytes().to_vec(),
         }
     }
 
-    fn test_cable(port: &str) -> UsbCable {
+    fn make_cable(port: &str) -> UsbCable {
         UsbCable {
             vid: 0x067B,
             pid: 0x2303,
@@ -441,11 +441,11 @@ mod tests {
 
     #[test]
     fn detect_with_mock_returns_responding_radio() {
-        let cables = vec![test_cable("/dev/ttyUSB0")];
+        let cables = vec![make_cable("/dev/ttyUSB0")];
         let prober = MockProber {
             responses: vec![(
                 "/dev/ttyUSB0".to_string(),
-                Some((test_variant(RadioKind::BaofengUv5r), test_ident("BFB297"))),
+                Some((make_variant(RadioKind::BaofengUv5r), make_ident("BFB297"))),
             )],
         };
 
@@ -457,7 +457,7 @@ mod tests {
 
     #[test]
     fn detect_skips_unresponsive_ports() {
-        let cables = vec![test_cable("/dev/ttyUSB0")];
+        let cables = vec![make_cable("/dev/ttyUSB0")];
         let prober = MockProber {
             responses: vec![("/dev/ttyUSB0".to_string(), None)],
         };
@@ -469,7 +469,7 @@ mod tests {
     #[test]
     fn detect_multiple_ports_returns_only_responding() {
         let cables = vec![
-            test_cable("/dev/ttyUSB0"),
+            make_cable("/dev/ttyUSB0"),
             UsbCable {
                 vid: 0x1A86,
                 pid: 0x7523,
@@ -486,7 +486,7 @@ mod tests {
                 ("/dev/ttyUSB0".to_string(), None),
                 (
                     "/dev/ttyUSB1".to_string(),
-                    Some((test_variant(RadioKind::BaofengBfF8hp), test_ident("BFF800"))),
+                    Some((make_variant(RadioKind::BaofengBfF8hp), make_ident("BFF800"))),
                 ),
             ],
         };
