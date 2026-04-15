@@ -172,7 +172,7 @@ impl StoreForward {
 mod tests {
     use super::*;
 
-    fn test_config(max_per_dest: usize) -> StoreForwardConfig {
+    fn make_config(max_per_dest: usize) -> StoreForwardConfig {
         StoreForwardConfig {
             enabled: true,
             max_queue_per_dest: max_per_dest,
@@ -195,7 +195,7 @@ mod tests {
 
     #[test]
     fn store_and_drain() {
-        let mut sf = StoreForward::new(test_config(16));
+        let mut sf = StoreForward::new(make_config(16));
         let dest = NodeNum(0x1234);
 
         #[expect(clippy::unwrap_used, reason = "test-only")]
@@ -213,7 +213,7 @@ mod tests {
 
     #[test]
     fn queue_depth_limit_evicts_low_priority() {
-        let mut sf = StoreForward::new(test_config(2));
+        let mut sf = StoreForward::new(make_config(2));
         let dest = NodeNum(0x5678);
 
         #[expect(clippy::unwrap_used, reason = "test-only")]
@@ -235,7 +235,7 @@ mod tests {
 
     #[test]
     fn queue_full_rejects_low_priority() {
-        let mut sf = StoreForward::new(test_config(1));
+        let mut sf = StoreForward::new(make_config(1));
         let dest = NodeNum(0xAAAA);
 
         #[expect(clippy::unwrap_used, reason = "test-only")]
@@ -248,7 +248,7 @@ mod tests {
 
     #[test]
     fn prune_expired_removes_old_messages() {
-        let mut sf = StoreForward::new(test_config(16));
+        let mut sf = StoreForward::new(make_config(16));
         let dest = NodeNum(0xBBBB);
 
         // Message stored at t=1000ms with TTL=1s → expires at t=2000ms.
@@ -265,7 +265,7 @@ mod tests {
 
     #[test]
     fn serialize_deserialize_roundtrip() {
-        let mut sf = StoreForward::new(test_config(16));
+        let mut sf = StoreForward::new(make_config(16));
         let dest_a = NodeNum(0x1111);
         let dest_b = NodeNum(0x2222);
 
@@ -279,7 +279,7 @@ mod tests {
         #[expect(clippy::unwrap_used, reason = "test-only")]
         let serialized = sf.serialize().unwrap();
 
-        let mut sf2 = StoreForward::new(test_config(16));
+        let mut sf2 = StoreForward::new(make_config(16));
         #[expect(clippy::unwrap_used, reason = "test-only")]
         sf2.deserialize(&serialized).unwrap();
 
@@ -302,14 +302,14 @@ mod tests {
 
     #[test]
     fn drain_for_nonexistent_node_returns_empty() {
-        let mut sf = StoreForward::new(test_config(16));
+        let mut sf = StoreForward::new(make_config(16));
         let msgs = sf.drain_for(NodeNum(0xDEAD));
         assert!(msgs.is_empty());
     }
 
     #[test]
     fn total_stored_across_multiple_destinations() {
-        let mut sf = StoreForward::new(test_config(16));
+        let mut sf = StoreForward::new(make_config(16));
         for i in 0..5u32 {
             #[expect(clippy::unwrap_used, reason = "test-only")]
             sf.store(NodeNum(i), make_stored(i, 64, 1000, 3600))
