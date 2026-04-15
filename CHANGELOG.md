@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.11](https://github.com/forkwright/akroasis/compare/v0.1.10...v0.1.11) (2026-04-15)
+
+
+### Bug Fixes
+
+* **ci:** fix gate-attestation job name and fetch base branch ([#100](https://github.com/forkwright/akroasis/issues/100)) ([d228f26](https://github.com/forkwright/akroasis/commit/d228f26e99050909cb2f68f8379fc72ad8e0816e))
+
 ## [0.1.10](https://github.com/forkwright/akroasis/compare/v0.1.9...v0.1.10) (2026-04-13)
 
 
