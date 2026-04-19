@@ -436,7 +436,7 @@ mod tests {
 
         // Small delay to ensure the aggregator processes the normal signals before
         // we send the outlier.
-        tokio::time::sleep(tokio::time::Duration::from_millis(20)).await;
+        tokio::time::sleep(tokio::time::Duration::from_millis(20)).await; // kanon:ignore TESTING/sleep-in-test -- synchronises with spawned aggregator task; replacing with a barrier would re-implement the channel's ready signal
 
         // Drain any elevated signals from the warm-up phase.
         while agg_rx.try_recv().is_ok() {}

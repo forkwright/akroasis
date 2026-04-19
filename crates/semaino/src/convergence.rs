@@ -226,7 +226,7 @@ fn cell_center(cell: GridCell, resolution: u32) -> Coordinates {
             clippy::unwrap_used,
             reason = "literal (0,0) coordinates cannot fail validation"
         )]
-        Coordinates::new(0.0, 0.0, None).unwrap()
+        Coordinates::new(0.0, 0.0, None).unwrap() // SAFETY: (0.0, 0.0) is within valid lat/lon range; CoordinatesError cannot fire
     })
 }
 

@@ -18,6 +18,8 @@
 //! - [`export`] — CHIRP `.csv` export
 //! - [`baofeng`] — Baofeng UV-5R EEPROM codec
 
+#![deny(missing_docs)]
+
 pub mod baofeng;
 pub mod channel;
 pub mod error;

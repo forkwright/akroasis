@@ -151,7 +151,7 @@ fn print_topology() {
 /// Format a node table row from a [`MeshNode`].
 #[must_use]
 pub fn format_node_row(node: &MeshNode) -> Vec<String> {
-    let num = format!("{}", node.num);
+    let num = node.num.to_string();
     let long_name = node
         .user
         .as_ref()

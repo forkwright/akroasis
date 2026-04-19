@@ -1,5 +1,7 @@
 //! κοινόν — shared foundational types for the Akroasis workspace.
 
+#![deny(missing_docs)]
+
 pub mod baseline;
 pub mod coordinates;
 pub mod entity;

@@ -104,7 +104,8 @@ pub trait AlertSink: Send + Sync {
 /// A [`AlertSink`] that logs every alert via [`tracing::info!`].
 pub struct TracingSink;
 
-impl AlertSink for TracingSink {
+#[rustfmt::skip]
+impl AlertSink for TracingSink { // kanon:ignore ARCHITECTURE/trait-impl-colocation -- TracingSink is the default built-in sink
     fn emit(&self, alert: &Alert) {
         tracing::info!(
             alert_id = %alert.id,

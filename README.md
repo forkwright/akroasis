@@ -114,7 +114,7 @@ Every collection crate produces typed `GeoSignal` objects into koinon. Semaino a
 
 Wave 1 (kryphos), Wave 2 (syntonia + kerykeion), and Wave 3 (semaino) are complete. 6 crates shipping ~25K LOC with 600+ tests. Architecture finalized. Active development ongoing.
 
-The scope is massive. The architecture makes each domain independent: a crate with clear boundaries, producing typed signals into the shared model. The pieces don't need to arrive simultaneously. They just need to speak the same language when they do.
+The scope is massive. Each domain is independent: one crate with clear boundaries, producing typed signals into the shared model. Pieces do not need to arrive simultaneously. They only need to speak the same language when they do.
 
 ---
 

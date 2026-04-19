@@ -1,0 +1,400 @@
+//! Tests for [`super`]; split out to keep the parent file under the
+//! RUST/file-too-long 800-line threshold.
+
+use super::*;
+use crate::proto::{Data, PortNum, mesh_packet};
+
+fn make_processor() -> PacketProcessor {
+    let (tx, _rx) = broadcast::channel(64);
+    let mut node_db = NodeDb::new();
+    node_db.set_my_node(NodeNum(0xAAAA));
+    PacketProcessor::new(node_db, MeshTopology::new(), tx)
+}
+
+fn make_mesh_packet(from: u32, portnum: i32, payload: Vec<u8>) -> crate::proto::MeshPacket {
+    crate::proto::MeshPacket {
+        from,
+        to: 0xFFFF_FFFF,
+        channel: 0,
+        id: 1,
+        rx_time: 0,
+        rx_snr: 5.0,
+        hop_limit: 2,
+        want_ack: false,
+        priority: 0,
+        rx_rssi: -90,
+        via_mqtt: false,
+        hop_start: 3,
+        payload_variant: Some(crate::proto::mesh_packet::PayloadVariant::Decoded(
+            crate::proto::Data {
+                portnum,
+                payload,
+                want_response: false,
+                dest: 0,
+                source: 0,
+                request_id: 0,
+                reply_id: 0,
+                emoji: vec![],
+            },
+        )),
+    }
+}
+
+#[test]
+fn process_nodeinfo_creates_node_and_event() {
+    let mut proc = make_processor();
+    let user = crate::proto::User {
+        id: "!deadbeef".into(),
+        long_name: "Test Node".into(),
+        short_name: "TST".into(),
+        macaddr: vec![],
+        hw_model: 9, // RAK4631
+        is_licensed: false,
+        role: 0,
+    };
+    let mut payload = Vec::new();
+    user.encode(&mut payload).unwrap();
+
+    let packet = make_mesh_packet(0xDEAD, portnum::NODEINFO_APP, payload);
+    let events = proc.process_mesh_packet(&packet);
+
+    assert!(proc.node_db().get(NodeNum(0xDEAD)).is_some());
+    assert!(
+        events
+            .iter()
+            .any(|e| matches!(e, MeshEvent::NodeDiscovered { .. }))
+    );
+}
+
+#[test]
+fn process_position_updates_node_and_emits_event() {
+    let mut proc = make_processor();
+    let pos = crate::proto::Position {
+        latitude_i: 515_074_000, // 51.5074
+        longitude_i: -1_278_000, // -0.1278
+        altitude: 11,
+        time: 1_700_000_000,
+        ..Default::default()
+    };
+    let mut payload = Vec::new();
+    pos.encode(&mut payload).unwrap();
+
+    let packet = make_mesh_packet(0xBEEF, portnum::POSITION_APP, payload);
+    let events = proc.process_mesh_packet(&packet);
+
+    let node = proc.node_db().get(NodeNum(0xBEEF)).unwrap();
+    assert!(node.position.is_some());
+    assert!(
+        events
+            .iter()
+            .any(|e| matches!(e, MeshEvent::PositionUpdate { .. }))
+    );
+}
+
+#[test]
+fn process_telemetry_updates_metrics() {
+    let mut proc = make_processor();
+    // WHY: pre-INSERT a node so telemetry has something to UPDATE.
+    proc.node_db_mut().insert(MeshNode {
+        num: NodeNum(0x1111),
+        user: None,
+        position: None,
+        metrics: None,
+        last_heard: None,
+        snr: None,
+        hop_count: None,
+    });
+
+    let telem = crate::proto::Telemetry {
+        time: 1_700_000_000,
+        variant: Some(crate::proto::telemetry::Variant::DeviceMetrics(
+            crate::proto::DeviceMetrics {
+                battery_level: 85,
+                voltage: 3.7,
+                channel_utilization: 0.15,
+                air_util_tx: 0.05,
+                uptime_seconds: 3600,
+            },
+        )),
+    };
+    let mut payload = Vec::new();
+    telem.encode(&mut payload).unwrap();
+
+    let packet = make_mesh_packet(0x1111, portnum::TELEMETRY_APP, payload);
+    let events = proc.process_mesh_packet(&packet);
+
+    let node = proc.node_db().get(NodeNum(0x1111)).unwrap();
+    assert!(node.metrics.is_some());
+    assert!(
+        events
+            .iter()
+            .any(|e| matches!(e, MeshEvent::TelemetryUpdate { .. }))
+    );
+}
+
+#[test]
+fn process_neighborinfo_updates_topology() {
+    let mut proc = make_processor();
+
+    let ni = NeighborInfo {
+        node_id: 0x1111,
+        last_sent_by_id: 0x1111,
+        node_broadcast_interval_secs: 3600,
+        neighbors: vec![
+            Neighbor {
+                node_id: 0x2222,
+                snr: 8.5,
+            },
+            Neighbor {
+                node_id: 0x3333,
+                snr: 3.0,
+            },
+        ],
+    };
+    let mut payload = Vec::new();
+    ni.encode(&mut payload).unwrap();
+
+    let packet = make_mesh_packet(0x1111, portnum::NEIGHBORINFO_APP, payload);
+    let events = proc.process_mesh_packet(&packet);
+
+    // WHY: 2 FROM neighborinfo + 1 FROM passive learning (direct link).
+    assert_eq!(proc.topology().edge_count(), 3);
+    assert!(proc.topology().contains_node(NodeNum(0x2222)));
+    assert_eq!(
+        events
+            .iter()
+            .filter(|e| matches!(e, MeshEvent::TopologyChange { .. }))
+            .count(),
+        2
+    );
+}
+
+#[test]
+fn process_traceroute_builds_path() {
+    let mut proc = make_processor();
+
+    let route = crate::proto::RouteDiscovery {
+        route: vec![0x2222, 0x3333],
+        snr_towards: vec![10, 8],
+        back: vec![],
+        snr_back: vec![],
+    };
+    let mut payload = Vec::new();
+    route.encode(&mut payload).unwrap();
+
+    let mut packet = make_mesh_packet(0x1111, portnum::TRACEROUTE_APP, payload);
+    packet.to = 0x4444;
+    let events = proc.process_mesh_packet(&packet);
+
+    // WHY: path is 0x1111 → 0x2222 → 0x3333 → 0x4444 = 3 edges.
+    assert!(
+        proc.topology().edge_count() >= 3,
+        "expected at least 3 edges FROM traceroute path"
+    );
+    assert!(
+        events
+            .iter()
+            .any(|e| matches!(e, MeshEvent::TopologyChange { .. }))
+    );
+}
+
+#[test]
+fn passive_learning_infers_hop_count() {
+    let mut proc = make_processor();
+    let packet = make_mesh_packet(0xBBBB, portnum::NODEINFO_APP, vec![]);
+    // hop_start=3, hop_limit=2 → 1 hop traversed
+    proc.process_mesh_packet(&packet);
+
+    let node = proc.node_db().get(NodeNum(0xBBBB)).unwrap();
+    assert_eq!(node.hop_count, Some(1));
+}
+
+#[test]
+fn passive_learning_creates_direct_link() {
+    let mut proc = make_processor();
+    // hop_start=3, hop_limit=2 → 1 hop (direct)
+    let packet = make_mesh_packet(0xCCCC, portnum::NODEINFO_APP, vec![]);
+    proc.process_mesh_packet(&packet);
+
+    // WHY: direct packet should CREATE a link FROM sender to our node.
+    let my_node = proc.node_db().my_node().unwrap();
+    let neighbors = proc.topology().neighbors(NodeNum(0xCCCC));
+    assert!(
+        neighbors.iter().any(|(n, _)| *n == my_node),
+        "direct packet should CREATE link to server node"
+    );
+}
+
+// ── Routing processor tests ──────────────────────────────────────────
+
+fn make_routing_packet(request_id: u32, error_code: i32) -> MeshPacket {
+    let routing = Routing {
+        variant: Some(routing::Variant::ErrorReason(error_code)),
+    };
+    let routing_bytes = routing.encode_to_vec();
+
+    let data = Data {
+        portnum: i32::from(PortNum::RoutingApp),
+        payload: routing_bytes,
+        want_response: false,
+        dest: 0,
+        source: 0,
+        request_id,
+        reply_id: 0,
+        emoji: vec![],
+    };
+
+    MeshPacket {
+        from: 0x1111,
+        to: 0x2222,
+        channel: 0,
+        id: 0xFFFF,
+        rx_time: 0,
+        rx_snr: 0.0,
+        hop_limit: 3,
+        want_ack: false,
+        priority: i32::from(mesh_packet::Priority::Default),
+        rx_rssi: 0,
+        via_mqtt: false,
+        hop_start: 3,
+        payload_variant: Some(mesh_packet::PayloadVariant::Decoded(data)),
+    }
+}
+
+#[test]
+fn ack_packet_detected() {
+    let pkt = make_routing_packet(0x1234, i32::from(routing::Error::None));
+    let result = RoutingProcessor::process_routing(&pkt);
+    assert_eq!(
+        result,
+        RoutingResult::Ack {
+            request_id: PacketId(0x1234)
+        }
+    );
+}
+
+#[test]
+fn nak_no_route_detected() {
+    let pkt = make_routing_packet(0x5678, i32::from(routing::Error::NoRoute));
+    let result = RoutingProcessor::process_routing(&pkt);
+    assert_eq!(
+        result,
+        RoutingResult::Nak {
+            request_id: PacketId(0x5678),
+            error: routing::Error::NoRoute,
+        }
+    );
+}
+
+#[test]
+fn nak_max_retransmit_detected() {
+    let pkt = make_routing_packet(0xABCD, i32::from(routing::Error::MaxRetransmit));
+    let result = RoutingProcessor::process_routing(&pkt);
+    assert_eq!(
+        result,
+        RoutingResult::Nak {
+            request_id: PacketId(0xABCD),
+            error: routing::Error::MaxRetransmit,
+        }
+    );
+}
+
+#[test]
+fn non_routing_packet_ignored() {
+    let data = Data {
+        portnum: i32::from(PortNum::TextMessageApp),
+        payload: b"hello".to_vec(),
+        ..Default::default()
+    };
+    let pkt = MeshPacket {
+        from: 0x1111,
+        to: 0x2222,
+        channel: 0,
+        id: 1,
+        rx_time: 0,
+        rx_snr: 0.0,
+        hop_limit: 3,
+        want_ack: false,
+        priority: i32::from(mesh_packet::Priority::Default),
+        rx_rssi: 0,
+        via_mqtt: false,
+        hop_start: 3,
+        payload_variant: Some(mesh_packet::PayloadVariant::Decoded(data)),
+    };
+    assert_eq!(
+        RoutingProcessor::process_routing(&pkt),
+        RoutingResult::NotRouting
+    );
+}
+
+#[test]
+fn encrypted_packet_returns_not_routing() {
+    let pkt = MeshPacket {
+        from: 0x1111,
+        to: 0x2222,
+        channel: 0,
+        id: 1,
+        rx_time: 0,
+        rx_snr: 0.0,
+        hop_limit: 3,
+        want_ack: false,
+        priority: i32::from(mesh_packet::Priority::Default),
+        rx_rssi: 0,
+        via_mqtt: false,
+        hop_start: 3,
+        payload_variant: Some(mesh_packet::PayloadVariant::Encrypted(vec![0xFF; 16])),
+    };
+    assert_eq!(
+        RoutingProcessor::process_routing(&pkt),
+        RoutingResult::NotRouting
+    );
+}
+
+#[test]
+fn zero_request_id_ignored() {
+    let pkt = make_routing_packet(0, i32::from(routing::Error::None));
+    assert_eq!(
+        RoutingProcessor::process_routing(&pkt),
+        RoutingResult::NotRouting,
+        "request_id=0 should be ignored"
+    );
+}
+
+#[test]
+fn apply_ack_updates_tracker() {
+    let mut delivery = DeliveryTracker::new();
+    let mut outbound = OutboundQueue::new();
+    let id = PacketId(42);
+
+    delivery.track(id, 0x1234);
+    delivery.mark_sent(id);
+
+    let result = RoutingResult::Ack { request_id: id };
+    RoutingProcessor::apply_routing_result(&result, &mut delivery, &mut outbound);
+
+    assert!(matches!(
+        delivery.delivery_status(id),
+        Some(crate::delivery::DeliveryStatus::Acknowledged { .. })
+    ));
+}
+
+#[test]
+fn apply_nak_marks_failed_when_no_inflight() {
+    let mut delivery = DeliveryTracker::new();
+    let mut outbound = OutboundQueue::new();
+    let id = PacketId(77);
+
+    delivery.track(id, 0x5678);
+    delivery.mark_sent(id);
+
+    let result = RoutingResult::Nak {
+        request_id: id,
+        error: routing::Error::NoRoute,
+    };
+    RoutingProcessor::apply_routing_result(&result, &mut delivery, &mut outbound);
+
+    assert!(matches!(
+        delivery.delivery_status(id),
+        Some(crate::delivery::DeliveryStatus::Failed { .. })
+    ));
+}

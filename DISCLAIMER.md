@@ -18,11 +18,11 @@ The authors and contributors make no representations about the suitability of th
 
 You are solely responsible for:
 
-- **Legal compliance** in your jurisdiction. Laws regarding radio frequency use, signal intelligence, interception, spectrum analysis, and secure communications vary by country, state, and locality. It is your responsibility to understand and comply with applicable laws.
-- **Radio transmission licensing**. Transmission on certain frequencies requires licensing (amateur radio, GMRS, commercial bands, etc.) in most jurisdictions. This software does not verify, enforce, or track licensing. You are responsible for operating only on frequencies you are authorized to use.
-- **Signal interception laws**. Receiving, analyzing, or recording radio transmissions may be regulated or prohibited by law in your jurisdiction. Laws vary significantly regarding what signals may be monitored, recorded, or analyzed, and under what circumstances. Common regulated categories include cellular communications, encrypted government/public safety traffic, and private communications. You are responsible for using this software only in ways consistent with applicable laws.
-- **Privacy laws**. Analysis of signals that may contain personally identifiable information or private communications (cellular, WiFi, Bluetooth, identified devices, etc.) may be subject to privacy regulations. You are responsible for handling such data in compliance with applicable privacy laws.
-- **Export control**. Cryptographic software and dual-use technology may be subject to export controls under the Export Administration Regulations (EAR) or similar regimes. You are responsible for compliance when redistributing or using this software across national borders.
+- **Legal compliance** in your jurisdiction. Laws regarding radio frequency use, signal intelligence, interception, spectrum analysis, and secure communications vary by country, state, and locality. You must understand and comply with applicable laws.
+- **Radio transmission licensing**. Transmission on certain frequencies requires licensing (amateur radio, GMRS, commercial bands, etc.) in most jurisdictions. This software does not verify, enforce, or track licensing. Operate only on frequencies you are authorized to use.
+- **Signal interception laws**. Receiving, analyzing, or recording radio transmissions may be regulated or prohibited by law in your jurisdiction. Laws vary significantly regarding what signals may be monitored, recorded, or analyzed, and under what circumstances. Common regulated categories include cellular communications, encrypted government/public safety traffic, and private communications. Use this software only in ways consistent with applicable laws.
+- **Privacy laws**. Analysis of signals that may contain personally identifiable information or private communications (cellular, WiFi, Bluetooth, identified devices, etc.) may be subject to privacy regulations. Handle such data in compliance with applicable privacy laws.
+- **Export control**. Cryptographic software and dual-use technology may be subject to export controls under the Export Administration Regulations (EAR) or similar regimes. Comply with export laws when redistributing or using this software across national borders.
 
 ---
 
@@ -49,7 +49,7 @@ The authors provide these capabilities for research, education, operational secu
 
 The authors have not authorized, endorsed, or otherwise approved any specific use of this software by any specific individual or organization. Possession of this software does not constitute authorization to perform any particular action with it. Possession of this software does not establish any relationship, agency, or partnership between the user and the authors.
 
-If you use this software in ways requiring authorization (for example, monitoring networks you do not own, analyzing signals you are not permitted to receive, or accessing systems without consent), you are responsible for obtaining such authorization independently.
+If you use this software in ways requiring authorization (for example, monitoring networks you do not own, analyzing signals you are not permitted to receive, or accessing systems without consent), obtain such authorization independently.
 
 ---
 
@@ -68,7 +68,7 @@ This limitation applies even if the authors have been advised of the possibility
 
 ## Governing principle
 
-This software is a tool for understanding and participating in your radio environment with sovereignty and awareness. Tools do not act; people do. The authors provide the tool for legitimate purposes. You, the user, are responsible for what you do with it.
+This software is a tool for understanding and participating in your radio environment with sovereignty and awareness. Tools do not act; people do. The authors provide the tool for legitimate purposes. You, the user, bear accountability for what you do with it.
 
 If you are not prepared to accept responsibility for your use of this software, do not use it.
 

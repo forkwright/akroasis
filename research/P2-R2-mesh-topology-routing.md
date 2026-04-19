@@ -254,7 +254,7 @@ fn ingest_packet(graph: &mut MeshGraph, pkt: &MeshPacket, received_via: u32) {
 
 ### 4.3 Path Quality Score
 
-A path is a sequence of directed edges from server-connected node to destination. The quality score is used to rank paths when multiple routes exist.
+When multiple routes exist between server-connected node and destination, the path score ranks candidate sequences of directed edges by weight, hop count penalty, and delivery rate.
 
 ```
 path_score = sum over edges of: weight(edge)
@@ -422,7 +422,7 @@ If no gateway has been seen within 2 hours, enter no-gateway mode: queue all int
 
 ### 6.4 Failover Timing
 
-The engine checks gateway health every 30 seconds (cheap in-memory scan, no mesh traffic). Failover is declared when the current active gateway's age_penalty reaches 30 (unseen for 30 minutes). At that point:
+Every 30 seconds the engine runs a cheap in-memory gateway-health scan (no mesh traffic). Failover triggers when the active gateway's age_penalty reaches 30 (unseen for 30 minutes). At that point:
 
 1. Elect new gateway from the health score table.
 2. Emit `GatewayOffline` signal for the departed gateway.
@@ -501,7 +501,7 @@ A partition heals the moment any packet arrives from the node. On receipt:
 
 ### 7.3 Sub-Mesh Detection
 
-A sub-mesh is two or more nodes that can hear each other but cannot reach the server. Detection is passive: if NEIGHBORINFO broadcasts from node A list nodes B and C as neighbors, but A, B, and C are all Partitioned from the server's view, they form a sub-mesh. The topology engine identifies these by finding connected components in the subgraph of Partitioned nodes.
+Passive detection runs whenever the partition topology changes: if NEIGHBORINFO broadcasts from node A list nodes B and C as neighbors, but A, B, and C are all Partitioned from the server's view, they form a sub-mesh (two or more nodes that can hear each other but cannot reach the server). The topology engine identifies these by finding connected components in the subgraph of Partitioned nodes.
 
 This information informs PACE planning: a sub-mesh may have internal mesh communication even during a partition from the gateway. When a vehicle node from the sub-mesh eventually reaches server connectivity, kerykeion can deliver accumulated messages from the sub-mesh via DTN custody transfer.
 

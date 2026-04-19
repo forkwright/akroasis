@@ -1,6 +1,6 @@
 //! Build script for kerykeion: compiles Meshtastic protobuf definitions via prost-build.
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> std::io::Result<()> {
     let proto_dir = "proto";
     let protos = [
         "proto/meshtastic/portnums.proto",

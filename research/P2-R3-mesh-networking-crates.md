@@ -386,7 +386,7 @@ bytes 12..15 : extraNonce as u32, little-endian (0 for normal packets)
 
 This is a 128-bit nonce used as the initial counter value. The intended layout uses a u64 packet ID (not u32).
 
-**Firmware bug (confirmed in `CryptoEngine.cpp`):** The `extraNonce` branch writes to offset `sizeof(uint32_t)` (offset 4) instead of `sizeof(uint64_t) + sizeof(uint32_t)` (offset 12). When `extraNonce != 0`, it overwrites bytes 4–7 (the high word of `packetId`) rather than bytes 12–15. This is a latent firmware defect. For normal mesh packets `extraNonce` is always 0, so this bug is harmless in practice  -  the nonce layout above is correct for all packets kerykeion will receive.
+**Firmware bug (confirmed in `CryptoEngine.cpp`):** The `extraNonce` branch writes to offset `sizeof(uint32_t)` (offset 4) instead of `sizeof(uint64_t) + sizeof(uint32_t)` (offset 12). When `extraNonce != 0`, it overwrites bytes 4–7 (the high word of `packetId`) when it should write bytes 12–15. This is a latent firmware defect. For normal mesh packets `extraNonce` is always 0, so this bug does not affect kerykeion  -  the nonce layout above is correct for all packets kerykeion will receive.
 
 ### CTR variant selection
 
@@ -574,7 +574,7 @@ For full path reconstruction, use `petgraph::algo::astar` instead of `dijkstra`.
 
 **Do not include libp2p in the initial kerykeion implementation.**
 
-The reason is simple: Meshtastic transport is LoRa. LoRa packets are 237 bytes maximum, at roughly 1 kbps effective throughput. libp2p's protocols (Kademlia DHT, gossipsub, Noise handshake) assume TCP-grade connections. The Kademlia routing table alone would consume multiple LoRa packets just to exchange hello messages.
+The reason: Meshtastic transport is LoRa. LoRa packets are 237 bytes maximum, at roughly 1 kbps effective throughput. libp2p's protocols (Kademlia DHT, gossipsub, Noise handshake) assume TCP-grade connections. The Kademlia routing table alone would consume multiple LoRa packets just to exchange hello messages.
 
 libp2p cannot and should not run over the LoRa transport.
 
@@ -582,7 +582,7 @@ Where libp2p becomes relevant is server-to-server synchronization: multiple Akro
 
 When that work begins, `libp2p 0.56.0` (MIT, MSRV 1.83) is the right foundation. It provides mDNS, gossipsub for state broadcast, and both TCP and QUIC transports. The MSRV of 1.83 is below our 1.85 floor, which is fine.
 
-For now: no libp2p dependency in kerykeion. Revisit in the wave that adds multi-node Akroasis deployment.
+No libp2p dependency in kerykeion at this point. Revisit in the wave that adds multi-node Akroasis deployment.
 
 ---
 

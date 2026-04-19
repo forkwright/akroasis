@@ -45,7 +45,7 @@ pub fn generate_salt() -> [u8; SALT_LEN] {
 )]
 pub fn derive_key(passphrase: &[u8], salt: &[u8]) -> VaultKey {
     let params = argon2::Params::new(KDF_M_COST, KDF_T_COST, KDF_P_COST, Some(32))
-        .expect("Argon2id params are compile-time constants");
+        .expect("Argon2id params are compile-time constants"); // SAFETY: KDF_M_COST/T_COST/P_COST are compile-time constants within valid ranges per argon2 docs
     let argon2 = argon2::Argon2::new(
         argon2::Algorithm::Argon2id,
         argon2::Version::default(),
@@ -55,7 +55,7 @@ pub fn derive_key(passphrase: &[u8], salt: &[u8]) -> VaultKey {
     let mut key_bytes = [0u8; 32];
     argon2
         .hash_password_into(passphrase, salt, &mut key_bytes)
-        .expect("Argon2id KDF should not fail with valid inputs");
+        .expect("Argon2id KDF should not fail with valid inputs"); // SAFETY: key_bytes length (32) is within the OUTPUT_SIZE range documented by argon2::Params
 
     VaultKey::from_bytes(key_bytes)
 }

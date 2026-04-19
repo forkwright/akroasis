@@ -46,7 +46,7 @@ pub trait SerialPort: Send {
 ///
 /// Only available with the `hardware-serial` feature (requires `libudev-dev`
 /// on Linux).
-#[cfg(feature = "hardware-serial")]
+#[cfg(feature = "hardware-serial")] // kanon:ignore RUST/feature-gate-check -- declared in syntonia/Cargo.toml [features]
 #[expect(
     dead_code,
     reason = "public hardware adapter; consumers live outside this crate (baofeng::protocol module not yet re-wired, see #80-follow-up)"
@@ -55,7 +55,7 @@ pub(crate) struct HardwareSerialPort {
     inner: Box<dyn serialport::SerialPort>,
 }
 
-#[cfg(feature = "hardware-serial")]
+#[cfg(feature = "hardware-serial")] // kanon:ignore RUST/feature-gate-check -- declared in syntonia/Cargo.toml [features]
 impl HardwareSerialPort {
     /// Open a serial port at the given path with the specified baud rate.
     ///
@@ -80,21 +80,12 @@ impl HardwareSerialPort {
     }
 }
 
-#[cfg(feature = "hardware-serial")]
-impl SerialPort for HardwareSerialPort {
-    fn write_all(&mut self, buf: &[u8]) -> io::Result<()> {
-        io::Write::write_all(&mut self.inner, buf)
-    }
-
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        // kanon:ignore RUST/indexing-slicing -- trait impl parameter &mut [u8], not indexing
-        io::Read::read(&mut self.inner, buf)
-    }
-
-    fn read_exact(&mut self, buf: &mut [u8]) -> io::Result<()> {
-        // kanon:ignore RUST/indexing-slicing -- trait impl parameter &mut [u8], not indexing
-        io::Read::read_exact(&mut self.inner, buf)
-    }
+#[cfg(feature = "hardware-serial")] // kanon:ignore RUST/feature-gate-check -- declared in syntonia/Cargo.toml [features]
+#[rustfmt::skip]
+impl SerialPort for HardwareSerialPort { // kanon:ignore ARCHITECTURE/trait-impl-colocation -- SerialPort trait exists for testability; HardwareSerialPort is the production path
+    fn write_all(&mut self, buf: &[u8]) -> io::Result<()> { io::Write::write_all(&mut self.inner, buf) }
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> { io::Read::read(&mut self.inner, buf) } // kanon:ignore RUST/indexing-slicing -- trait impl parameter &mut [u8]
+    fn read_exact(&mut self, buf: &mut [u8]) -> io::Result<()> { io::Read::read_exact(&mut self.inner, buf) } // kanon:ignore RUST/indexing-slicing -- trait impl parameter &mut [u8]
 
     fn set_timeout(&mut self, duration: Duration) -> io::Result<()> {
         self.inner.set_timeout(duration).map_err(io::Error::other)

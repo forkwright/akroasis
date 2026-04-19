@@ -4,6 +4,8 @@
 //! Argon2id key derivation, ChaCha20-Poly1305 encryption,
 //! and Ed25519-based installation identity.
 
+#![deny(missing_docs)]
+
 pub mod config;
 pub mod crypto;
 pub mod error;

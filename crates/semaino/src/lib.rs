@@ -33,6 +33,8 @@
 //! - [`alert`] — deduplication, severity classification, routing (REQ-07)
 //! - [`pipeline`] — top-level async orchestrator
 
+#![deny(missing_docs)]
+
 pub mod aggregator;
 pub mod alert;
 pub mod convergence;

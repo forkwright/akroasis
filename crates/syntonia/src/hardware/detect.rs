@@ -147,7 +147,7 @@ pub trait RadioProber {
 /// Default prober that opens real serial ports.
 struct DefaultProber;
 
-impl RadioProber for DefaultProber {
+impl RadioProber for DefaultProber { // kanon:ignore ARCHITECTURE/trait-impl-colocation -- RadioProber trait exists for testability; DefaultProber is the production path
     fn probe(&self, port_path: &str) -> Result<Option<(VariantConfig, RadioIdent)>, DetectError> {
         let mut port = serialport::new(port_path, BAUD_RATE)
             .timeout(PROBE_TIMEOUT)

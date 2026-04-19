@@ -7,6 +7,7 @@ use std::time::Duration;
 
 use koinon::GeoSignal;
 use tokio::sync::{broadcast, mpsc};
+use tracing::Instrument as _;
 
 use crate::{
     SignalAggregator, aggregator::AggregatedSignal, alert::AlertPipeline,
@@ -105,36 +106,45 @@ impl SemainoPipeline {
         // WHY: We pipe GeoSignals into the aggregator via a local broadcast-backed
         // channel so we can reuse its run() loop without forking the implementation.
         let (inner_tx, inner_rx) = broadcast::channel::<GeoSignal>(256);
-        let agg_task = tokio::spawn(async move {
-            aggregator.run(inner_rx, agg_tx).await;
-        });
+        let agg_task = tokio::spawn(
+            async move {
+                aggregator.run(inner_rx, agg_tx).await;
+            }
+            .instrument(tracing::info_span!("semaino.aggregator")),
+        );
 
         // Spawn broadcast drain task: reads the caller's broadcast receiver and
         // fans the signals to (a) the aggregator and (b) the grid feed channel.
-        let fan_task = tokio::spawn(async move {
-            let mut rx = rx;
-            loop {
-                match rx.recv().await {
-                    Ok(signal) => {
-                        // Fan to aggregator (ignore send error — aggregator exited).
-                        let _ = inner_tx.send(signal.clone());
-                        // Fan to grid channel (ignore send error — pipeline exited).
-                        if signal_tx.send(signal).await.is_err() {
+        let fan_task = tokio::spawn(
+            async move {
+                let mut rx = rx;
+                loop {
+                    match rx.recv().await {
+                        Ok(signal) => {
+                            // Fan to aggregator (ignore send error — aggregator exited).
+                            let _ = inner_tx.send(signal.clone());
+                            // Fan to grid channel (ignore send error — pipeline exited).
+                            if signal_tx.send(signal).await.is_err() {
+                                break;
+                            }
+                        }
+                        Err(broadcast::error::RecvError::Closed) => {
+                            tracing::debug!("semaino: broadcast channel closed");
                             break;
                         }
-                    }
-                    Err(broadcast::error::RecvError::Closed) => {
-                        tracing::debug!("semaino: broadcast channel closed");
-                        break;
-                    }
-                    Err(broadcast::error::RecvError::Lagged(n)) => {
-                        tracing::warn!(dropped = n, "semaino: pipeline lagged, signals dropped");
+                        Err(broadcast::error::RecvError::Lagged(n)) => {
+                            tracing::warn!(
+                                dropped = n,
+                                "semaino: pipeline lagged, signals dropped"
+                            );
+                        }
                     }
                 }
+                // Dropping inner_tx closes the aggregator's broadcast receiver,
+                // causing the aggregator task to exit.
             }
-            // Dropping inner_tx closes the aggregator's broadcast receiver,
-            // causing the aggregator task to exit.
-        });
+            .instrument(tracing::info_span!("semaino.fan")),
+        );
 
         // Main loop: interleave grid ingestion and alert processing.
         let mut signal_rx = signal_rx;
@@ -275,13 +285,13 @@ mod tests {
         }
 
         // Small pause for the pipeline to process the baseline signals.
-        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await; // kanon:ignore TESTING/sleep-in-test -- integration test drives a real broadcast channel; deterministic time would bypass the async runtime
 
         // Send a clear outlier.
         tx.send(rf_signal(50.0)).unwrap();
 
         // Allow time for the pipeline to process the outlier.
-        tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+        tokio::time::sleep(tokio::time::Duration::from_millis(200)).await; // kanon:ignore TESTING/sleep-in-test -- integration test drives a real broadcast channel; deterministic time would bypass the async runtime
 
         // Close the broadcast to shut down the pipeline.
         drop(tx);
@@ -345,7 +355,7 @@ mod tests {
             .unwrap();
         }
 
-        tokio::time::sleep(tokio::time::Duration::from_millis(20)).await;
+        tokio::time::sleep(tokio::time::Duration::from_millis(20)).await; // kanon:ignore TESTING/sleep-in-test -- integration test drives a real broadcast channel; deterministic time would bypass the async runtime
         drop(tx);
         handle.await.unwrap();
 

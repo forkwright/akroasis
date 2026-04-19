@@ -165,7 +165,9 @@ pub(crate) fn node_info_to_mesh_node(ni: &crate::proto::NodeInfo) -> MeshNode {
         } else {
             None
         },
-        timestamp: jiff::Timestamp::from_second(i64::from(p.time)).ok(),
+        // WHY: invalid/zero timestamps in Position protobufs map to None rather than
+        // propagating an error; the position is still usable for lat/lon display.
+        timestamp: jiff::Timestamp::from_second(i64::from(p.time)).ok(), // kanon:ignore RUST/silent-error-ok -- timestamp is optional metadata, invalid→None is correct
     });
 
     MeshNode {

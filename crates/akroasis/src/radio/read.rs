@@ -47,12 +47,12 @@ pub(crate) fn print_channel_table(channels: &[&Channel]) {
     for ch in channels {
         let tx_display = ch
             .tx_freq
-            .map_or_else(|| format!("{}", ch.rx_freq), |tx| format!("{tx}"));
+            .map_or_else(|| ch.rx_freq.to_string(), |tx| format!("{tx}"));
 
         table.add_row(vec![
             Cell::new(format!("{:03}", ch.index + 1)),
             Cell::new(&ch.name),
-            Cell::new(format!("{}", ch.rx_freq)),
+            Cell::new(ch.rx_freq.to_string()),
             Cell::new(tx_display),
             Cell::new(format_tone(ch.tone)),
             Cell::new(format_power(ch.power)),

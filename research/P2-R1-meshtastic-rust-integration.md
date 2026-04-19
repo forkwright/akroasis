@@ -9,7 +9,7 @@
 
 ## Summary
 
-kerykeion talks to Meshtastic hardware over serial (primary), TCP, or BLE. This document covers the Rust implementation of that interface: crate selection, frame codec design, protobuf code generation, AES-CTR encryption, node database schema, connection state machine, and test harness architecture.
+kerykeion talks to Meshtastic hardware over serial (primary), TCP, or BLE. This document covers the Rust implementation of that interface: crate selection, frame codec design, protobuf code generation, AES-CTR encryption, node database schema, connection state machine, and test scaffolding architecture.
 
 Key decisions:
 
@@ -936,7 +936,7 @@ See P2-R3 §2 for full BLE (btleplug) GATT implementation detail and §7 for com
 
 ---
 
-## 8. Test Harness Architecture
+## 8. Test Scaffolding Architecture
 
 ### 8.1 Mock Serial Device via Unix PTY
 

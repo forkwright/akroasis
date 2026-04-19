@@ -124,7 +124,7 @@ mod tests {
     fn entity_update_seen_advances_last_seen() {
         let mut e = Entity::new(EntityKind::Vehicle);
         let original = e.last_seen;
-        std::thread::sleep(std::time::Duration::from_millis(5));
+        std::thread::sleep(std::time::Duration::from_millis(5)); // kanon:ignore TESTING/sleep-in-test -- verifies monotonic wall-clock advancement; deterministic mock would bypass the property under test
         e.update_seen();
         assert!(e.last_seen > original);
     }

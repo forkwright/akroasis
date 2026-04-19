@@ -267,7 +267,8 @@ impl MeshCollector {
     }
 }
 
-impl Collector for MeshCollector {
+#[rustfmt::skip]
+impl Collector for MeshCollector { // kanon:ignore ARCHITECTURE/trait-impl-colocation -- Collector is a kerykeion-defined abstraction; MeshCollector is the only implementation
     fn name(&self) -> &'static str {
         "kerykeion"
     }

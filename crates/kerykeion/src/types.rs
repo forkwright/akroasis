@@ -16,7 +16,22 @@ pub struct PacketId(pub u32);
 
 /// Channel index in the range `0..MAX_CHANNELS`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(try_from = "u8", into = "u8")]
 pub struct ChannelIndex(pub u8);
+
+impl TryFrom<u8> for ChannelIndex {
+    type Error = crate::error::Error;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        Self::new(value)
+    }
+}
+
+impl From<ChannelIndex> for u8 {
+    fn from(value: ChannelIndex) -> Self {
+        value.0
+    }
+}
 
 impl NodeNum {
     /// Returns the broadcast node number (`0xFFFF_FFFF`).

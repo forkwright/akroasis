@@ -177,7 +177,7 @@ mod tests {
         spawn_mock_server(listener);
 
         // Give the server a moment to start.
-        tokio::time::sleep(Duration::from_millis(10)).await;
+        tokio::time::sleep(Duration::from_millis(10)).await; // kanon:ignore TESTING/sleep-in-test -- real TCP bind races a spawned mock listener; deterministic control would require rewriting the mock
 
         #[expect(clippy::unwrap_used, reason = "test-only")]
         let mut transport = TcpTransport::connect("127.0.0.1", addr.port())
