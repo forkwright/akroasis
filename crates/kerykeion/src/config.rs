@@ -102,6 +102,7 @@ pub struct ChannelPsk {
 
 /// Store-and-forward server configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct StoreForwardConfig {
     /// Whether the store-and-forward feature is enabled on this node.
     pub enabled: bool,
@@ -123,6 +124,7 @@ impl Default for StoreForwardConfig {
 
 /// Topology maintenance configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct TopologyConfig {
     /// How often to request a traceroute, in seconds.
     pub traceroute_interval_secs: u64,
@@ -169,6 +171,7 @@ impl Default for TopologyConfig {
 /// ticks. None of these values affect the Meshtastic wire protocol — they
 /// only shape when and how locally-tracked state transitions happen.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct BridgeConfig {
     /// Interval between background gateway health-check ticks, in seconds.
     pub health_check_interval_secs: u64,
@@ -223,6 +226,7 @@ impl BridgeConfig {
 /// for an ACK before retrying, how many retries are attempted, and how long
 /// store-and-forward holds a message before discarding it.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct OutboundConfig {
     /// Maximum number of concurrent inflight (awaiting-ACK) messages.
     pub max_inflight: usize,
@@ -261,6 +265,7 @@ impl OutboundConfig {
 
 /// Transport (TCP + serial) connect and reconnect tuning.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct TransportConfig {
     /// TCP `connect()` timeout in seconds.
     pub tcp_connect_timeout_secs: u64,
@@ -304,6 +309,7 @@ impl TransportConfig {
 
 /// Config-dump handshake tuning.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct HandshakeConfig {
     /// Maximum time to wait for a complete config dump from the radio,
     /// in seconds.
@@ -326,6 +332,7 @@ impl HandshakeConfig {
 
 /// Keepalive heartbeat tuning.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct HeartbeatConfig {
     /// Interval between heartbeat transmissions, in seconds.
     pub interval_secs: u64,
@@ -347,6 +354,7 @@ impl HeartbeatConfig {
 
 /// Collector background-task tuning.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct CollectorConfig {
     /// Interval between router-flush ticks (drains outbound queue and
     /// processes timeouts), in seconds.
@@ -371,6 +379,7 @@ impl CollectorConfig {
 
 /// Default values for [`crate::message::MessageBuilder`] output packets.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct MessageConfig {
     /// Default hop limit for outbound packets. Clamped to
     /// [`crate::types::MAX_HOP_LIMIT`] at build time — the protocol maximum
@@ -548,6 +557,40 @@ neighbor_info_enabled = true
         assert_eq!(parsed.message.default_hop_limit, 5);
         assert_eq!(parsed.topology.gateway_nodes, vec![7, 8, 9]);
         assert!((parsed.topology.snr_ceiling - 17.5).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn mesh_config_partial_toml_uses_defaults_for_unspecified_fields() {
+        // WHY: agent-authored config may only override a handful of fields;
+        // unspecified ones must fall through to defaults so the agent does
+        // not need to know the whole schema.
+        let partial = r#"
+[outbound]
+max_inflight = 2
+
+[bridge]
+offline_check_threshold = 9
+"#;
+        #[expect(clippy::unwrap_used, reason = "test-only: known-good TOML")]
+        let parsed: MeshConfig = toml::from_str(partial).unwrap();
+
+        assert_eq!(parsed.outbound.max_inflight, 2);
+        assert_eq!(
+            parsed.outbound.max_retries,
+            OutboundConfig::default().max_retries,
+            "unspecified outbound field must default"
+        );
+        assert_eq!(parsed.bridge.offline_check_threshold, 9);
+        assert_eq!(
+            parsed.bridge.failover_cooldown_secs,
+            BridgeConfig::default().failover_cooldown_secs,
+            "unspecified bridge field must default"
+        );
+        assert_eq!(
+            parsed.heartbeat.interval_secs,
+            HeartbeatConfig::default().interval_secs,
+            "unspecified sub-config must default wholesale"
+        );
     }
 
     #[test]

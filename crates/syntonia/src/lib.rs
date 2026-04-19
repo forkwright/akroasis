@@ -22,6 +22,7 @@
 
 pub mod baofeng;
 pub mod channel;
+pub mod config;
 pub mod error;
 pub mod export;
 pub mod import;
@@ -33,6 +34,7 @@ pub mod validate;
 pub mod yaesu;
 
 pub use channel::Channel;
+pub use config::{BaofengTimingConfig, HardwareProbeConfig, SyntoniaConfig};
 pub use error::{Error, Result};
 pub use plan::FrequencyPlan;
 pub use tone::{ALL_CTCSS_TONES, ALL_DCS_CODES, CtcssTone, DcsCode, DcsPolarity, ToneMode};
