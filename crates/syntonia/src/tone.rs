@@ -40,9 +40,9 @@ impl CtcssTone {
     /// Returns [`Error::InvalidCtcssTone`](crate::error::Error::InvalidCtcssTone)
     /// if the value is not one of the 50 standard CTCSS tones.
     pub fn new(value: f32) -> crate::error::Result<Self> {
-        #[allow(clippy::cast_sign_loss)] // CTCSS tones are always positive
+        #[expect(clippy::cast_sign_loss, reason = "CTCSS tones are always positive")]
         let tenths = (value * 10.0).round() as u32;
-        #[allow(clippy::cast_sign_loss)] // CTCSS tones are always positive
+        #[expect(clippy::cast_sign_loss, reason = "CTCSS tones are always positive")]
         let valid = ALL_CTCSS_TONES
             .iter()
             .any(|&t| (t * 10.0).round() as u32 == tenths);
@@ -133,7 +133,10 @@ pub enum ToneMode {
 impl Eq for ToneMode {}
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used)]
+#[expect(
+    clippy::unwrap_used,
+    reason = "test code: panics and unwraps acceptable in assertions"
+)]
 mod tests {
     use super::*;
 

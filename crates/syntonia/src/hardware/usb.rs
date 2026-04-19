@@ -109,11 +109,12 @@ fn is_pl2303_clone(devices: &rusb::DeviceList<rusb::GlobalContext>, vid: u16, pi
 }
 
 #[cfg(test)]
-#[allow(
+#[expect(
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::indexing_slicing,
-    clippy::missing_docs_in_private_items
+    clippy::missing_docs_in_private_items,
+    reason = "test code: panics and unwraps acceptable in assertions"
 )]
 mod tests {
     use super::*;

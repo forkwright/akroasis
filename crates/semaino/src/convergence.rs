@@ -35,9 +35,15 @@ pub fn quantize(coords: &Coordinates, resolution: u32) -> GridCell {
     // lon * 10_000 ≤ 1_800_000, both within i32 range. The floor truncation
     // defines the grid cell lower-left corner.
     let res = f64::from(resolution);
-    #[allow(clippy::cast_possible_truncation)]
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "lat * resolution bounded by 900_000 for resolution ≤ 10_000; fits i32"
+    )]
     let lat_cell = (coords.latitude * res) as i32;
-    #[allow(clippy::cast_possible_truncation)]
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "lon * resolution bounded by 1_800_000 for resolution ≤ 10_000; fits i32"
+    )]
     let lon_cell = (coords.longitude * res) as i32;
     GridCell(lat_cell, lon_cell)
 }
@@ -127,9 +133,10 @@ impl ConvergenceGrid {
         window: std::time::Duration,
         now: Timestamp,
     ) -> Vec<Convergence> {
-        // WHY: Duration::as_millis() returns u128; converting to i64 is safe for
-        // any reasonable window (u64::MAX ms >> practical window sizes).
-        #[allow(clippy::cast_possible_truncation)]
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "Duration::as_millis() returns u128; converting to i64 is safe for any reasonable window (i64::MAX ms >> practical window sizes)"
+        )]
         let window_ms = window.as_millis() as i64;
         let cutoff_ms = now.as_unix_millis() - window_ms;
 
@@ -194,9 +201,7 @@ const fn kind_discriminant(kind: &SignalKind) -> u8 {
         SignalKind::Environmental(_) => 5,
         SignalKind::Osint(_) => 6,
         // WHY: SignalKind is #[non_exhaustive]; unknown future variants are
-        // grouped under a single fallback discriminant so they do not silently
-        // inflate domain counts.
-        #[allow(unreachable_patterns)]
+        // grouped under sentinel 255 so they do not silently inflate domain counts.
         _ => 255,
     }
 }
@@ -230,10 +235,10 @@ fn cell_center(cell: GridCell, resolution: u32) -> Coordinates {
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
-#[allow(
+#[expect(
     clippy::unwrap_used,
     clippy::expect_used,
-    clippy::missing_docs_in_private_items
+    reason = "test code: panics and unwraps acceptable in assertions"
 )]
 mod tests {
     use koinon::{

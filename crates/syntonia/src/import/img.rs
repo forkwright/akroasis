@@ -65,7 +65,10 @@ pub fn import_img(path: &Path) -> Result<FrequencyPlan, ImgImportError> {
 ///
 /// Returns `ImgImportError` if the data has an unsupported size or contains
 /// invalid channel data.
-#[allow(clippy::indexing_slicing)] // Slice at IDENT_HEADER_LEN is safe after size validation
+#[expect(
+    clippy::indexing_slicing,
+    reason = "Slice at IDENT_HEADER_LEN is safe after size validation"
+)]
 pub fn import_img_bytes(data: &[u8]) -> Result<FrequencyPlan, ImgImportError> {
     let model = match data.len() {
         UV5R_STANDARD_SIZE => "UV-5R",
@@ -85,7 +88,10 @@ pub fn import_img_bytes(data: &[u8]) -> Result<FrequencyPlan, ImgImportError> {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used)]
+#[expect(
+    clippy::unwrap_used,
+    reason = "test code: panics and unwraps acceptable in assertions"
+)]
 mod tests {
     use super::*;
     use crate::baofeng::codec;

@@ -105,11 +105,9 @@ const fn format_scan(scan: ScanMode) -> &'static str {
 }
 
 #[cfg(test)]
-#[allow(
+#[expect(
     clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::indexing_slicing,
-    clippy::panic
+    reason = "test code: panics and unwraps acceptable in assertions"
 )]
 mod tests {
     use koinon::Frequency;

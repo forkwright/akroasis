@@ -590,11 +590,10 @@ fn parse_rotation_number(name: &str, stem: &str) -> Option<u32> {
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
-#[allow(
+#[expect(
     clippy::unwrap_used,
-    clippy::expect_used,
     clippy::indexing_slicing,
-    clippy::missing_docs_in_private_items
+    reason = "test code: panics and unwraps acceptable in assertions"
 )]
 mod tests {
     use super::*;

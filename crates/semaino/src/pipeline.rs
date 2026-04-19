@@ -154,9 +154,10 @@ impl SemainoPipeline {
                             self.grid.ingest(&s);
 
                             // Periodic grid eviction.
-                            // WHY: Duration::as_millis() returns u128; cast to i64 is safe for
-                            // practical time_window values (max u64::MAX ms is far beyond use).
-                            #[allow(clippy::cast_possible_truncation)]
+                            #[expect(
+                                clippy::cast_possible_truncation,
+                                reason = "Duration::as_millis() returns u128; cast to i64 is safe because i64::MAX ms is larger than any realistic eviction window"
+                            )]
                             let evict_before_ms = koinon::Timestamp::now().as_unix_millis()
                                 - self.time_window.as_millis() as i64;
                             if let Ok(ts) = koinon::Timestamp::from_unix_millis(evict_before_ms) {
@@ -209,10 +210,10 @@ impl SemainoPipeline {
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
-#[allow(
+#[expect(
     clippy::unwrap_used,
     clippy::expect_used,
-    clippy::missing_docs_in_private_items
+    reason = "test code: panics and unwraps acceptable in assertions"
 )]
 mod tests {
     use koinon::{

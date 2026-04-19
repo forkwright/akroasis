@@ -288,7 +288,10 @@ fn hex(bytes: &[u8]) -> String {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used)]
+#[expect(
+    clippy::unwrap_used,
+    reason = "test code: panics and unwraps acceptable in assertions"
+)]
 mod tests {
     use super::*;
 

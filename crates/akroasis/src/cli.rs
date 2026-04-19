@@ -6,7 +6,6 @@ use crate::mesh::MeshCommand;
 use crate::radio::RadioCommand;
 use crate::vault::VaultCommand;
 
-#[allow(clippy::doc_markdown)]
 #[derive(Parser)]
 #[command(name = "akroasis", version, about = "ἀκρόασις — attentive reception")]
 pub struct Cli {

@@ -77,7 +77,6 @@ const fn bcl_from_bit(byte15: u8) -> bool {
 /// # Errors
 ///
 /// Returns `CodecError::BcdDecode` if the frequency bytes contain invalid BCD.
-#[allow(clippy::indexing_slicing)]
 pub fn decode_channel(image: &MemoryImage, index: u8) -> Result<Option<Channel>, CodecError> {
     let ch_addr = CHANNEL_BASE + u16::from(index) * CHANNEL_STRIDE;
     // SAFETY(indexing): read_bytes returns exactly 16 bytes
@@ -180,7 +179,10 @@ pub fn decode_channel(image: &MemoryImage, index: u8) -> Result<Option<Channel>,
 /// # Errors
 ///
 /// Returns `CodecError::BcdEncode` if the channel frequency cannot be BCD-encoded.
-#[allow(clippy::indexing_slicing)]
+#[expect(
+    clippy::indexing_slicing,
+    reason = "write_bytes targets fixed 16-byte layout at CHANNEL_BASE + index*CHANNEL_STRIDE; indices bounded"
+)]
 pub fn encode_channel(
     channel: &Channel,
     image: &mut MemoryImage,
@@ -287,7 +289,10 @@ pub fn encode_all_channels(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used, clippy::indexing_slicing)]
+#[expect(
+    clippy::unwrap_used,
+    reason = "test code: panics and unwraps acceptable in assertions"
+)]
 mod tests {
     use super::*;
     use crate::tone::CtcssTone;

@@ -564,7 +564,10 @@ impl RoutingProcessor {
 // ── Tests ────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used, clippy::indexing_slicing)]
+#[expect(
+    clippy::unwrap_used,
+    reason = "test code: panics and unwraps acceptable in assertions"
+)]
 mod tests {
     use super::*;
     use crate::proto::{Data, PortNum, mesh_packet};

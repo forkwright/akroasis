@@ -378,10 +378,9 @@ impl GeoSignal {
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
-#[allow(
+#[expect(
     clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::missing_docs_in_private_items
+    reason = "test code: panics and unwraps acceptable in assertions"
 )]
 mod tests {
     use std::net::{IpAddr, Ipv4Addr};

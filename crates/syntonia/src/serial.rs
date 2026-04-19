@@ -47,7 +47,7 @@ pub trait SerialPort: Send {
 /// Only available with the `hardware-serial` feature (requires `libudev-dev`
 /// on Linux).
 #[cfg(feature = "hardware-serial")]
-#[allow(
+#[expect(
     dead_code,
     reason = "public hardware adapter; consumers live outside this crate (baofeng::protocol module not yet re-wired, see #80-follow-up)"
 )]
@@ -63,7 +63,7 @@ impl HardwareSerialPort {
     ///
     /// Returns `io::Error` if the port cannot be opened at the requested baud
     /// rate (e.g. device missing, busy, or permission denied).
-    #[allow(
+    #[expect(
         dead_code,
         reason = "public hardware adapter; consumers live outside this crate (baofeng::protocol module not yet re-wired, see #80-follow-up)"
     )]
@@ -145,7 +145,7 @@ pub mod mock {
         }
 
         /// Queue response bytes that will be returned by subsequent reads.
-        #[allow(
+        #[expect(
             dead_code,
             reason = "public test API consumed by baofeng::protocol tests; module not yet re-wired (see #80-follow-up)"
         )]
@@ -154,7 +154,7 @@ pub mod mock {
         }
 
         /// Make the next read return an error of the given kind.
-        #[allow(
+        #[expect(
             dead_code,
             reason = "public test API consumed by baofeng::protocol tests; module not yet re-wired (see #80-follow-up)"
         )]
@@ -181,8 +181,10 @@ pub mod mock {
             }
             let n = buf.len().min(self.rx_queue.len());
             for byte in buf.iter_mut().take(n) {
-                // SAFETY: we checked len above, unwrap is fine in test mock
-                #[allow(clippy::unwrap_used)]
+                #[expect(
+                    clippy::unwrap_used,
+                    reason = "mock test scaffold; we just checked rx_queue.len() >= n immediately above"
+                )]
                 {
                     *byte = self.rx_queue.pop_front().unwrap();
                 }
@@ -201,7 +203,10 @@ pub mod mock {
                 ));
             }
             for byte in buf.iter_mut() {
-                #[allow(clippy::unwrap_used)]
+                #[expect(
+                    clippy::unwrap_used,
+                    reason = "mock test scaffold; we just checked rx_queue.len() >= buf.len() immediately above"
+                )]
                 {
                     *byte = self.rx_queue.pop_front().unwrap();
                 }

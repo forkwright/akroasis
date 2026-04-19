@@ -112,11 +112,10 @@ pub fn load_plan(path: &Path) -> Result<FrequencyPlan, RadioError> {
 }
 
 #[cfg(test)]
-#[allow(
+#[expect(
     clippy::unwrap_used,
-    clippy::expect_used,
     clippy::indexing_slicing,
-    clippy::panic
+    reason = "test code: panics and unwraps acceptable in assertions"
 )]
 mod tests {
     use koinon::Frequency;

@@ -95,8 +95,7 @@ pub fn import_from_string(
 // ---------------------------------------------------------------------------
 
 /// Parses a CHIRP-compatible CSV INTO a `FrequencyPlan`.
-#[allow(clippy::indexing_slicing)] // Column access is safe: we verify cols.len() >= 15 above each use.
-#[allow(
+#[expect(
     clippy::too_many_lines,
     reason = "flat CSV-column parsing; splitting into helpers would fragment a linear schema decode without clarity gain"
 )]
@@ -155,7 +154,11 @@ pub fn parse_chirp_csv(content: &str) -> Result<FrequencyPlan, RadioError> {
                     cols.get(2).copied().unwrap_or_default().trim()
                 ),
             })?;
-        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        #[expect(
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            reason = "CHIRP frequencies are within u64 Hz range after MHz->Hz conversion; parser already validated rx_mhz"
+        )]
         let rx_freq = Frequency::hz((rx_mhz * 1_000_000.0).round() as u64);
 
         let duplex = cols.get(3).copied().unwrap_or_default().trim();
@@ -167,7 +170,11 @@ pub fn parse_chirp_csv(content: &str) -> Result<FrequencyPlan, RadioError> {
             .parse()
             .unwrap_or(0.0);
 
-        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        #[expect(
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            reason = "CHIRP offsets are within u64 Hz range after MHz->Hz conversion; parser already validated offset_mhz"
+        )]
         let offset_freq = Frequency::hz((offset_mhz * 1_000_000.0).round() as u64);
 
         let (offset, tx_freq) = match duplex {
@@ -254,11 +261,10 @@ fn parse_chirp_tone(tone_mode: &str, r_tone: &str, dtcs_code: &str, dtcs_pol: &s
 }
 
 #[cfg(test)]
-#[allow(
+#[expect(
     clippy::unwrap_used,
-    clippy::expect_used,
     clippy::indexing_slicing,
-    clippy::panic
+    reason = "test code: panics and unwraps acceptable in assertions"
 )]
 mod tests {
     use super::*;

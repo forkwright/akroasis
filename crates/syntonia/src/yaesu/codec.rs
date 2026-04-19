@@ -40,7 +40,7 @@ pub enum YaesuCodecError {
 ///
 /// Returns `YaesuCodecError::NotYetImplemented` — the memory layout
 /// has not been verified against real hardware.
-#[allow(
+#[expect(
     clippy::missing_const_for_fn,
     reason = "stub; real implementation will read from `_image` and will not be const (see #80)"
 )]
@@ -63,7 +63,7 @@ pub fn decode_channel(_image: &[u8], _index: u16) -> Result<Channel, YaesuCodecE
 ///
 /// Returns `YaesuCodecError::NotYetImplemented` — the memory layout
 /// has not been verified against real hardware.
-#[allow(
+#[expect(
     clippy::missing_const_for_fn,
     reason = "stub; real implementation will write to `_image` and will not be const (see #80)"
 )]
@@ -77,7 +77,10 @@ pub fn encode_channel(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used)]
+#[expect(
+    clippy::unwrap_used,
+    reason = "test code: panics and unwraps acceptable in assertions"
+)]
 mod tests {
     use super::*;
 

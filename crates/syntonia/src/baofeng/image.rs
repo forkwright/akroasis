@@ -20,14 +20,30 @@ impl MemoryImage {
     }
 
     /// Read a slice of bytes starting at the given EEPROM address.
-    #[allow(clippy::indexing_slicing)]
+    ///
+    /// # Panics
+    ///
+    /// Panics if `addr + len` exceeds the image size. Callers are expected to
+    /// stay within the 8 KiB EEPROM layout; this is a debug-only invariant.
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "EEPROM layout is fixed at image construction; caller invariant validated by unit tests"
+    )]
     pub fn read_bytes(&self, addr: u16, len: usize) -> &[u8] {
         let start = usize::from(addr);
         &self.data[start..start + len]
     }
 
     /// Write bytes to the given EEPROM address.
-    #[allow(clippy::indexing_slicing)]
+    ///
+    /// # Panics
+    ///
+    /// Panics if `addr + data.len()` exceeds the image size. Callers are
+    /// expected to stay within the 8 KiB EEPROM layout.
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "EEPROM layout is fixed at image construction; caller invariant validated by unit tests"
+    )]
     pub fn write_bytes(&mut self, addr: u16, data: &[u8]) {
         let start = usize::from(addr);
         self.data[start..start + data.len()].copy_from_slice(data);

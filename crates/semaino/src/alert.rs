@@ -139,9 +139,10 @@ impl AlertPipeline {
     pub fn new(suppression_window_secs: u64) -> Self {
         Self {
             suppression: HashMap::new(),
-            // WHY: suppression_window_secs comes from config; realistic values are
-            // seconds, not close to u64::MAX / 1_000, so wrap is not a concern.
-            #[allow(clippy::cast_possible_wrap)]
+            #[expect(
+                clippy::cast_possible_wrap,
+                reason = "suppression_window_secs comes from config; realistic values are seconds, not close to u64::MAX / 1_000, so wrap is not a concern"
+            )]
             suppression_window_ms: (suppression_window_secs * 1_000) as i64,
             sinks: Vec::new(),
         }
@@ -252,7 +253,7 @@ const fn kind_discriminant(kind: &SignalKind) -> u8 {
         SignalKind::Gps(_) => 4,
         SignalKind::Environmental(_) => 5,
         SignalKind::Osint(_) => 6,
-        #[allow(unreachable_patterns)]
+        // WHY: SignalKind is #[non_exhaustive]; unknown variants map to 255.
         _ => 255,
     }
 }
@@ -264,7 +265,7 @@ const fn severity_discriminant(sev: &AlertSeverity) -> u8 {
         AlertSeverity::Medium => 1,
         AlertSeverity::High => 2,
         AlertSeverity::Critical => 3,
-        #[allow(unreachable_patterns)]
+        // WHY: AlertSeverity is #[non_exhaustive]; unknown variants map to 255.
         _ => 255,
     }
 }
@@ -283,7 +284,7 @@ fn build_summary(
         SignalKind::Gps(_) => "GPS",
         SignalKind::Environmental(_) => "Environmental",
         SignalKind::Osint(_) => "OSINT",
-        #[allow(unreachable_patterns)]
+        // WHY: SignalKind is #[non_exhaustive]; unknown variants → "Unknown".
         _ => "Unknown",
     };
 
@@ -303,10 +304,9 @@ fn build_summary(
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
-#[allow(
+#[expect(
     clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::missing_docs_in_private_items
+    reason = "test code: panics and unwraps acceptable in assertions"
 )]
 mod tests {
     use koinon::{

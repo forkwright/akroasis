@@ -31,7 +31,6 @@ impl RadioIdent {
                 n
             }
             // INVARIANT: we just checked raw.len() == 12, so all indices are in bounds.
-            #[allow(clippy::indexing_slicing)]
             12 => [
                 raw.get(0).copied().unwrap_or_default(), raw.get(3).copied().unwrap_or_default(), raw.get(5).copied().unwrap_or_default(), raw.get(7).copied().unwrap_or_default(), raw.get(8).copied().unwrap_or_default(), raw.get(9).copied().unwrap_or_default(), raw.get(10).copied().unwrap_or_default(), raw.get(11).copied().unwrap_or_default(),
             ],

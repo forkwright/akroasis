@@ -100,10 +100,9 @@ impl fmt::Display for Entity {
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
-#[allow(
-    clippy::unwrap_used,
+#[expect(
     clippy::expect_used,
-    clippy::missing_docs_in_private_items
+    reason = "test code: panics and unwraps acceptable in assertions"
 )]
 mod tests {
     use super::*;

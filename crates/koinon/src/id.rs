@@ -53,7 +53,10 @@ define_id!(DeviceId, "Unique identifier for a hardware device.");
 define_id!(FrequencyId, "Unique identifier for a frequency plan entry.");
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used)]
+#[expect(
+    clippy::expect_used,
+    reason = "test code: panics and unwraps acceptable in assertions"
+)]
 mod tests {
     use super::*;
 

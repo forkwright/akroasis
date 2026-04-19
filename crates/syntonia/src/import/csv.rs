@@ -121,8 +121,11 @@ fn col(record: &csv::StringRecord, idx: usize) -> &str {
 }
 
 fn mhz_to_hz(mhz: f64) -> u64 {
-    // SAFETY(cast): caller ensures mhz > 0
-    #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
+    #[expect(
+        clippy::cast_sign_loss,
+        clippy::cast_possible_truncation,
+        reason = "caller ensures mhz > 0 and mhz * 1_000_000 fits in u64 (far below 2^64 Hz)"
+    )]
     let hz = (mhz * 1_000_000.0) as u64;
     hz
 }
@@ -254,7 +257,6 @@ fn parse_duplex(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 fn parse_tone(
     mode: &str,
     rtone: &str,
@@ -350,7 +352,10 @@ fn parse_power(power: &str, row: usize, warnings: &mut Vec<ImportWarning>) -> Po
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used)]
+#[expect(
+    clippy::unwrap_used,
+    reason = "test code: panics and unwraps acceptable in assertions"
+)]
 mod tests {
     use super::*;
 

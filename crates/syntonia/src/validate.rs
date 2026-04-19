@@ -154,7 +154,6 @@ pub fn validate_plan(plan: &FrequencyPlan, constraints: &RadioConstraints) -> Ve
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
     use crate::tone::ToneMode;

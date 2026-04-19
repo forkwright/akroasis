@@ -76,7 +76,7 @@ impl<S: SerialPort> YaesuSession<S> {
     /// # Errors
     ///
     /// Returns `YaesuProtocolError::ProtocolNotYetReversed`.
-    #[allow(
+    #[expect(
         clippy::missing_const_for_fn,
         reason = "stub; real implementation will do serial I/O via `_port` and will not be const (see #80)"
     )]
@@ -89,7 +89,7 @@ impl<S: SerialPort> YaesuSession<S> {
     /// # Errors
     ///
     /// Returns `YaesuProtocolError::ProtocolNotYetReversed`.
-    #[allow(
+    #[expect(
         clippy::missing_const_for_fn,
         reason = "stub; real implementation will do serial I/O via `_port` and will not be const (see #80)"
     )]
@@ -99,7 +99,6 @@ impl<S: SerialPort> YaesuSession<S> {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
     use crate::serial::mock::MockSerialPort;

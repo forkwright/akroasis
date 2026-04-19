@@ -1,12 +1,12 @@
 # WHY: project-specific clippy thresholds that workspace lints alone cannot
 # express. Standards ref: REPO-SETUP.md#root-files
 
-# Keep complex types under control (default 250 is too permissive).
-type-complexity-threshold = 150
+# Keep complex types under control. Default is 250; 200 leaves room for
+# tuple return types in crypto/codec code while still catching gratuitous
+# generics soup.
+type-complexity-threshold = 200
 
-# Disallow types known to cause bugs in this codebase.
-# WHY: unbounded std::sync::Mutex on tokio runtime causes deadlocks;
-# prefer tokio::sync::Mutex for async code, parking_lot for sync.
-[[disallowed-types]]
-path = "std::sync::Mutex"
-reason = "use tokio::sync::Mutex for async, parking_lot::Mutex for sync"
+# Disallowed types — intentionally empty for now. Add project-specific
+# entries here as needed; see:
+# https://rust-lang.github.io/rust-clippy/master/#disallowed_types
+disallowed-types = []

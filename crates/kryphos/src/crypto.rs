@@ -309,7 +309,7 @@ mod tests {
     /// fixed nonce so the output is deterministic and comparable.
     ///
     /// Reference: <https://www.rfc-editor.org/rfc/rfc8439#section-2.8.2>
-    #[allow(
+    #[expect(
         clippy::expect_used,
         reason = "RFC vector test — construction cannot fail"
     )]
@@ -407,7 +407,7 @@ mod tests {
     /// to exercise the primitive directly.
     ///
     /// Reference: <https://www.rfc-editor.org/rfc/rfc9106#appendix-B>
-    #[allow(
+    #[expect(
         clippy::expect_used,
         reason = "RFC vector test — construction cannot fail"
     )]

@@ -92,11 +92,12 @@ pub fn lookup_cable(vid: u16, pid: u16) -> Option<&'static KnownCable> {
 }
 
 #[cfg(test)]
-#[allow(
+#[expect(
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::indexing_slicing,
-    clippy::missing_docs_in_private_items
+    clippy::missing_docs_in_private_items,
+    reason = "test code: panics and unwraps acceptable in assertions"
 )]
 mod tests {
     use super::*;

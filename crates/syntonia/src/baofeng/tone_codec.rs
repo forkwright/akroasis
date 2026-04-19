@@ -45,9 +45,11 @@ pub fn encode_tone(tone: ToneMode) -> u16 {
     match tone {
         ToneMode::None => 0,
         ToneMode::Ctcss(ct) => {
-            // SAFETY(cast): CTCSS tones are always positive and < 300 Hz,
-            // so `* 10.0` fits in u16 without sign loss.
-            #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
+            #[expect(
+                clippy::cast_sign_loss,
+                clippy::cast_possible_truncation,
+                reason = "CTCSS tones are always positive and < 300 Hz; * 10.0 fits in u16 without sign loss"
+            )]
             let raw = (ct.as_hz() * 10.0) as u16;
             raw
         }
@@ -67,7 +69,10 @@ pub fn encode_tone(tone: ToneMode) -> u16 {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used)]
+#[expect(
+    clippy::unwrap_used,
+    reason = "test code: panics and unwraps acceptable in assertions"
+)]
 mod tests {
     use super::*;
 

@@ -220,11 +220,9 @@ pub fn dispatch_with(cmd: &RadioCommand, hw: &dyn Hardware) -> Result<(), RadioE
 }
 
 #[cfg(test)]
-#[allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::indexing_slicing,
-    clippy::panic
+#[expect(
+    clippy::panic,
+    reason = "test code: panics and unwraps acceptable in assertions"
 )]
 mod tests {
     use clap::Parser;

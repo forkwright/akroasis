@@ -165,7 +165,10 @@ fn channel_to_record(ch: &Channel) -> [String; 19] {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used)]
+#[expect(
+    clippy::unwrap_used,
+    reason = "test code: panics and unwraps acceptable in assertions"
+)]
 mod tests {
     use super::*;
     use crate::import::csv::import_chirp_csv_reader;

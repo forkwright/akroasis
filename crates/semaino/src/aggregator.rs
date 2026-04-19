@@ -72,9 +72,10 @@ impl KindKey {
             SignalKind::Proximity(_) => Self::Proximity,
             SignalKind::Gps(_) => Self::Gps,
             SignalKind::Environmental(_) => Self::Environmental,
-            // WHY: SignalKind is #[non_exhaustive]; unknown future variants fall
-            // through to Osint (no numeric feature) until explicitly handled.
-            #[allow(unreachable_patterns)]
+            // WHY: SignalKind is #[non_exhaustive] in koinon; the wildcard arm
+            // handles Osint and any future variants without triggering
+            // unreachable_patterns. Grouping unknowns with Osint keeps the
+            // baseline discriminant stable.
             _ => Self::Osint,
         }
     }
@@ -249,10 +250,9 @@ pub(crate) fn day_hour_from_timestamp(ts: &koinon::Timestamp) -> (u8, u8) {
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
-#[allow(
+#[expect(
     clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::missing_docs_in_private_items
+    reason = "test code: panics and unwraps acceptable in assertions"
 )]
 mod tests {
     use koinon::{
