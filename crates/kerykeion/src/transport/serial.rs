@@ -3,20 +3,19 @@
 //! Opens a serial port at 115 200 baud (no flow control, DTR/RTS disabled) and
 //! wraps it in a [`tokio_util::codec::Framed`] with .
 
-use std::time::Duration;
-
 use futures::{SinkExt as _, StreamExt as _};
 use tokio_serial::{SerialPort as _, SerialPortBuilderExt as _, SerialStream};
 use tokio_util::codec::Framed;
 
 use crate::Error;
 use crate::codec::MeshCodec;
+use crate::config::TransportConfig;
 use crate::connection::MeshConnection;
 use crate::error::ConnectionLostSnafu;
 use crate::proto::{FromRadio, ToRadio};
 
-/// Exponential backoff ceiling for reconnection attempts.
-const MAX_BACKOFF: Duration = Duration::from_secs(30);
+// Historical default (max_backoff = 30 s) now lives in
+// [`TransportConfig::default`].
 
 /// Meshtastic transport over a USB serial port.
 pub struct SerialTransport {
@@ -28,10 +27,21 @@ pub struct SerialTransport {
     framed: Framed<SerialStream, MeshCodec>,
     /// Whether the port is currently open and healthy.
     connected: bool,
+    /// Tuning applied to reconnect attempts.
+    config: TransportConfig,
 }
 
 impl SerialTransport {
-    /// Open a serial port and return a connected `SerialTransport`.
+    /// Open a serial port with the default tuning.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::SerialConnect`] if the port cannot be opened.
+    pub async fn open(port: &str, baud: u32) -> Result<Self, Error> {
+        Self::open_with_config(port, baud, &TransportConfig::default()).await
+    }
+
+    /// Open a serial port with the supplied tuning configuration.
     ///
     /// # Errors
     ///
@@ -40,13 +50,18 @@ impl SerialTransport {
         clippy::unused_async,
         reason = "API symmetry with TcpTransport::connect; future USB enumeration may be async"
     )]
-    pub async fn open(port: &str, baud: u32) -> Result<Self, Error> {
+    pub async fn open_with_config(
+        port: &str,
+        baud: u32,
+        config: &TransportConfig,
+    ) -> Result<Self, Error> {
         let stream = open_serial_stream(port, baud)?;
         Ok(Self {
             port_path: port.to_owned(),
             baud,
             framed: Framed::new(stream, MeshCodec),
             connected: true,
+            config: config.clone(),
         })
     }
 }
@@ -107,7 +122,8 @@ impl MeshConnection for SerialTransport {
 
     async fn reconnect(&mut self) -> Result<(), Error> {
         self.connected = false;
-        let mut delay = Duration::from_secs(1);
+        let mut delay = self.config.reconnect_initial_delay();
+        let max_backoff = self.config.reconnect_max_backoff();
 
         loop {
             tokio::time::sleep(delay).await;
@@ -125,7 +141,7 @@ impl MeshConnection for SerialTransport {
                         port = %self.port_path,
                         "serial reconnect failed; retrying"
                     );
-                    delay = (delay * 2).min(MAX_BACKOFF);
+                    delay = (delay * 2).min(max_backoff);
                 }
             }
         }

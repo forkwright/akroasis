@@ -3,29 +3,31 @@
 //! Manages multi-gateway failover with health monitoring. Gateway selection
 //! follows a priority hierarchy: dedicated gateway (RAK2245), WiFi-capable
 //! mesh node, MQTT-bridged node, then multi-hop relay chain.
+//!
+//! # Tuning
+//!
+//! Behavioral thresholds (health check cadence, degraded/offline cutoffs,
+//! failover cooldown) are grouped in [`crate::config::BridgeConfig`]. The
+//! historical hard-coded values are retained as public `const`s so callers
+//! that do not wish to tune can continue to reference them, and as the
+//! single source of truth for [`BridgeConfig::default`].
 
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use serde::{Deserialize, Serialize};
 use tokio_util::sync::CancellationToken;
 
+use crate::config::BridgeConfig;
 use crate::error::Error;
 use crate::types::NodeNum;
 
-/// Interval between gateway health checks.
-pub(crate) const HEALTH_CHECK_INTERVAL: Duration = Duration::from_secs(60);
-
-/// Response time threshold above which a gateway is considered degraded.
-const DEGRADED_RESPONSE_THRESHOLD: Duration = Duration::from_secs(5);
-
-/// Packet loss percentage above which a gateway is considered degraded.
-const DEGRADED_LOSS_THRESHOLD: f32 = 0.20;
-
-/// Number of consecutive failed checks before marking a gateway offline.
-const OFFLINE_CHECK_THRESHOLD: u32 = 3;
-
-/// Minimum cooldown between failover events.
-const FAILOVER_COOLDOWN: Duration = Duration::from_secs(30);
+// Historical default values now live in the [`BridgeConfig::default`] impl.
+// See `crate::config::BridgeConfig` for authoritative defaults:
+//   health_check_interval_secs   = 60
+//   degraded_response_threshold_ms = 5000
+//   degraded_loss_threshold      = 0.20
+//   offline_check_threshold      = 3
+//   failover_cooldown_secs       = 30
 
 /// Health state of a gateway node.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -117,18 +119,32 @@ pub struct GatewayBridge {
     active_gateway: Option<NodeNum>,
     last_failover: Option<Instant>,
     events: Vec<GatewayEvent>,
+    config: BridgeConfig,
 }
 
 impl GatewayBridge {
-    /// Creates a new bridge with no gateways registered.
+    /// Creates a new bridge with no gateways registered and default tuning.
     #[must_use]
-    pub const fn new() -> Self {
+    pub fn new() -> Self {
+        Self::with_config(BridgeConfig::default())
+    }
+
+    /// Creates a new bridge with the supplied tuning configuration.
+    #[must_use]
+    pub const fn with_config(config: BridgeConfig) -> Self {
         Self {
             gateways: Vec::new(),
             active_gateway: None,
             last_failover: None,
             events: Vec::new(),
+            config,
         }
+    }
+
+    /// Returns a reference to the active tuning configuration.
+    #[must_use]
+    pub const fn config(&self) -> &BridgeConfig {
+        &self.config
     }
 
     /// Registers a gateway node with the given priority.
@@ -193,7 +209,7 @@ impl GatewayBridge {
 
         if needs_selection {
             if let Some(cooldown) = self.last_failover {
-                if cooldown.elapsed() < FAILOVER_COOLDOWN {
+                if cooldown.elapsed() < self.config.failover_cooldown() {
                     return;
                 }
             }
@@ -242,17 +258,19 @@ impl GatewayBridge {
         // WHY: decay packet loss toward zero on successful response.
         gw.packet_loss *= 0.5;
 
-        let threshold_ms = DEGRADED_RESPONSE_THRESHOLD.as_millis() as f64; // SAFETY: DEGRADED_RESPONSE_THRESHOLD is a compile-time constant in ms; fits any f64 exactly
-        let new_health = if response_ms > threshold_ms || gw.packet_loss > DEGRADED_LOSS_THRESHOLD {
-            GatewayHealth::Degraded {
-                reason: format!(
-                    "response {response_ms:.0}ms, loss {:.0}%",
-                    gw.packet_loss * 100.0
-                ),
-            }
-        } else {
-            GatewayHealth::Healthy
-        };
+        // SAFETY: degraded_response_threshold() returns Duration with ms value that fits any f64 exactly
+        let threshold_ms = self.config.degraded_response_threshold().as_millis() as f64;
+        let new_health =
+            if response_ms > threshold_ms || gw.packet_loss > self.config.degraded_loss_threshold {
+                GatewayHealth::Degraded {
+                    reason: format!(
+                        "response {response_ms:.0}ms, loss {:.0}%",
+                        gw.packet_loss * 100.0
+                    ),
+                }
+            } else {
+                GatewayHealth::Healthy
+            };
 
         if std::mem::discriminant(&gw.health) != std::mem::discriminant(&new_health) {
             tracing::info!(node = %node, health = ?new_health, "gateway health transition");
@@ -266,10 +284,11 @@ impl GatewayBridge {
 
     /// Records a failed health check for a gateway.
     ///
-    /// After `OFFLINE_CHECK_THRESHOLD` consecutive failures, the gateway
-    /// transitions to [`GatewayHealth::Offline`] and an automatic failover
-    /// is triggered if it was the active gateway.
+    /// After [`BridgeConfig::offline_check_threshold`] consecutive failures,
+    /// the gateway transitions to [`GatewayHealth::Offline`] and an
+    /// automatic failover is triggered if it was the active gateway.
     pub fn record_health_failure(&mut self, node: NodeNum) {
+        let offline_threshold = self.config.offline_check_threshold;
         let Some(gw) = self.gateways.iter_mut().find(|g| g.node == node) else {
             return;
         };
@@ -279,7 +298,7 @@ impl GatewayBridge {
 
         let was_available = gw.is_available();
 
-        if gw.consecutive_failures >= OFFLINE_CHECK_THRESHOLD {
+        if gw.consecutive_failures >= offline_threshold {
             let new_health = GatewayHealth::Offline {
                 since: Some(Instant::now()),
             };
@@ -341,7 +360,12 @@ pub async fn run_health_monitor(
     bridge: &tokio::sync::Mutex<GatewayBridge>,
     token: CancellationToken,
 ) -> Result<(), Error> {
-    let mut interval = tokio::time::interval(HEALTH_CHECK_INTERVAL);
+    // WHY: lock once up front to capture the configured tick cadence. The
+    // config is copied by value so we release the lock before entering the
+    // long-running loop; live reconfig is a future concern tracked in the
+    // parameter registry (aletheia #2306).
+    let tick_interval = bridge.lock().await.config.health_check_interval();
+    let mut interval = tokio::time::interval(tick_interval);
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
     loop {
@@ -410,7 +434,7 @@ mod tests {
         bridge.add_gateway(NodeNum(2), 2);
 
         // WHY: mark node 1 offline via consecutive failures.
-        for _ in 0..OFFLINE_CHECK_THRESHOLD {
+        for _ in 0..BridgeConfig::default().offline_check_threshold {
             bridge.record_health_failure(NodeNum(1));
         }
 
@@ -445,7 +469,7 @@ mod tests {
         bridge.active_gateway = Some(NodeNum(1));
 
         // WHY: force node 1 offline to trigger failover.
-        for _ in 0..OFFLINE_CHECK_THRESHOLD {
+        for _ in 0..BridgeConfig::default().offline_check_threshold {
             bridge.record_health_failure(NodeNum(1));
         }
 
@@ -473,7 +497,7 @@ mod tests {
             "single failure should degrade"
         );
 
-        for _ in 1..OFFLINE_CHECK_THRESHOLD {
+        for _ in 1..BridgeConfig::default().offline_check_threshold {
             bridge.record_health_failure(NodeNum(1));
         }
         assert!(
@@ -561,5 +585,53 @@ mod tests {
             matches!(first_health(&bridge), GatewayHealth::Degraded { .. }),
             "high latency should degrade"
         );
+    }
+
+    #[test]
+    fn configured_offline_threshold_observably_changes_transition() {
+        // WHY: parameterization-observability test — lowering
+        // offline_check_threshold from 3 (default) to 1 must make the
+        // gateway transition to Offline after a single failure.
+        let cfg = BridgeConfig {
+            offline_check_threshold: 1,
+            ..BridgeConfig::default()
+        };
+        let mut bridge = GatewayBridge::with_config(cfg);
+        bridge.add_gateway(NodeNum(1), 1);
+
+        bridge.record_health_failure(NodeNum(1));
+        assert!(
+            matches!(first_health(&bridge), GatewayHealth::Offline { .. }),
+            "with offline_check_threshold=1, a single failure must mark offline"
+        );
+    }
+
+    #[test]
+    fn configured_degraded_threshold_observably_changes_transition() {
+        // WHY: a stricter degraded_response_threshold must mark responses
+        // Degraded that would have been Healthy under the default.
+        let cfg = BridgeConfig {
+            degraded_response_threshold_ms: 100,
+            ..BridgeConfig::default()
+        };
+        let mut bridge = GatewayBridge::with_config(cfg);
+        bridge.add_gateway(NodeNum(1), 1);
+
+        // 200 ms response: below default 5000 ms threshold, above configured 100 ms.
+        bridge.record_health_success(NodeNum(1), 200.0);
+        assert!(
+            matches!(first_health(&bridge), GatewayHealth::Degraded { .. }),
+            "with degraded_response_threshold_ms=100, a 200 ms response must degrade"
+        );
+    }
+
+    #[test]
+    fn config_accessor_returns_configured_values() {
+        let cfg = BridgeConfig {
+            failover_cooldown_secs: 7,
+            ..BridgeConfig::default()
+        };
+        let bridge = GatewayBridge::with_config(cfg);
+        assert_eq!(bridge.config().failover_cooldown_secs, 7);
     }
 }

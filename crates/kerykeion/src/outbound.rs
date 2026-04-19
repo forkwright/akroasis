@@ -1,19 +1,24 @@
 //! Priority-ordered outbound message queue with inflight tracking.
+//!
+//! # Tuning
+//!
+//! Maximum inflight messages, retry count, and ACK/TTL defaults are grouped
+//! in [`crate::config::OutboundConfig`]. Constructors are available both
+//! with and without an explicit config so that historical call sites
+//! continue to work unchanged.
 
 use std::collections::{HashMap, VecDeque};
 use std::time::Duration;
 
 use tokio::time::Instant;
 
+use crate::config::OutboundConfig;
 use crate::proto::MeshPacket;
 use crate::proto::mesh_packet::Priority;
 use crate::types::PacketId;
 
-/// Maximum number of concurrent inflight messages (default).
-const DEFAULT_MAX_INFLIGHT: usize = 8;
-
-/// Maximum retry attempts before declaring a message failed.
-const DEFAULT_MAX_RETRIES: u8 = 5;
+// Historical defaults (max_inflight = 8, max_retries = 5) now live in
+// [`OutboundConfig::default`].
 
 /// A message waiting to be sent.
 #[derive(Debug)]
@@ -50,16 +55,24 @@ pub struct OutboundQueue {
     pending: VecDeque<PendingMessage>,
     inflight: HashMap<PacketId, InflightMessage>,
     max_inflight: usize,
+    max_retries: u8,
 }
 
 impl OutboundQueue {
-    /// Creates an empty outbound queue with the default maximum inflight LIMIT.
+    /// Creates an empty outbound queue with the default tuning.
     #[must_use]
     pub fn new() -> Self {
+        Self::with_config(&OutboundConfig::default())
+    }
+
+    /// Creates an outbound queue with the supplied tuning configuration.
+    #[must_use]
+    pub fn with_config(config: &OutboundConfig) -> Self {
         Self {
             pending: VecDeque::new(),
             inflight: HashMap::new(),
-            max_inflight: DEFAULT_MAX_INFLIGHT,
+            max_inflight: config.max_inflight,
+            max_retries: config.max_retries,
         }
     }
 
@@ -70,7 +83,20 @@ impl OutboundQueue {
             pending: VecDeque::new(),
             inflight: HashMap::new(),
             max_inflight,
+            max_retries: OutboundConfig::default().max_retries,
         }
+    }
+
+    /// Returns the current max-inflight limit.
+    #[must_use]
+    pub const fn max_inflight(&self) -> usize {
+        self.max_inflight
+    }
+
+    /// Returns the current max-retries limit.
+    #[must_use]
+    pub const fn max_retries(&self) -> u8 {
+        self.max_retries
     }
 
     /// Insert a message by priority (higher priority first).
@@ -105,6 +131,7 @@ impl OutboundQueue {
 
     /// Move a sent packet to inflight tracking.
     pub fn mark_sent(&mut self, id: PacketId, timeout: Duration) {
+        let max_retries = self.max_retries;
         if let Some(pos) = self.pending.iter().position(|m| m.packet.id == id.0) {
             if let Some(msg) = self.pending.remove(pos) {
                 self.inflight.insert(
@@ -113,7 +140,7 @@ impl OutboundQueue {
                         packet: msg.packet,
                         sent_at: Instant::now(),
                         retries: 0,
-                        max_retries: DEFAULT_MAX_RETRIES,
+                        max_retries,
                         ack_timeout: timeout,
                     },
                 );
@@ -130,7 +157,7 @@ impl OutboundQueue {
                 packet: msg.packet,
                 sent_at: Instant::now(),
                 retries: msg.retries,
-                max_retries: DEFAULT_MAX_RETRIES,
+                max_retries: self.max_retries,
                 ack_timeout: timeout,
             },
         );
@@ -326,7 +353,7 @@ mod tests {
         let mut q = OutboundQueue::new();
         q.track_inflight(make_pending(10, Priority::Default), DEFAULT_ACK_TIMEOUT);
 
-        for i in 0..DEFAULT_MAX_RETRIES {
+        for i in 0..OutboundConfig::default().max_retries {
             assert!(q.retry(PacketId(10)), "retry {i} should succeed");
             // Re-track the re-enqueued message as inflight for the next retry.
             if let Some(msg) = q.next_to_send() {
@@ -375,6 +402,48 @@ mod tests {
 
         q.drain_expired();
         assert_eq!(q.pending_count(), 1, "expired message should be removed");
+    }
+
+    #[test]
+    fn configured_max_retries_observably_caps_retries() {
+        // WHY: parameterization-observability test — with max_retries=1,
+        // retry() must return false after a single retry. Default (5) would
+        // allow four more.
+        let cfg = OutboundConfig {
+            max_retries: 1,
+            ..OutboundConfig::default()
+        };
+        let mut q = OutboundQueue::with_config(&cfg);
+        q.track_inflight(make_pending(77, Priority::Default), DEFAULT_ACK_TIMEOUT);
+
+        assert!(q.retry(PacketId(77)), "first retry should succeed");
+        // Re-track for the next attempt.
+        if let Some(msg) = q.next_to_send() {
+            q.track_inflight(msg, DEFAULT_ACK_TIMEOUT);
+        }
+        assert!(
+            !q.retry(PacketId(77)),
+            "second retry should fail once max_retries=1 exceeded"
+        );
+    }
+
+    #[test]
+    fn configured_max_inflight_observably_limits_sends() {
+        let cfg = OutboundConfig {
+            max_inflight: 1,
+            ..OutboundConfig::default()
+        };
+        let mut q = OutboundQueue::with_config(&cfg);
+        q.enqueue(make_pending(1, Priority::Default));
+        q.enqueue(make_pending(2, Priority::Default));
+
+        #[expect(clippy::unwrap_used, reason = "test-only")]
+        let msg = q.next_to_send().unwrap();
+        q.track_inflight(msg, DEFAULT_ACK_TIMEOUT);
+        assert!(
+            q.next_to_send().is_none(),
+            "max_inflight=1 must block second send"
+        );
     }
 
     #[test]

@@ -1,7 +1,15 @@
 //! Message router orchestrating the outbound send path.
+//!
+//! # Tuning
+//!
+//! Default ACK timeout and store-and-forward TTL are sourced from
+//! [`crate::config::OutboundConfig`]. Routers created via
+//! [`MeshRouter::new`] keep the historical defaults; callers that wish to
+//! tune should use [`MeshRouter::with_config`].
 
 use std::time::Duration;
 
+use crate::config::OutboundConfig;
 use crate::delivery::{DeliveryFailure, DeliveryTracker};
 use crate::outbound::{OutboundQueue, PendingMessage};
 use crate::proto::MeshPacket;
@@ -9,11 +17,8 @@ use crate::proto::mesh_packet::Priority;
 use crate::store_forward::{StoreForward, StoredMessage};
 use crate::types::{NodeNum, PacketId};
 
-/// Default ACK timeout for inflight messages.
-const DEFAULT_ACK_TIMEOUT: Duration = Duration::from_secs(30);
-
-/// Default TTL for store-and-forward messages (1 hour).
-const DEFAULT_SF_TTL_SECS: u64 = 3600;
+// Historical defaults (ack_timeout = 30 s, sf_ttl = 3600 s) now live in
+// [`OutboundConfig::default`].
 
 /// Orchestrates the full outbound send path.
 ///
@@ -27,6 +32,10 @@ pub struct MeshRouter {
     pub store_forward: StoreForward,
     /// Delivery lifecycle tracker.
     pub delivery: DeliveryTracker,
+    /// ACK timeout used when marking messages inflight.
+    ack_timeout: Duration,
+    /// Default TTL for store-and-forward messages.
+    sf_ttl_secs: u64,
 }
 
 /// Options for a send operation.
@@ -42,27 +51,66 @@ pub struct SendOptions {
 
 impl Default for SendOptions {
     fn default() -> Self {
+        Self::with_config(&OutboundConfig::default())
+    }
+}
+
+impl SendOptions {
+    /// Build a default-priority, no-ACK [`SendOptions`] seeded from
+    /// [`OutboundConfig::store_forward_ttl_secs`].
+    #[must_use]
+    pub const fn with_config(config: &OutboundConfig) -> Self {
         Self {
             want_ack: false,
             priority: Priority::Default,
-            ttl_secs: DEFAULT_SF_TTL_SECS,
+            ttl_secs: config.store_forward_ttl_secs,
         }
     }
 }
 
 impl MeshRouter {
-    /// Create a new router with the given sub-components.
+    /// Create a new router with default ACK/TTL tuning.
     #[must_use]
-    pub const fn new(
+    pub fn new(
         outbound: OutboundQueue,
         store_forward: StoreForward,
         delivery: DeliveryTracker,
+    ) -> Self {
+        Self::with_config(
+            outbound,
+            store_forward,
+            delivery,
+            &OutboundConfig::default(),
+        )
+    }
+
+    /// Create a new router with the supplied tuning configuration.
+    #[must_use]
+    pub const fn with_config(
+        outbound: OutboundQueue,
+        store_forward: StoreForward,
+        delivery: DeliveryTracker,
+        config: &OutboundConfig,
     ) -> Self {
         Self {
             outbound,
             store_forward,
             delivery,
+            ack_timeout: config.ack_timeout(),
+            sf_ttl_secs: config.store_forward_ttl_secs,
         }
+    }
+
+    /// Returns the ACK timeout used when marking messages inflight.
+    #[must_use]
+    pub const fn ack_timeout(&self) -> Duration {
+        self.ack_timeout
+    }
+
+    /// Returns the default store-and-forward TTL in seconds.
+    #[must_use]
+    pub const fn sf_ttl_secs(&self) -> u64 {
+        self.sf_ttl_secs
     }
 
     /// Route a packet for delivery.
@@ -196,7 +244,7 @@ impl MeshRouter {
 
     /// Track a just-sent message as inflight.
     pub fn track_sent(&mut self, msg: PendingMessage) {
-        self.outbound.track_inflight(msg, DEFAULT_ACK_TIMEOUT);
+        self.outbound.track_inflight(msg, self.ack_timeout);
     }
 }
 
@@ -315,6 +363,36 @@ mod tests {
         router.node_came_online(dest);
         assert_eq!(router.store_forward.total_stored(), 0);
         assert_eq!(router.outbound.pending_count(), 2);
+    }
+
+    #[test]
+    fn configured_ack_timeout_threaded_into_router() {
+        // WHY: parameterization-observability test — a router built with
+        // a non-default OutboundConfig must expose that timeout via its
+        // accessor and use it for track_sent.
+        let cfg = OutboundConfig {
+            ack_timeout_secs: 7,
+            store_forward_ttl_secs: 11,
+            ..OutboundConfig::default()
+        };
+        let router = MeshRouter::with_config(
+            OutboundQueue::new(),
+            StoreForward::new(StoreForwardConfig::default()),
+            DeliveryTracker::new(),
+            &cfg,
+        );
+        assert_eq!(router.ack_timeout(), Duration::from_secs(7));
+        assert_eq!(router.sf_ttl_secs(), 11);
+    }
+
+    #[test]
+    fn send_options_with_config_uses_configured_ttl() {
+        let cfg = OutboundConfig {
+            store_forward_ttl_secs: 42,
+            ..OutboundConfig::default()
+        };
+        let opts = SendOptions::with_config(&cfg);
+        assert_eq!(opts.ttl_secs, 42);
     }
 
     #[test]

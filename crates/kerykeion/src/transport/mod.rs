@@ -10,7 +10,7 @@ pub mod tcp;
 use self::serial::SerialTransport;
 use self::tcp::TcpTransport;
 use crate::Error;
-use crate::config::ConnectionConfig;
+use crate::config::{ConnectionConfig, TransportConfig};
 use crate::connection::MeshConnection;
 use crate::error::BleConnectSnafu;
 use crate::proto::{FromRadio, ToRadio};
@@ -58,19 +58,33 @@ impl MeshConnection for ConnectionHandle {
     }
 }
 
-/// Create a [`ConnectionHandle`] from a [`ConnectionConfig`].
+/// Create a [`ConnectionHandle`] from a [`ConnectionConfig`] with default
+/// transport tuning.
 ///
 /// # Errors
 ///
 /// Returns a transport-specific connection error if the initial connect fails.
 pub async fn connect(config: &ConnectionConfig) -> Result<ConnectionHandle, Error> {
+    connect_with_config(config, &TransportConfig::default()).await
+}
+
+/// Create a [`ConnectionHandle`] from a [`ConnectionConfig`] with explicit
+/// transport tuning.
+///
+/// # Errors
+///
+/// Returns a transport-specific connection error if the initial connect fails.
+pub async fn connect_with_config(
+    config: &ConnectionConfig,
+    transport_config: &TransportConfig,
+) -> Result<ConnectionHandle, Error> {
     match config {
         ConnectionConfig::Serial { port, baud } => {
-            let conn = SerialTransport::open(port, *baud).await?;
+            let conn = SerialTransport::open_with_config(port, *baud, transport_config).await?;
             Ok(ConnectionHandle::Serial(conn))
         }
         ConnectionConfig::Tcp { addr, port } => {
-            let conn = TcpTransport::connect(addr, *port).await?;
+            let conn = TcpTransport::connect_with_config(addr, *port, transport_config).await?;
             Ok(ConnectionHandle::Tcp(conn))
         }
         ConnectionConfig::Ble { device_name } => {

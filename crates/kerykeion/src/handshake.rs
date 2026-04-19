@@ -14,20 +14,18 @@
 //! The handshake times out after 10 seconds if the radio does not send
 //! `config_complete_id` matching the value sent in `want_config_id`.
 
-use std::time::Duration;
-
 use rand_core::{OsRng, RngCore as _};
 use tokio::time::timeout;
 
 use crate::Error;
+use crate::config::HandshakeConfig;
 use crate::connection::MeshConnection;
 use crate::error::HandshakeFailedSnafu;
 use crate::node_db::{MeshNode, NodeDb, NodePosition, UserInfo};
 use crate::proto::{Channel, ToRadio, from_radio, to_radio};
 use crate::types::NodeNum;
 
-/// Maximum time to wait for a complete config dump FROM the radio.
-const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
+// Historical default (10 s) now lives in [`HandshakeConfig::default`].
 
 /// Result of a successful config handshake with the radio.
 #[derive(Debug)]
@@ -40,10 +38,9 @@ pub struct HandshakeResult {
     pub known_nodes: Vec<MeshNode>,
 }
 
-/// Run the config handshake and populate `node_db` with discovered nodes.
+/// Run the config handshake with the default timeout.
 ///
-/// Sends `want_config_id` to the radio, then reads `FromRadio` messages until
-/// `config_complete_id` is received. Returns a [`HandshakeResult`] on success.
+/// Equivalent to `handshake_with_config(conn, node_db, &HandshakeConfig::default())`.
 ///
 /// # Errors
 ///
@@ -53,6 +50,26 @@ pub async fn handshake(
     conn: &mut impl MeshConnection,
     node_db: &mut NodeDb,
 ) -> Result<HandshakeResult, Error> {
+    handshake_with_config(conn, node_db, &HandshakeConfig::default()).await
+}
+
+/// Run the config handshake and populate `node_db` with discovered nodes.
+///
+/// Sends `want_config_id` to the radio, then reads `FromRadio` messages until
+/// `config_complete_id` is received. Returns a [`HandshakeResult`] on success.
+///
+/// The handshake will be aborted after [`HandshakeConfig::timeout_secs`].
+///
+/// # Errors
+///
+/// Returns [`Error::HandshakeFailed`] if the handshake times out or if the
+/// radio does not complete the config dump with a matching ID.
+pub async fn handshake_with_config(
+    conn: &mut impl MeshConnection,
+    node_db: &mut NodeDb,
+    config: &HandshakeConfig,
+) -> Result<HandshakeResult, Error> {
+    let handshake_timeout = config.timeout();
     let want_config_id: u32 = OsRng.next_u32();
 
     conn.send(ToRadio {
@@ -123,12 +140,12 @@ pub async fn handshake(
         Ok::<(), Error>(())
     };
 
-    timeout(HANDSHAKE_TIMEOUT, handshake_fut)
+    timeout(handshake_timeout, handshake_fut)
         .await
         .map_err(|_| Error::HandshakeFailed {
             detail: format!(
                 "config dump timed out after {}s (want_config_id={want_config_id})",
-                HANDSHAKE_TIMEOUT.as_secs()
+                handshake_timeout.as_secs()
             ),
             location: snafu::Location::new(file!(), line!(), column!()),
         })??;
@@ -367,6 +384,32 @@ mod tests {
         #[expect(clippy::unwrap_used, reason = "test-only")]
         let result = handle.await.unwrap();
         assert!(result.is_err(), "handshake should fail after 10 s timeout");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn configured_timeout_observably_aborts_faster() {
+        // WHY: parameterization-observability test — a 2 s timeout must
+        // cause handshake_with_config to fail within 2–3 s of virtual time,
+        // where the 10 s default would still be running.
+        let handle = tokio::spawn(
+            async {
+                let mut db = NodeDb::new();
+                let mut conn = StallMock;
+                let cfg = HandshakeConfig { timeout_secs: 2 };
+                handshake_with_config(&mut conn, &mut db, &cfg).await
+            }
+            .instrument(tracing::info_span!("spawned_task")),
+        );
+
+        tokio::time::advance(Duration::from_secs(3)).await;
+        tokio::task::yield_now().await;
+
+        #[expect(clippy::unwrap_used, reason = "test-only")]
+        let result = handle.await.unwrap();
+        assert!(
+            result.is_err(),
+            "handshake with 2 s timeout must fail within 3 s of virtual time"
+        );
     }
 
     #[tokio::test]

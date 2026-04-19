@@ -31,8 +31,7 @@ use crate::topology::MeshTopology;
 use crate::transport::{self, ConnectionHandle};
 use crate::types::NodeNum;
 
-/// Interval for the router flush task  -  checks timeouts and drains outbound queue.
-const ROUTER_FLUSH_INTERVAL: Duration = Duration::from_secs(1);
+// Historical default (1 s) now lives in [`CollectorConfig::default`].
 
 /// Trait for Akroasis data collectors.
 ///
@@ -76,16 +75,24 @@ pub struct MeshCollector {
 
 impl MeshCollector {
     /// Creates a new `MeshCollector` with the given configuration.
+    ///
+    /// Threads the sub-configs ([`crate::config::OutboundConfig`],
+    /// [`crate::config::BridgeConfig`], [`crate::config::StoreForwardConfig`])
+    /// into the router, bridge, and store-and-forward components so tuning
+    /// applied via TOML / agent overrides takes effect.
     #[must_use]
     pub fn new(config: MeshConfig) -> Self {
         let sf_config = config.store_forward.clone();
+        let outbound_cfg = config.outbound.clone();
+        let bridge_cfg = config.bridge.clone();
         Self {
             node_db: Arc::new(Mutex::new(NodeDb::new())),
-            bridge: Arc::new(Mutex::new(GatewayBridge::new())),
-            router: Arc::new(Mutex::new(MeshRouter::new(
-                OutboundQueue::new(),
+            bridge: Arc::new(Mutex::new(GatewayBridge::with_config(bridge_cfg))),
+            router: Arc::new(Mutex::new(MeshRouter::with_config(
+                OutboundQueue::with_config(&outbound_cfg),
                 StoreForward::new(sf_config),
                 DeliveryTracker::new(),
+                &outbound_cfg,
             ))),
             config,
         }
@@ -188,7 +195,7 @@ impl MeshCollector {
     async fn connect_and_handshake(&self) -> Result<Vec<Arc<Mutex<ConnectionHandle>>>, Error> {
         let mut connections: Vec<ConnectionHandle> = Vec::new();
         for conn_cfg in &self.config.connections {
-            match transport::connect(conn_cfg).await {
+            match transport::connect_with_config(conn_cfg, &self.config.transport).await {
                 Ok(handle) => {
                     tracing::info!(config = ?conn_cfg, "transport connected");
                     connections.push(handle);
@@ -202,7 +209,8 @@ impl MeshCollector {
         let mut active: Vec<Arc<Mutex<ConnectionHandle>>> = Vec::new();
         for mut conn in connections {
             let mut db = self.node_db.lock().await;
-            match handshake::handshake(&mut conn, &mut db).await {
+            match handshake::handshake_with_config(&mut conn, &mut db, &self.config.handshake).await
+            {
                 Ok(result) => {
                     tracing::info!(
                         my_node = %result.my_node_num,
@@ -236,7 +244,10 @@ impl MeshCollector {
         for conn in connections {
             let conn = Arc::clone(conn);
             let token = cancel.child_token();
-            tasks.spawn(async move { heartbeat::run_heartbeat(&*conn, token).await });
+            let heartbeat_cfg = self.config.heartbeat.clone();
+            tasks.spawn(async move {
+                heartbeat::run_heartbeat_with_config(&*conn, &heartbeat_cfg, token).await
+            });
         }
 
         // Gateway health monitor.
@@ -262,7 +273,8 @@ impl MeshCollector {
         if let Some(primary) = connections.first() {
             let conn = Arc::clone(primary);
             let token = cancel.child_token();
-            tasks.spawn(async move { run_router_flush(router, conn, token).await });
+            let flush_interval = self.config.collector.router_flush_interval();
+            tasks.spawn(async move { run_router_flush(router, conn, flush_interval, token).await });
         }
     }
 }
@@ -282,7 +294,7 @@ impl Collector for MeshCollector { // kanon:ignore ARCHITECTURE/trait-impl-coloc
             match conn_cfg {
                 crate::config::ConnectionConfig::Tcp { addr, port } => {
                     match tokio::time::timeout(
-                        std::time::Duration::from_secs(3),
+                        self.config.transport.tcp_connect_timeout(),
                         tokio::net::TcpStream::connect(format!("{addr}:{port}")),
                     )
                     .await
@@ -416,6 +428,7 @@ impl Collector for MeshCollector { // kanon:ignore ARCHITECTURE/trait-impl-coloc
 async fn run_router_flush<C>(
     router: Arc<Mutex<MeshRouter>>,
     conn: Arc<Mutex<C>>,
+    tick_interval: Duration,
     token: CancellationToken,
 ) -> Result<(), Error>
 where
@@ -423,7 +436,7 @@ where
 {
     use crate::proto::{ToRadio, to_radio};
 
-    let mut interval = tokio::time::interval(ROUTER_FLUSH_INTERVAL);
+    let mut interval = tokio::time::interval(tick_interval);
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
     loop {
@@ -471,9 +484,9 @@ mod tests {
     fn make_config(connections: Vec<ConnectionConfig>) -> MeshConfig {
         MeshConfig {
             connections,
-            channel_psk: vec![],
             store_forward: StoreForwardConfig::default(),
             topology: TopologyConfig::default(),
+            ..MeshConfig::default()
         }
     }
 
@@ -655,7 +668,7 @@ mod tests {
         let task_token = token.clone();
 
         let handle = tokio::spawn(
-            async move { run_router_flush(router, conn, task_token).await }
+            async move { run_router_flush(router, conn, Duration::from_secs(1), task_token).await }
                 .instrument(tracing::info_span!("spawned_task")),
         );
 
