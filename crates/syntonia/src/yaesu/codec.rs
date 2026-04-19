@@ -40,6 +40,10 @@ pub enum YaesuCodecError {
 ///
 /// Returns `YaesuCodecError::NotYetImplemented` — the memory layout
 /// has not been verified against real hardware.
+#[allow(
+    clippy::missing_const_for_fn,
+    reason = "stub; real implementation will read from `_image` and will not be const (see #80)"
+)]
 pub fn decode_channel(_image: &[u8], _index: u16) -> Result<Channel, YaesuCodecError> {
     // TODO(#80): implement once EEPROM memory map is verified via ADMS-14
     // traffic capture. Known fields from CHIRP source:
@@ -59,7 +63,15 @@ pub fn decode_channel(_image: &[u8], _index: u16) -> Result<Channel, YaesuCodecE
 ///
 /// Returns `YaesuCodecError::NotYetImplemented` — the memory layout
 /// has not been verified against real hardware.
-pub fn encode_channel(_image: &mut [u8], _index: u16, _channel: &Channel) -> Result<(), YaesuCodecError> {
+#[allow(
+    clippy::missing_const_for_fn,
+    reason = "stub; real implementation will write to `_image` and will not be const (see #80)"
+)]
+pub fn encode_channel(
+    _image: &mut [u8],
+    _index: u16,
+    _channel: &Channel,
+) -> Result<(), YaesuCodecError> {
     // TODO(#80): implement once EEPROM memory map is verified
     Err(YaesuCodecError::NotYetImplemented)
 }
@@ -75,7 +87,10 @@ mod tests {
         let result = decode_channel(&image, 0);
         assert!(result.is_err());
         assert!(
-            result.unwrap_err().to_string().contains("not yet implemented"),
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("not yet implemented"),
             "should return NotYetImplemented"
         );
     }

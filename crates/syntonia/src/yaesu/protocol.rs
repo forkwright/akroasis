@@ -76,6 +76,10 @@ impl<S: SerialPort> YaesuSession<S> {
     /// # Errors
     ///
     /// Returns `YaesuProtocolError::ProtocolNotYetReversed`.
+    #[allow(
+        clippy::missing_const_for_fn,
+        reason = "stub; real implementation will do serial I/O via `_port` and will not be const (see #80)"
+    )]
     pub fn download(&mut self) -> Result<Vec<u8>, YaesuProtocolError> {
         Err(YaesuProtocolError::ProtocolNotYetReversed)
     }
@@ -85,6 +89,10 @@ impl<S: SerialPort> YaesuSession<S> {
     /// # Errors
     ///
     /// Returns `YaesuProtocolError::ProtocolNotYetReversed`.
+    #[allow(
+        clippy::missing_const_for_fn,
+        reason = "stub; real implementation will do serial I/O via `_port` and will not be const (see #80)"
+    )]
     pub fn upload(&mut self, _image: &[u8]) -> Result<(), YaesuProtocolError> {
         Err(YaesuProtocolError::ProtocolNotYetReversed)
     }
@@ -100,10 +108,8 @@ mod tests {
     fn open_returns_not_yet_reversed() {
         let port = MockSerialPort::new();
         let result = YaesuSession::open(port);
-        assert!(result.is_err());
-        let err = match result {
-            Err(e) => e,
-            Ok(_) => panic!("expected error"),
+        let Err(err) = result else {
+            unreachable!("open() must return the NotYetReversed stub error");
         };
         assert!(
             err.to_string().contains("not yet reversed"),

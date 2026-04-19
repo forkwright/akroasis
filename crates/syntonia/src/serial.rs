@@ -47,13 +47,26 @@ pub trait SerialPort: Send {
 /// Only available with the `hardware-serial` feature (requires `libudev-dev`
 /// on Linux).
 #[cfg(feature = "hardware-serial")]
+#[allow(
+    dead_code,
+    reason = "public hardware adapter; consumers live outside this crate (baofeng::protocol module not yet re-wired, see #80-follow-up)"
+)]
 pub struct HardwareSerialPort {
-    INNER: Box<dyn serialport::SerialPort>,
+    inner: Box<dyn serialport::SerialPort>,
 }
 
 #[cfg(feature = "hardware-serial")]
 impl HardwareSerialPort {
     /// Open a serial port at the given path with the specified baud rate.
+    ///
+    /// # Errors
+    ///
+    /// Returns `io::Error` if the port cannot be opened at the requested baud
+    /// rate (e.g. device missing, busy, or permission denied).
+    #[allow(
+        dead_code,
+        reason = "public hardware adapter; consumers live outside this crate (baofeng::protocol module not yet re-wired, see #80-follow-up)"
+    )]
     pub fn open(path: &str, baud_rate: u32) -> io::Result<Self> {
         let port = serialport::new(path, baud_rate)
             .data_bits(serialport::DataBits::Eight)
@@ -62,33 +75,31 @@ impl HardwareSerialPort {
             .flow_control(serialport::FlowControl::None)
             .timeout(Duration::from_millis(1500))
             .open()
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-        Ok(Self { INNER: port })
+            .map_err(io::Error::other)?;
+        Ok(Self { inner: port })
     }
 }
 
 #[cfg(feature = "hardware-serial")]
 impl SerialPort for HardwareSerialPort {
     fn write_all(&mut self, buf: &[u8]) -> io::Result<()> {
-        io::Write::write_all(&mut self.INNER, buf)
+        io::Write::write_all(&mut self.inner, buf)
     }
 
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        io::Read::read(&mut self.INNER, buf)
+        io::Read::read(&mut self.inner, buf)
     }
 
     fn read_exact(&mut self, buf: &mut [u8]) -> io::Result<()> {
-        io::Read::read_exact(&mut self.INNER, buf)
+        io::Read::read_exact(&mut self.inner, buf)
     }
 
     fn set_timeout(&mut self, duration: Duration) -> io::Result<()> {
-        self.INNER
-            .set_timeout(duration)
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
+        self.inner.set_timeout(duration).map_err(io::Error::other)
     }
 
     fn flush(&mut self) -> io::Result<()> {
-        io::Write::flush(&mut self.INNER)
+        io::Write::flush(&mut self.inner)
     }
 }
 
@@ -134,11 +145,19 @@ pub mod mock {
         }
 
         /// Queue response bytes that will be returned by subsequent reads.
+        #[allow(
+            dead_code,
+            reason = "public test API consumed by baofeng::protocol tests; module not yet re-wired (see #80-follow-up)"
+        )]
         pub fn enqueue_response(&mut self, data: &[u8]) {
             self.rx_queue.extend(data);
         }
 
         /// Make the next read return an error of the given kind.
+        #[allow(
+            dead_code,
+            reason = "public test API consumed by baofeng::protocol tests; module not yet re-wired (see #80-follow-up)"
+        )]
         pub fn inject_error(&mut self, kind: io::ErrorKind) {
             self.pending_error = Some(kind);
         }
