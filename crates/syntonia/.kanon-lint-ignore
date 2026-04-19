@@ -1,0 +1,11 @@
+# Rules to skip for specific paths in this crate.
+# Format: RULE/name:path/glob — gitignore-style glob relative to crate root.
+# Every entry requires a WHY: comment. No blanket category ignores.
+
+# WHY: syntonia exposes the radio frequency plan model (`Channel`,
+# `FrequencyPlan`, `ToneMode`, `CtcssTone`, baofeng/yaesu protocol types,
+# etc.) via lib.rs `pub use`. These types and their methods need `pub` at
+# definition sites for the re-exports to resolve (Rust E0365/E0624). The
+# RUST/pub-visibility rule exempts lib.rs/mod.rs but does not follow
+# `pub use` chains into defining files.
+RUST/pub-visibility:src/**

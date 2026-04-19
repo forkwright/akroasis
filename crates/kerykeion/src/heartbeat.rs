@@ -18,7 +18,7 @@ use crate::connection::MeshConnection;
 use crate::proto::ToRadio;
 
 /// Interval between heartbeat transmissions.
-pub const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(30);
+pub(crate) const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(30);
 
 /// Run the heartbeat loop until the `token` is cancelled.
 ///

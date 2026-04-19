@@ -1,0 +1,10 @@
+# Rules to skip for specific paths in this crate.
+# Format: RULE/name:path/glob — gitignore-style glob relative to crate root.
+# Every entry requires a WHY: comment. No blanket category ignores.
+
+# WHY: semaino exposes `SemainoPipeline`, `AlertPipeline`, `Convergence`,
+# `SignalAggregator`, etc. via lib.rs `pub use`. Item-definition files
+# (alert.rs, aggregator.rs, convergence.rs, pipeline.rs) must expose
+# `pub` for those re-exports. The RUST/pub-visibility rule's lib.rs/mod.rs
+# exemption does not follow `pub use` chains into defining files.
+RUST/pub-visibility:src/**

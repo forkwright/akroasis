@@ -9,16 +9,16 @@ use crate::types::PowerLevel;
 // ── Magic byte sequences ────────────────────────────────────────────────────
 
 /// Magic bytes for UV-5R firmware version 2.91+ and most clones.
-pub const MAGIC_UV5R_291: [u8; 7] = [0x50, 0xBB, 0xFF, 0x20, 0x12, 0x04, 0x11];
+pub(crate) const MAGIC_UV5R_291: [u8; 7] = [0x50, 0xBB, 0xFF, 0x20, 0x12, 0x04, 0x11];
 
 /// Magic bytes for the original UV-5R (pre-2.91 firmware).
-pub const MAGIC_UV5R_ORIG: [u8; 7] = [0x50, 0xBB, 0xFF, 0x20, 0x12, 0x01, 0x11];
+pub(crate) const MAGIC_UV5R_ORIG: [u8; 7] = [0x50, 0xBB, 0xFF, 0x20, 0x12, 0x01, 0x11];
 
 /// Magic bytes for BF-F8HP (shared with BF-A58).
-pub const MAGIC_BF_F8HP: [u8; 7] = [0x50, 0xBB, 0xFF, 0x20, 0x14, 0x04, 0x13];
+pub(crate) const MAGIC_BF_F8HP: [u8; 7] = [0x50, 0xBB, 0xFF, 0x20, 0x14, 0x04, 0x13];
 
 /// All magic byte sequences to try during auto-detection, in priority order.
-pub const MAGIC_SETS: &[[u8; 7]] = &[MAGIC_UV5R_291, MAGIC_BF_F8HP, MAGIC_UV5R_ORIG];
+pub(crate) const MAGIC_SETS: &[[u8; 7]] = &[MAGIC_UV5R_291, MAGIC_BF_F8HP, MAGIC_UV5R_ORIG];
 
 // ── RadioVariant ─────────────────────────────────────────────────────────────
 
@@ -114,7 +114,7 @@ impl VariantConfig {
 /// Two power levels. Bit value 2 (Mid) maps to High since this radio
 /// has no mid setting — CHIRP images from tri-power radios may contain it.
 #[must_use]
-pub fn uv5r_config() -> VariantConfig {
+pub(crate) fn uv5r_config() -> VariantConfig {
     VariantConfig {
         variant: RadioVariant::Uv5r,
         magic: MAGIC_UV5R_291,
@@ -147,7 +147,7 @@ pub fn uv5r_config() -> VariantConfig {
 
 /// Configuration for the original UV-5R (pre-2.91 firmware).
 #[must_use]
-pub fn uv5r_original_config() -> VariantConfig {
+pub(crate) fn uv5r_original_config() -> VariantConfig {
     VariantConfig {
         variant: RadioVariant::Uv5rOriginal,
         magic: MAGIC_UV5R_ORIG,
@@ -160,7 +160,7 @@ pub fn uv5r_original_config() -> VariantConfig {
 /// Three power levels (8W / 4W / 1W). Has auxiliary EEPROM block
 /// that requires a warm-up read before access.
 #[must_use]
-pub fn bf_f8hp_config() -> VariantConfig {
+pub(crate) fn bf_f8hp_config() -> VariantConfig {
     VariantConfig {
         variant: RadioVariant::BfF8hp,
         magic: MAGIC_BF_F8HP,
@@ -194,7 +194,7 @@ pub fn bf_f8hp_config() -> VariantConfig {
 /// Assumed to be a BF-F8HP variant with higher power output.
 /// Power values are unverified — needs hardware testing.
 #[must_use]
-pub fn uv5rm_plus_config() -> VariantConfig {
+pub(crate) fn uv5rm_plus_config() -> VariantConfig {
     VariantConfig {
         variant: RadioVariant::Uv5rmPlus,
         magic: MAGIC_BF_F8HP,
@@ -272,7 +272,7 @@ const BF_F8HP_PREFIXES: &[&str] = &["BFP3V3 F", "N5R-3", "N5R3", "F5R3", "BFT"];
 ///
 /// Returns [`VariantError::UnknownVariant`] if the ident does not match any
 /// known prefix, including the raw bytes as hex for debugging.
-pub fn identify_variant(ident: &RadioIdent) -> Result<VariantConfig, VariantError> {
+pub(crate) fn identify_variant(ident: &RadioIdent) -> Result<VariantConfig, VariantError> {
     let prefix = ident.firmware_prefix();
 
     for &pfx in BF_F8HP_PREFIXES {

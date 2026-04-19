@@ -19,7 +19,7 @@ pub enum FileFormat {
 }
 
 /// Detects file format FROM the extension.
-pub fn detect_format(path: &Path) -> Result<FileFormat, RadioError> {
+pub(crate) fn detect_format(path: &Path) -> Result<FileFormat, RadioError> {
     let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
 
     match ext {
@@ -34,7 +34,7 @@ pub fn detect_format(path: &Path) -> Result<FileFormat, RadioError> {
 }
 
 /// Runs the import subcommand.
-pub fn run(file: &Path) -> Result<(), RadioError> {
+pub(crate) fn run(file: &Path) -> Result<(), RadioError> {
     let format = detect_format(file)?;
     let plan = import_plan(file, format)?;
 
@@ -59,7 +59,7 @@ pub fn run(file: &Path) -> Result<(), RadioError> {
 }
 
 /// Imports a plan FROM a file in the detected format.
-pub fn import_plan(path: &Path, format: FileFormat) -> Result<FrequencyPlan, RadioError> {
+pub(crate) fn import_plan(path: &Path, format: FileFormat) -> Result<FrequencyPlan, RadioError> {
     if format == FileFormat::BinaryImage {
         return Err(RadioError::HardwareNotAvailable);
     }
@@ -71,7 +71,7 @@ pub fn import_plan(path: &Path, format: FileFormat) -> Result<FrequencyPlan, Rad
 }
 
 /// Imports a plan FROM a string in the given format.
-pub fn import_from_string(
+pub(crate) fn import_from_string(
     content: &str,
     format: FileFormat,
     source_path: &Path,
@@ -99,7 +99,7 @@ pub fn import_from_string(
     clippy::too_many_lines,
     reason = "flat CSV-column parsing; splitting into helpers would fragment a linear schema decode without clarity gain"
 )]
-pub fn parse_chirp_csv(content: &str) -> Result<FrequencyPlan, RadioError> {
+pub(crate) fn parse_chirp_csv(content: &str) -> Result<FrequencyPlan, RadioError> {
     let mut channels = Vec::new();
     let mut lines = content.lines();
 

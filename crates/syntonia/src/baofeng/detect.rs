@@ -16,7 +16,7 @@ use super::variant::{MAGIC_SETS, RadioIdent, VariantConfig, VariantError, identi
 /// Implementations must handle baud rate, timeout, and framing.
 /// This trait exists to enable mock-based testing of the detection flow
 /// without requiring actual hardware.
-pub trait SerialPort {
+pub(crate) trait SerialPort {
     /// Write bytes to the serial port.
     ///
     /// # Errors
@@ -90,7 +90,7 @@ pub enum DetectError {
 /// - [`DetectError::VariantIdentification`] if the radio responds but has
 ///   an unrecognized firmware ident
 /// - [`DetectError::SerialIo`] on I/O errors
-pub fn auto_detect(port: &mut dyn SerialPort) -> Result<(RadioIdent, VariantConfig), DetectError> {
+pub(crate) fn auto_detect(port: &mut dyn SerialPort) -> Result<(RadioIdent, VariantConfig), DetectError> {
     for &magic in MAGIC_SETS {
         match try_magic(port, magic) {
             Ok((ident, config)) => return Ok((ident, config)),

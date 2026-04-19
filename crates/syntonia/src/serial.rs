@@ -51,7 +51,7 @@ pub trait SerialPort: Send {
     dead_code,
     reason = "public hardware adapter; consumers live outside this crate (baofeng::protocol module not yet re-wired, see #80-follow-up)"
 )]
-pub struct HardwareSerialPort {
+pub(crate) struct HardwareSerialPort {
     inner: Box<dyn serialport::SerialPort>,
 }
 
@@ -67,7 +67,7 @@ impl HardwareSerialPort {
         dead_code,
         reason = "public hardware adapter; consumers live outside this crate (baofeng::protocol module not yet re-wired, see #80-follow-up)"
     )]
-    pub fn open(path: &str, baud_rate: u32) -> io::Result<Self> {
+    pub(crate) fn open(path: &str, baud_rate: u32) -> io::Result<Self> {
         let port = serialport::new(path, baud_rate)
             .data_bits(serialport::DataBits::Eight)
             .parity(serialport::Parity::None)

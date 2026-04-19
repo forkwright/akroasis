@@ -30,7 +30,7 @@ pub struct GridCell(pub i32, pub i32);
 /// The truncation is intentional: coordinates within the same cell map to the
 /// same integer pair regardless of sub-cell offset.
 #[must_use]
-pub fn quantize(coords: &Coordinates, resolution: u32) -> GridCell {
+pub(crate) fn quantize(coords: &Coordinates, resolution: u32) -> GridCell {
     // WHY: cast from f64 to i32 is intentional; lat * 10_000 ≤ 900_000 and
     // lon * 10_000 ≤ 1_800_000, both within i32 range. The floor truncation
     // defines the grid cell lower-left corner.

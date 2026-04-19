@@ -1,0 +1,11 @@
+# Rules to skip for specific paths in this crate.
+# Format: RULE/name:path/glob — gitignore-style glob relative to crate root.
+# Every entry requires a WHY: comment. No blanket category ignores.
+
+# WHY: kryphos is the vault/crypto library. `Vault`, `VaultKey`, `SigningKey`,
+# `InstallationIdentity`, etc. are re-exported from lib.rs and consumed by
+# akroasis and integration tests (`tests/tamper_log_signing.rs`). Definition
+# files must keep `pub` on those types and their methods for the re-exports
+# to resolve (Rust E0365/E0624). The RUST/pub-visibility rule's lib.rs/mod.rs
+# exemption does not reach into the defining files.
+RUST/pub-visibility:src/**

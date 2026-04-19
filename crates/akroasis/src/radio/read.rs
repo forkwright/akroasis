@@ -8,7 +8,7 @@ use super::progress;
 use super::{Hardware, resolve_target};
 
 /// Runs the read subcommand.
-pub fn run(port: Option<&str>, hw: &dyn Hardware) -> Result<(), RadioError> {
+pub(crate) fn run(port: Option<&str>, hw: &dyn Hardware) -> Result<(), RadioError> {
     let target = resolve_target(port, hw)?;
     let mut session = hw.open(&target.port)?;
 
@@ -37,7 +37,7 @@ pub fn run(port: Option<&str>, hw: &dyn Hardware) -> Result<(), RadioError> {
 }
 
 /// Formats a channel table for display.
-pub fn print_channel_table(channels: &[&Channel]) {
+pub(crate) fn print_channel_table(channels: &[&Channel]) {
     let mut table = Table::new();
     table.set_content_arrangement(ContentArrangement::Dynamic);
     table.set_header(vec![
@@ -65,7 +65,7 @@ pub fn print_channel_table(channels: &[&Channel]) {
 }
 
 /// Formats a channel table from owned channel references (for import display).
-pub fn print_channel_table_owned(channels: &[Channel]) {
+pub(crate) fn print_channel_table_owned(channels: &[Channel]) {
     let refs: Vec<&Channel> = channels.iter().collect();
     print_channel_table(&refs);
 }

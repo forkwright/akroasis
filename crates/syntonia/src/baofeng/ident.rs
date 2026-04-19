@@ -23,7 +23,7 @@ impl RadioIdent {
     /// If the response is 12 bytes it is collapsed to 8:
     /// `[resp[0], resp[3], resp[5], resp[7], resp[8], resp[9], resp[10], resp[11]]`.
     /// Eight-byte responses are used as-is.
-    pub(crate) fn from_raw(raw: &[u8]) -> Option<Self> {
+    pub fn from_raw(raw: &[u8]) -> Option<Self> {
         let normalized = match raw.len() {
             8 => {
                 let mut n = [0u8; 8];

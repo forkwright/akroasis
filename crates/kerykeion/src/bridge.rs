@@ -13,7 +13,7 @@ use crate::error::Error;
 use crate::types::NodeNum;
 
 /// Interval between gateway health checks.
-pub const HEALTH_CHECK_INTERVAL: Duration = Duration::from_secs(60);
+pub(crate) const HEALTH_CHECK_INTERVAL: Duration = Duration::from_secs(60);
 
 /// Response time threshold above which a gateway is considered degraded.
 const DEGRADED_RESPONSE_THRESHOLD: Duration = Duration::from_secs(5);

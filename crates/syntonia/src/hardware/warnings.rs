@@ -63,7 +63,7 @@ impl fmt::Display for HardwareWarning {
 
 /// Collect warnings from a cable scan result.
 #[must_use]
-pub fn collect_scan_warnings(cables: &[UsbCable]) -> Vec<HardwareWarning> {
+pub(crate) fn collect_scan_warnings(cables: &[UsbCable]) -> Vec<HardwareWarning> {
     let mut warnings = Vec::new();
     for cable in cables {
         if cable.is_clone == Some(true) {
@@ -84,7 +84,7 @@ pub fn collect_scan_warnings(cables: &[UsbCable]) -> Vec<HardwareWarning> {
 
 /// Collect warnings from radio detection results.
 #[must_use]
-pub fn collect_detection_warnings(detected: &[DetectedRadio]) -> Vec<HardwareWarning> {
+pub(crate) fn collect_detection_warnings(detected: &[DetectedRadio]) -> Vec<HardwareWarning> {
     let mut warnings = Vec::new();
     if detected.len() > 1 {
         warnings.push(HardwareWarning::MultipleRadiosDetected {
@@ -96,7 +96,7 @@ pub fn collect_detection_warnings(detected: &[DetectedRadio]) -> Vec<HardwareWar
 
 /// Create a port-access-denied warning.
 #[must_use]
-pub fn port_access_denied(port: &str) -> HardwareWarning {
+pub(crate) fn port_access_denied(port: &str) -> HardwareWarning {
     HardwareWarning::PortAccessDenied {
         port: port.to_string(),
     }

@@ -1,0 +1,13 @@
+# Rules to skip for specific paths in this crate.
+# Format: RULE/name:path/glob — gitignore-style glob relative to crate root.
+# Every entry requires a WHY: comment. No blanket category ignores.
+
+# WHY: kerykeion is a library crate. Items declared `pub` inside src/*.rs are
+# surface of the crate's external API — they are re-exported from `lib.rs`
+# via `pub use` and consumed by sibling crates (`akroasis`, `semaino`) and
+# downstream users. Downgrading to `pub(crate)` breaks `pub use` re-exports
+# (Rust E0365/E0624). Methods on re-exported types are likewise part of
+# that public surface. Bare `pub` is correct here; the RUST/pub-visibility
+# rule's exemption for lib.rs/mod.rs does not extend to the item-definition
+# files those `pub use` statements point at.
+RUST/pub-visibility:src/**

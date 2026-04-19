@@ -24,6 +24,10 @@ cast_possible_truncation = "allow"
 cast_precision_loss = "allow"
 module_name_repetitions = "allow"
 must_use_candidate = "allow"
+# WHY: pub(crate) inside a binary crate's private modules (e.g. akroasis
+# main.rs with `mod cli;`) satisfies RUST/pub-visibility while this nursery
+# lint calls it redundant. The kanon standard wins.
+redundant_pub_crate = "allow"
 
 [workspace.dependencies]
 # Serialization

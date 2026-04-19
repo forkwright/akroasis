@@ -217,7 +217,10 @@ impl AlertPipeline {
 /// Returns `None` when the score is `Normal` or `InsufficientData` — neither
 /// warrants an alert.
 #[must_use]
-pub fn classify(score: &AnomalyScore, convergence: Option<&Convergence>) -> Option<AlertSeverity> {
+pub(crate) fn classify(
+    score: &AnomalyScore,
+    convergence: Option<&Convergence>,
+) -> Option<AlertSeverity> {
     match score {
         AnomalyScore::Anomalous(_) => {
             if convergence.is_some_and(|c| c.domain_count >= 3) {

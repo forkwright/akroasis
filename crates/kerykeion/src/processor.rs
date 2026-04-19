@@ -37,12 +37,12 @@ struct Neighbor {
 
 /// Meshtastic port numbers for decoded `Data` payloads.
 mod portnum {
-    pub const POSITION_APP: i32 = 3;
-    pub const NODEINFO_APP: i32 = 4;
-    pub const ROUTING_APP: i32 = 5;
-    pub const TELEMETRY_APP: i32 = 67;
-    pub const TRACEROUTE_APP: i32 = 70;
-    pub const NEIGHBORINFO_APP: i32 = 71;
+    pub(super) const POSITION_APP: i32 = 3;
+    pub(super) const NODEINFO_APP: i32 = 4;
+    pub(super) const ROUTING_APP: i32 = 5;
+    pub(super) const TELEMETRY_APP: i32 = 67;
+    pub(super) const TRACEROUTE_APP: i32 = 70;
+    pub(super) const NEIGHBORINFO_APP: i32 = 71;
 }
 
 /// Central processor that dispatches decoded packets to `NodeDb`, `MeshTopology`,

@@ -11,7 +11,11 @@ use super::progress;
 use super::{Hardware, resolve_target};
 
 /// Runs the program subcommand.
-pub fn run(port: Option<&str>, plan_path: &Path, hw: &dyn Hardware) -> Result<(), RadioError> {
+pub(crate) fn run(
+    port: Option<&str>,
+    plan_path: &Path,
+    hw: &dyn Hardware,
+) -> Result<(), RadioError> {
     let plan = load_plan(plan_path)?;
 
     let target = resolve_target(port, hw)?;
@@ -95,7 +99,7 @@ pub fn run(port: Option<&str>, plan_path: &Path, hw: &dyn Hardware) -> Result<()
 }
 
 /// Loads a frequency plan from a file, detecting format by extension.
-pub fn load_plan(path: &Path) -> Result<FrequencyPlan, RadioError> {
+pub(crate) fn load_plan(path: &Path) -> Result<FrequencyPlan, RadioError> {
     let content = std::fs::read_to_string(path).context(ReadFileSnafu {
         path: path.to_path_buf(),
     })?;

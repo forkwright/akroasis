@@ -4,7 +4,7 @@ use super::errors::RadioError;
 use super::{DetectedRadio, Hardware};
 
 /// Runs the detect subcommand.
-pub fn run(hw: &dyn Hardware) -> Result<(), RadioError> {
+pub(crate) fn run(hw: &dyn Hardware) -> Result<(), RadioError> {
     let radios = hw.detect_radios()?;
 
     if radios.is_empty() {
@@ -20,7 +20,7 @@ pub fn run(hw: &dyn Hardware) -> Result<(), RadioError> {
 }
 
 /// Formats and prints detected radios.
-pub fn print_detected(radios: &[DetectedRadio]) {
+pub(crate) fn print_detected(radios: &[DetectedRadio]) {
     println!("Detected radios:");
     for (i, radio) in radios.iter().enumerate() {
         let firmware_info = if radio.firmware.is_empty() {

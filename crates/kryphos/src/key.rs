@@ -11,10 +11,10 @@ use ed25519_dalek::Signer;
 use crate::error::{CryptoError, KeyError};
 
 /// ChaCha20-Poly1305 symmetric key length in bytes.
-pub const VAULT_KEY_LEN: usize = 32;
+pub(crate) const VAULT_KEY_LEN: usize = 32;
 
 /// Ed25519 secret key length in bytes.
-pub const SIGNING_KEY_LEN: usize = 32;
+pub(crate) const SIGNING_KEY_LEN: usize = 32;
 
 /// Ed25519 public key length in bytes.
 pub const VERIFYING_KEY_LEN: usize = 32;

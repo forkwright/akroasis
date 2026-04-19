@@ -8,14 +8,14 @@ use crate::vault::VaultCommand;
 
 #[derive(Parser)]
 #[command(name = "akroasis", version, about = "ἀκρόασις — attentive reception")]
-pub struct Cli {
+pub(crate) struct Cli {
     #[command(subcommand)]
     pub command: Command,
 }
 
 /// Top-level subcommands.
 #[derive(Subcommand)]
-pub enum Command {
+pub(crate) enum Command {
     /// Radio management — frequency plans, programming, vehicle telemetry
     Radio(RadioArgs),
     /// Mesh networking — Meshtastic, topology, DTN, PACE communications
@@ -48,21 +48,21 @@ pub enum Command {
 
 /// Radio subcommand arguments.
 #[derive(clap::Args)]
-pub struct RadioArgs {
+pub(crate) struct RadioArgs {
     #[command(subcommand)]
     pub command: RadioCommand,
 }
 
 /// Mesh subcommand arguments.
 #[derive(clap::Args)]
-pub struct MeshArgs {
+pub(crate) struct MeshArgs {
     #[command(subcommand)]
     pub command: MeshCommand,
 }
 
 /// Vault subcommand arguments.
 #[derive(clap::Args)]
-pub struct VaultArgs {
+pub(crate) struct VaultArgs {
     #[command(subcommand)]
     pub command: VaultCommand,
 }

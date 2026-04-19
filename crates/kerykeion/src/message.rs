@@ -190,7 +190,7 @@ impl MessageBuilder {
     ///
     /// Returns [`Error::Encryption`] if encryption fails.
     #[cfg(test)]
-    pub(crate) fn build_with_id(
+    pub fn build_with_id(
         self,
         from: NodeNum,
         psk: &[u8],

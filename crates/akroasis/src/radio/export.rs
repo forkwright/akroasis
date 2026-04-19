@@ -11,7 +11,7 @@ use super::progress;
 use super::{ExportFormat, Hardware, resolve_target};
 
 /// Runs the export subcommand.
-pub fn run(
+pub(crate) fn run(
     port: Option<&str>,
     format: &ExportFormat,
     output: Option<&Path>,
@@ -56,7 +56,10 @@ pub fn run(
 }
 
 /// Serializes a plan to the requested format.
-pub fn serialize_plan(plan: &FrequencyPlan, format: &ExportFormat) -> Result<String, RadioError> {
+pub(crate) fn serialize_plan(
+    plan: &FrequencyPlan,
+    format: &ExportFormat,
+) -> Result<String, RadioError> {
     match format {
         ExportFormat::Toml => plan.to_toml().context(SyntoniaSnafu),
         ExportFormat::Json => plan.to_json().context(SyntoniaSnafu),
@@ -70,7 +73,7 @@ pub fn serialize_plan(plan: &FrequencyPlan, format: &ExportFormat) -> Result<Str
 // ---------------------------------------------------------------------------
 
 /// Exports a plan as a simple CSV with the most useful fields.
-pub fn export_native_csv(plan: &FrequencyPlan) -> String {
+pub(crate) fn export_native_csv(plan: &FrequencyPlan) -> String {
     let mut out = String::from("Index,Name,RX Freq (MHz),TX Freq (MHz),Tone,Power\n");
     for ch in &plan.channels {
         let tx = ch.tx_freq.unwrap_or(ch.rx_freq);
@@ -97,7 +100,7 @@ const CHIRP_HEADER: &str = "Location,Name,Frequency,Duplex,Offset,Tone,rToneFreq
     URCALL,RPT1CALL,RPT2CALL,DVCODE";
 
 /// Exports a plan as a CHIRP-compatible 20-column CSV.
-pub fn export_chirp_csv(plan: &FrequencyPlan) -> String {
+pub(crate) fn export_chirp_csv(plan: &FrequencyPlan) -> String {
     let mut out = String::from(CHIRP_HEADER);
     out.push('\n');
 

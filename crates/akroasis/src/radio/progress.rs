@@ -3,7 +3,7 @@
 use indicatif::{ProgressBar, ProgressStyle};
 
 /// Creates a progress bar for EEPROM download (radio → host).
-pub fn download_bar(total_blocks: u64) -> ProgressBar {
+pub(crate) fn download_bar(total_blocks: u64) -> ProgressBar {
     let pb = ProgressBar::new(total_blocks);
     let style = ProgressStyle::with_template(
         "{spinner:.green} Reading EEPROM [{bar:40.cyan/blue}] {pos}/{len} blocks",
@@ -15,7 +15,7 @@ pub fn download_bar(total_blocks: u64) -> ProgressBar {
 }
 
 /// Creates a progress bar for EEPROM upload (host → radio).
-pub fn upload_bar(total_blocks: u64) -> ProgressBar {
+pub(crate) fn upload_bar(total_blocks: u64) -> ProgressBar {
     let pb = ProgressBar::new(total_blocks);
     let style = ProgressStyle::with_template(
         "{spinner:.green} Writing EEPROM [{bar:40.cyan/blue}] {pos}/{len} blocks",
