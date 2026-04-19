@@ -258,8 +258,7 @@ impl GatewayBridge {
         // WHY: decay packet loss toward zero on successful response.
         gw.packet_loss *= 0.5;
 
-        // SAFETY: degraded_response_threshold() returns Duration with ms value that fits any f64 exactly
-        let threshold_ms = self.config.degraded_response_threshold().as_millis() as f64;
+        let threshold_ms = self.config.degraded_response_threshold().as_millis() as f64; // SAFETY: degraded_response_threshold() returns Duration with ms value that fits any f64 exactly
         let new_health =
             if response_ms > threshold_ms || gw.packet_loss > self.config.degraded_loss_threshold {
                 GatewayHealth::Degraded {

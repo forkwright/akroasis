@@ -1,0 +1,36 @@
+# Forge CI pipeline for forkwright/akroasis.
+#
+# Mirrors the hardcoded default Rust gate (fmt → check → clippy → nextest
+# → lint) but pins per-stage build + test concurrency to 8. Without this
+# cap, cargo defaults to num_cpus (64 on this Threadripper) and parallel
+# rustc + nextest processes peak well over 100GB of RSS — enough to OOM
+# menos when any other fleet work is running. 8 is the budget that keeps
+# a single CI run under ~25GB peak, low enough that serial drains don't
+# OOM even with aletheia.service and the dispatch fleet resident.
+#
+# Keep in sync with `crates/archeion/src/ci_config.rs::default_rust_gate`
+# when the upstream default changes — only the `--jobs` / `--test-threads`
+# flags should differ.
+
+[pipeline]
+stages = ["cargo fmt", "cargo check", "cargo clippy", "cargo nextest", "kanon lint"]
+
+[stages."cargo fmt"]
+cmd = "cargo fmt --all -- --check"
+timeout_secs = 300
+
+[stages."cargo check"]
+cmd = "cargo check --workspace --all-targets --jobs 8"
+timeout_secs = 900
+
+[stages."cargo clippy"]
+cmd = "cargo clippy --workspace --all-targets --jobs 8 -- -D warnings"
+timeout_secs = 900
+
+[stages."cargo nextest"]
+cmd = "cargo nextest run --workspace --build-jobs 8 --test-threads 8"
+timeout_secs = 1800
+
+[stages."kanon lint"]
+cmd = "kanon lint . --summary"
+timeout_secs = 600
