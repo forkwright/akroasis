@@ -27,7 +27,7 @@ pub use id::{DeviceId, EntityId, FrequencyId, SignalId};
 pub use power::Power;
 pub use signal::{Confidence, GeoSignal, SignalKind};
 pub use tamper_log::{
-    ChainStatus, LogEntry, LogEntryKind, TamperLog, TamperLogError, VerificationResult,
-    verify_chain,
+    ChainStatus, DEFAULT_MAX_FILE_BYTES, LogEntry, LogEntryKind, MAX_ENTRY_BYTES, TamperLog,
+    TamperLogConfig, TamperLogError, VerificationResult, verify_chain,
 };
 pub use timestamp::{Timestamp, TimestampError};

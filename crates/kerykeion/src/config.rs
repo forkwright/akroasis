@@ -143,10 +143,9 @@ pub struct TopologyConfig {
     pub snr_ceiling: f32,
 }
 
-#[allow(
-    clippy::unnecessary_wraps,
+#[expect(
     clippy::missing_const_for_fn,
-    reason = "serde default functions cannot be const"
+    reason = "serde(default = \"...\") requires a named fn pointer, not a const item"
 )]
 fn default_snr_ceiling() -> f32 {
     30.0
@@ -564,13 +563,13 @@ neighbor_info_enabled = true
         // WHY: agent-authored config may only override a handful of fields;
         // unspecified ones must fall through to defaults so the agent does
         // not need to know the whole schema.
-        let partial = r#"
+        let partial = r"
 [outbound]
 max_inflight = 2
 
 [bridge]
 offline_check_threshold = 9
-"#;
+";
         #[expect(clippy::unwrap_used, reason = "test-only: known-good TOML")]
         let parsed: MeshConfig = toml::from_str(partial).unwrap();
 

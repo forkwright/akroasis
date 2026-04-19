@@ -23,9 +23,39 @@ use snafu::{ResultExt, Snafu};
 use crate::{EntityId, SignalId};
 
 /// Maximum allowed entry payload size (16 MiB).
-const MAX_ENTRY_BYTES: u64 = 16 * 1024 * 1024;
+///
+/// This is a sanity limit that bounds memory allocation during recovery
+/// and decode, not a tunable: an entry larger than this almost certainly
+/// indicates corruption or a malicious write. Exposed publicly so callers
+/// can validate payloads before attempting [`TamperLog::append`].
+pub const MAX_ENTRY_BYTES: u64 = 16 * 1024 * 1024;
+
 /// Default rotation threshold (100 MiB).
-const DEFAULT_MAX_FILE_BYTES: u64 = 100 * 1024 * 1024;
+///
+/// Override via [`TamperLogConfig::max_file_bytes`] +
+/// [`TamperLog::open_with_config`], or via the builder-style
+/// [`TamperLog::with_max_file_bytes`].
+pub const DEFAULT_MAX_FILE_BYTES: u64 = 100 * 1024 * 1024;
+
+/// Behavioral tuning for [`TamperLog`].
+///
+/// Currently controls rotation only; future additions (fsync policy,
+/// compression, retention) will land here.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+pub struct TamperLogConfig {
+    /// Rotation threshold in bytes. When `bytes_written` exceeds this,
+    /// the current file is renamed and a fresh log is opened.
+    pub max_file_bytes: u64,
+}
+
+impl Default for TamperLogConfig {
+    fn default() -> Self {
+        Self {
+            max_file_bytes: DEFAULT_MAX_FILE_BYTES,
+        }
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Error type
@@ -378,6 +408,24 @@ impl TamperLog {
     /// [`TamperLogError::CborDecode`] / [`TamperLogError::Corrupted`] if an
     /// existing file cannot be parsed.
     pub fn open(path: impl AsRef<Path>) -> Result<Self, TamperLogError> {
+        Self::open_with_config(path, &TamperLogConfig::default())
+    }
+
+    /// Opens or creates a log file at `path` with the supplied tuning.
+    ///
+    /// Equivalent to [`Self::open`] but reads all behavioral knobs from
+    /// the [`TamperLogConfig`]. This is the agent-preferred entry point:
+    /// given a deserialized config, everything follows.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TamperLogError::Io`] on filesystem errors, or
+    /// [`TamperLogError::CborDecode`] / [`TamperLogError::Corrupted`] if an
+    /// existing file cannot be parsed.
+    pub fn open_with_config(
+        path: impl AsRef<Path>,
+        config: &TamperLogConfig,
+    ) -> Result<Self, TamperLogError> {
         let path = path.as_ref().to_owned();
 
         let (prev_hash, sequence, bytes_written) = Self::recover_state(&path)?;
@@ -394,7 +442,7 @@ impl TamperLog {
             prev_hash,
             sequence,
             bytes_written,
-            max_file_bytes: DEFAULT_MAX_FILE_BYTES,
+            max_file_bytes: config.max_file_bytes,
         })
     }
 

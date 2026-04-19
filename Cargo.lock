@@ -1187,6 +1187,7 @@ dependencies = [
  "serde_json",
  "snafu",
  "tempfile",
+ "toml 1.1.2+spec-1.1.0",
  "tracing",
  "ulid",
 ]
@@ -1882,8 +1883,10 @@ version = "0.1.11"
 dependencies = [
  "jiff",
  "koinon",
+ "serde",
  "snafu",
  "tokio",
+ "toml 1.1.2+spec-1.1.0",
  "tracing",
  "ulid",
 ]

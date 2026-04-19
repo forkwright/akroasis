@@ -176,10 +176,10 @@ mod tests {
     fn syntonia_config_partial_toml_uses_defaults() {
         // WHY: an agent should be able to override just one field without
         // specifying the full tree — serde(default) makes this work.
-        let partial = r#"
+        let partial = r"
 [baofeng_timing]
 max_retries = 10
-"#;
+";
         #[expect(clippy::unwrap_used, reason = "test-only: known-good TOML")]
         let parsed: SyntoniaConfig = toml::from_str(partial).unwrap();
         assert_eq!(parsed.baofeng_timing.max_retries, 10);
