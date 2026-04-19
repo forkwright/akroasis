@@ -348,11 +348,14 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn handshake_timeout_on_incomplete_dump() {
         // Spawn INTO a task so we can advance time while the handshake awaits recv().
-        let handle = tokio::spawn(async {
-            let mut db = NodeDb::new();
-            let mut conn = StallMock;
-            handshake(&mut conn, &mut db).await
-        }.instrument(tracing::info_span!("spawned_task")));
+        let handle = tokio::spawn(
+            async {
+                let mut db = NodeDb::new();
+                let mut conn = StallMock;
+                handshake(&mut conn, &mut db).await
+            }
+            .instrument(tracing::info_span!("spawned_task")),
+        );
 
         // The handshake has a 10 s internal timeout; advance past it.
         tokio::time::advance(Duration::from_secs(11)).await;

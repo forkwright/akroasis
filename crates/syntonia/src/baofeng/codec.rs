@@ -87,8 +87,18 @@ pub fn decode_channel(image: &MemoryImage, index: u8) -> Result<Option<Channel>,
         return Ok(None);
     }
 
-    let rx_bytes: [u8; 4] = [ch.first().copied().unwrap_or_default(), ch.get(1).copied().unwrap_or_default(), ch.get(2).copied().unwrap_or_default(), ch.get(3).copied().unwrap_or_default()];
-    let tx_bytes: [u8; 4] = [ch.get(4).copied().unwrap_or_default(), ch.get(5).copied().unwrap_or_default(), ch.get(6).copied().unwrap_or_default(), ch.get(7).copied().unwrap_or_default()];
+    let rx_bytes: [u8; 4] = [
+        ch.first().copied().unwrap_or_default(),
+        ch.get(1).copied().unwrap_or_default(),
+        ch.get(2).copied().unwrap_or_default(),
+        ch.get(3).copied().unwrap_or_default(),
+    ];
+    let tx_bytes: [u8; 4] = [
+        ch.get(4).copied().unwrap_or_default(),
+        ch.get(5).copied().unwrap_or_default(),
+        ch.get(6).copied().unwrap_or_default(),
+        ch.get(7).copied().unwrap_or_default(),
+    ];
 
     let rx_hz =
         bcd::lbcd4_decode(rx_bytes).map_err(|source| CodecError::BcdDecode { index, source })?;
@@ -113,8 +123,14 @@ pub fn decode_channel(image: &MemoryImage, index: u8) -> Result<Option<Channel>,
         }
     };
 
-    let rxtone_raw = u16::from_le_bytes([ch.get(8).copied().unwrap_or_default(), ch.get(9).copied().unwrap_or_default()]);
-    let txtone_raw = u16::from_le_bytes([ch.get(10).copied().unwrap_or_default(), ch.get(11).copied().unwrap_or_default()]);
+    let rxtone_raw = u16::from_le_bytes([
+        ch.get(8).copied().unwrap_or_default(),
+        ch.get(9).copied().unwrap_or_default(),
+    ]);
+    let txtone_raw = u16::from_le_bytes([
+        ch.get(10).copied().unwrap_or_default(),
+        ch.get(11).copied().unwrap_or_default(),
+    ]);
 
     // WHY: UV-5R stores separate TX/RX tones, but our model uses a single ToneMode.
     // Prefer the TX tone if SET, fall back to RX tone.

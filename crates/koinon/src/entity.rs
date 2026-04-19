@@ -182,10 +182,7 @@ mod tests {
             e.attributes.get("mac"),
             Some(&serde_json::json!("aa:bb:cc:dd:ee:ff"))
         );
-        assert_eq!(
-            e.attributes.get("vendor"),
-            Some(&serde_json::json!("Acme"))
-        );
+        assert_eq!(e.attributes.get("vendor"), Some(&serde_json::json!("Acme")));
         assert_eq!(
             e.attributes.get("firmware"),
             Some(&serde_json::json!("1.2.3"))

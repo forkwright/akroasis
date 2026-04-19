@@ -309,11 +309,14 @@ mod tests {
     /// fixed nonce so the output is deterministic and comparable.
     ///
     /// Reference: <https://www.rfc-editor.org/rfc/rfc8439#section-2.8.2>
-    #[allow(clippy::expect_used, reason = "RFC vector test — construction cannot fail")]
+    #[allow(
+        clippy::expect_used,
+        reason = "RFC vector test — construction cannot fail"
+    )]
     #[test]
     fn chacha20poly1305_rfc8439_test_vector() {
-        use chacha20poly1305::aead::{Aead, KeyInit, Payload};
         use chacha20poly1305::ChaCha20Poly1305;
+        use chacha20poly1305::aead::{Aead, KeyInit, Payload};
 
         // RFC 8439 Section 2.8.2 test vector.
         const RFC_KEY: [u8; 32] = [
@@ -353,7 +356,13 @@ mod tests {
 
         // Encrypt with AAD — the output is ciphertext || tag (postfix tag).
         let output = cipher
-            .encrypt(&nonce, Payload { msg: RFC_PLAINTEXT, aad: &RFC_AAD })
+            .encrypt(
+                &nonce,
+                Payload {
+                    msg: RFC_PLAINTEXT,
+                    aad: &RFC_AAD,
+                },
+            )
             .expect("RFC 8439 test vector encryption must succeed");
 
         assert_eq!(
@@ -376,7 +385,13 @@ mod tests {
         let mut ct_with_tag = Vec::from(RFC_CIPHERTEXT.as_slice());
         ct_with_tag.extend_from_slice(&RFC_TAG);
         let decrypted = cipher
-            .decrypt(&nonce, Payload { msg: &ct_with_tag, aad: &RFC_AAD })
+            .decrypt(
+                &nonce,
+                Payload {
+                    msg: &ct_with_tag,
+                    aad: &RFC_AAD,
+                },
+            )
             .expect("RFC 8439 test vector decryption must succeed");
         assert_eq!(
             decrypted, RFC_PLAINTEXT,
@@ -392,7 +407,10 @@ mod tests {
     /// to exercise the primitive directly.
     ///
     /// Reference: <https://www.rfc-editor.org/rfc/rfc9106#appendix-B>
-    #[allow(clippy::expect_used, reason = "RFC vector test — construction cannot fail")]
+    #[allow(
+        clippy::expect_used,
+        reason = "RFC vector test — construction cannot fail"
+    )]
     #[test]
     fn argon2id_rfc9106_test_vector() {
         // RFC 9106 Appendix B, Argon2id version 0x13 test vector.
@@ -415,7 +433,9 @@ mod tests {
         builder.p_cost(4);
         builder.data(ad);
         builder.output_len(32);
-        let params = builder.build().expect("RFC 9106 Argon2id params must be valid");
+        let params = builder
+            .build()
+            .expect("RFC 9106 Argon2id params must be valid");
 
         let ctx = argon2::Argon2::new_with_secret(
             &RFC_SECRET,

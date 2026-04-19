@@ -513,8 +513,7 @@ mod tests {
 
         // Sign the empty message and verify the signature matches the RFC vector.
         let signature = signing_key.sign(b"");
-        let expected =
-            ed25519_dalek::Signature::try_from(RFC_SIGNATURE.as_slice()).unwrap();
+        let expected = ed25519_dalek::Signature::try_from(RFC_SIGNATURE.as_slice()).unwrap();
         assert_eq!(
             signature, expected,
             "signature of empty message must match RFC 8032 Section 7.1 Test Vector 1"

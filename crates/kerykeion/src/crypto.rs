@@ -180,7 +180,10 @@ mod tests {
         // packet_id = 1, from_node = 2
         let nonce = build_nonce(1, 2);
         // bytes 0..8: u64::from(1u32) = 1 as LE = [1, 0, 0, 0, 0, 0, 0, 0]
-        assert_eq!(nonce.get(0..8).unwrap_or_default(), &[1, 0, 0, 0, 0, 0, 0, 0]);
+        assert_eq!(
+            nonce.get(0..8).unwrap_or_default(),
+            &[1, 0, 0, 0, 0, 0, 0, 0]
+        );
         // bytes 8..12: 2u32 LE = [2, 0, 0, 0]
         assert_eq!(nonce.get(8..12).unwrap_or_default(), &[2, 0, 0, 0]);
         // bytes 12..16: zero
@@ -191,10 +194,22 @@ mod tests {
     fn nonce_max_values() {
         let nonce = build_nonce(u32::MAX, u32::MAX);
         // u64::from(u32::MAX) = 0x00000000_FFFFFFFF in LE
-        assert_eq!(nonce.get(0..4).unwrap_or_default(), &[0xFF, 0xFF, 0xFF, 0xFF]);
-        assert_eq!(nonce.get(4..8).unwrap_or_default(), &[0x00, 0x00, 0x00, 0x00]);
-        assert_eq!(nonce.get(8..12).unwrap_or_default(), &[0xFF, 0xFF, 0xFF, 0xFF]);
-        assert_eq!(nonce.get(12..16).unwrap_or_default(), &[0x00, 0x00, 0x00, 0x00]);
+        assert_eq!(
+            nonce.get(0..4).unwrap_or_default(),
+            &[0xFF, 0xFF, 0xFF, 0xFF]
+        );
+        assert_eq!(
+            nonce.get(4..8).unwrap_or_default(),
+            &[0x00, 0x00, 0x00, 0x00]
+        );
+        assert_eq!(
+            nonce.get(8..12).unwrap_or_default(),
+            &[0xFF, 0xFF, 0xFF, 0xFF]
+        );
+        assert_eq!(
+            nonce.get(12..16).unwrap_or_default(),
+            &[0x00, 0x00, 0x00, 0x00]
+        );
     }
 
     // ── PSK expansion ───────────────────────────────────────────────────────

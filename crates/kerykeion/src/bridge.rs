@@ -539,7 +539,10 @@ mod tests {
         let token = CancellationToken::new();
         let task_token = token.clone();
 
-        let handle = tokio::spawn(async move { run_health_monitor(&bridge, task_token).await }.instrument(tracing::info_span!("spawned_task")));
+        let handle = tokio::spawn(
+            async move { run_health_monitor(&bridge, task_token).await }
+                .instrument(tracing::info_span!("spawned_task")),
+        );
 
         token.cancel();
         #[expect(clippy::unwrap_used, reason = "test-only")]

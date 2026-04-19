@@ -652,7 +652,10 @@ mod tests {
         let token = CancellationToken::new();
         let task_token = token.clone();
 
-        let handle = tokio::spawn(async move { run_router_flush(router, conn, task_token).await }.instrument(tracing::info_span!("spawned_task")));
+        let handle = tokio::spawn(
+            async move { run_router_flush(router, conn, task_token).await }
+                .instrument(tracing::info_span!("spawned_task")),
+        );
 
         // Cancel immediately  -  biased SELECT exits before first tick.
         token.cancel();

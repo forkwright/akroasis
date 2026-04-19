@@ -308,7 +308,9 @@ mod tests {
     #[test]
     fn traceroute_uses_max_hop_limit() {
         #[expect(clippy::unwrap_used, reason = "test-only")]
-        let pkt = MessageBuilder::traceroute(DEST).build(FROM_NODE, &[]).unwrap();
+        let pkt = MessageBuilder::traceroute(DEST)
+            .build(FROM_NODE, &[])
+            .unwrap();
         assert_eq!(pkt.hop_limit, u32::from(MAX_HOP_LIMIT));
         assert!(pkt.want_ack, "traceroute should request ACK");
     }
