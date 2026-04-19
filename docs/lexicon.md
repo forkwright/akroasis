@@ -1,7 +1,7 @@
 # Akroasis: Lexicon
 
 *Living registry. Updated as crates are added or renamed.*
-*For the naming methodology and construction system, see [gnomon.md](gnomon.md).*
+*For the naming methodology and construction system, see [../standards/GNOMON.md](../standards/GNOMON.md).*
 
 ---
 

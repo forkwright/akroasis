@@ -10,7 +10,7 @@ Akroasis is the attempt to fix that.
 
 One system. One signal model. Every domain produces typed signals into the same pipeline. Radio anomalies correlate with network threats correlate with proximity intelligence correlate with OSINT. The convergence is where the intelligence lives - not in any single domain but in the relationships between them.
 
-6 crates shipped, 12 planned. 10 capability domains. Rust from the ground up.
+Capability domains span radio, mesh, SDR, proximity, network defense, OSINT, offensive security, signal intelligence, and geospatial modeling. Rust from the ground up. See the domain table below for shipped (✓) vs planned (◻).
 
 ---
 
@@ -107,14 +107,14 @@ Every collection crate produces typed `GeoSignal` objects into koinon. Semaino a
 ## Documentation
 
 - [standards/STANDARDS.md](standards/STANDARDS.md): Coding standards (universal + per-language)
-- [docs/gnomon.md](docs/gnomon.md): Naming methodology
+- [standards/GNOMON.md](standards/GNOMON.md): Naming methodology
 - [docs/lexicon.md](docs/lexicon.md): Project name registry
 
 ## Status
 
-Wave 1 (kryphos), Wave 2 (syntonia + kerykeion), and Wave 3 (semaino) are complete. 6 crates shipping ~25K LOC with 600+ tests. Architecture finalized. Active development ongoing.
+Architecture finalized. Active development ongoing. See the domain table above for shipped vs planned crates; merged waves are visible via `gh pr list --state merged --repo forkwright/akroasis`.
 
-The scope is massive. Each domain is independent: one crate with clear boundaries, producing typed signals into the shared model. Pieces do not need to arrive simultaneously. They only need to speak the same language when they do.
+The scope is massive. Each domain is independent: a crate with clear boundaries, producing typed signals into the shared model. Pieces don't need to arrive simultaneously. They just need to speak the same language when they do.
 
 ---
 
@@ -142,7 +142,7 @@ Names follow [gnomon](https://github.com/forkwright/aletheia/blob/main/docs/gnom
 
 ---
 
-*See [docs/gnomon.md](docs/gnomon.md) for the complete name registry.*
+*See [docs/lexicon.md](docs/lexicon.md) for the complete name registry and [standards/GNOMON.md](standards/GNOMON.md) for the naming methodology.*
 
 ---
 

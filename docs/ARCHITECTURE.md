@@ -1,6 +1,8 @@
 # Architecture: Akroasis
 
-Single Rust binary. 17 crates across 5 layers. All domains produce typed `GeoSignal` into a shared pipeline.
+Single Rust binary. Five layers. All domains produce typed `GeoSignal` into a shared pipeline.
+
+Run `cargo metadata --format-version 1 | jq '.workspace_members | length'` for current crate count.
 
 ## Layer structure
 
@@ -56,4 +58,4 @@ Foundation:     koinon (shared types), kryphos (encryption), lethe (privacy)
 ## References
 
 - Planning docs (scope, roadmap, vision, research): live in the kanon repo
-- Naming: `gnomon.md`, `lexicon.md`
+- Naming: `../standards/GNOMON.md`, `lexicon.md`
