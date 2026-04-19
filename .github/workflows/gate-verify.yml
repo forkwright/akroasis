@@ -22,11 +22,14 @@ jobs:
 
       - name: Check for bot PR
         id: bot-check
+        env:
+          # WHY: bind the untrusted PR author login into an env var so it
+          # cannot be interpolated as shell metacharacters into the script.
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
         run: |
-          author="${{ github.event.pull_request.user.login }}"
-          if [[ "$author" == *"[bot]" || "$author" == "dependabot"* ]]; then
+          if [[ "$PR_AUTHOR" == *"[bot]" || "$PR_AUTHOR" == "dependabot"* ]]; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "Skipping gate check for bot author: $author"
+            echo "Skipping gate check for bot author: $PR_AUTHOR"
           else
             echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
