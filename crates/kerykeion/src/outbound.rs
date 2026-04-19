@@ -253,15 +253,15 @@ mod tests {
         q.enqueue(make_pending(2, Priority::Reliable));
         q.enqueue(make_pending(3, Priority::Default));
 
-        #[expect(clippy::expect_used, reason = "test-only: queue has 3 items")]
+        #[expect(clippy::unwrap_used, reason = "test-only: queue has 3 items")]
         let first = q.next_to_send().unwrap();
         assert_eq!(first.packet.id, 2, "Reliable (70) should come first");
 
-        #[expect(clippy::expect_used, reason = "test-only: queue has 2 items")]
+        #[expect(clippy::unwrap_used, reason = "test-only: queue has 2 items")]
         let second = q.next_to_send().unwrap();
         assert_eq!(second.packet.id, 3, "Default (64) should come second");
 
-        #[expect(clippy::expect_used, reason = "test-only: queue has 1 item")]
+        #[expect(clippy::unwrap_used, reason = "test-only: queue has 1 item")]
         let third = q.next_to_send().unwrap();
         assert_eq!(third.packet.id, 1, "Background (10) should come third");
     }
@@ -287,7 +287,7 @@ mod tests {
         // Advance past the first message's TTL.
         tokio::time::advance(Duration::from_secs(2)).await;
 
-        #[expect(clippy::expect_used, reason = "test-only: non-expired message exists")]
+        #[expect(clippy::unwrap_used, reason = "test-only: non-expired message exists")]
         let msg = q.next_to_send().unwrap();
         assert_eq!(msg.packet.id, 2, "should skip expired message 1");
     }
@@ -383,7 +383,7 @@ mod tests {
         q.enqueue(make_pending(1, Priority::Default));
         q.enqueue(make_pending(2, Priority::Ack));
 
-        #[expect(clippy::expect_used, reason = "test-only: queue has items")]
+        #[expect(clippy::unwrap_used, reason = "test-only: queue has items")]
         let first = q.next_to_send().unwrap();
         assert_eq!(
             first.packet.id, 2,

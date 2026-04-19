@@ -162,8 +162,8 @@ mod tests {
         let payload = msg.encode_to_vec();
         let len = payload.len() as u16;
         let mut out = vec![
-            FRAME_MAGIC.get(0).copied().unwrap_or_default(),
-            FRAME_MAGIC.get(1).copied().unwrap_or_default(),
+            FRAME_MAGIC[0],
+            FRAME_MAGIC[1],
             (len >> 8) as u8,
             (len & 0xFF) as u8,
         ];
@@ -227,8 +227,8 @@ mod tests {
         // Frame with length > 512 should be discarded; the valid frame after it is decoded.
         let valid = make_from_radio(55);
         let mut buf_data = vec![
-            FRAME_MAGIC.get(0).copied().unwrap_or_default(),
-            FRAME_MAGIC.get(1).copied().unwrap_or_default(),
+            FRAME_MAGIC[0],
+            FRAME_MAGIC[1],
             0x02,
             0x00, // length = 512 = MAX_PACKET_SIZE, still valid
         ];
@@ -334,8 +334,8 @@ mod tests {
 
         let raw: &[u8] = &dst;
         // Verify frame structure: magic + length + payload.
-        assert_eq!(raw.first(), Some(&FRAME_MAGIC.get(0).copied().unwrap_or_default()));
-        assert_eq!(raw.get(1), Some(&FRAME_MAGIC.get(1).copied().unwrap_or_default()));
+        assert_eq!(raw.first(), Some(&FRAME_MAGIC[0]));
+        assert_eq!(raw.get(1), Some(&FRAME_MAGIC[1]));
         #[expect(clippy::unwrap_used, reason = "test-only: known non-empty buffer")]
         let declared_len =
             u16::from_be_bytes([*raw.get(2).unwrap(), *raw.get(3).unwrap()]) as usize;

@@ -305,7 +305,7 @@ mod tests {
         tracker.record_retry(PacketId(3));
 
         #[expect(
-            clippy::expect_used,
+            clippy::unwrap_used,
             reason = "test-only: stats guaranteed to exist after tracking"
         )]
         let stats = tracker.stats_for(dest).unwrap();
@@ -324,10 +324,6 @@ mod tests {
             latency_sum_ms: 0,
             total_retries: 0,
         };
-        #[expect(
-            clippy::expect_used,
-            reason = "test-only: attempted > 0 so rate exists"
-        )]
         let rate = stats.success_rate().unwrap_or_default();
         assert!(
             (rate - 0.7).abs() < f64::EPSILON,
