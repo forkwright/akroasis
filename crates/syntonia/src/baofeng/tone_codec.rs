@@ -34,7 +34,7 @@ fn decode_dcs(raw: u16, lo: u16, hi: u16, polarity: DcsPolarity) -> Option<ToneM
     if !(lo..=hi).contains(&raw) {
         return None;
     }
-    let idx = (raw - lo) as usize;
+    let idx = (raw - lo) as usize; // SAFETY: bounds-checked by caller (raw ∈ lo..=hi where hi ≤ 209); fits usize
     let &code_val = ALL_DCS_CODES.get(idx)?;
     let code = DcsCode::new(code_val).ok()?;
     Some(ToneMode::Dcs(code, polarity))
@@ -50,7 +50,7 @@ pub fn encode_tone(tone: ToneMode) -> u16 {
                 clippy::cast_possible_truncation,
                 reason = "CTCSS tones are always positive and < 300 Hz; * 10.0 fits in u16 without sign loss"
             )]
-            let raw = (ct.as_hz() * 10.0) as u16;
+            let raw = (ct.as_hz() * 10.0) as u16; // SAFETY: CTCSS tones are positive, <300 Hz; *10.0 fits u16
             raw
         }
         ToneMode::Dcs(code, polarity) => {
@@ -61,7 +61,7 @@ pub fn encode_tone(tone: ToneMode) -> u16 {
 
             match (idx, polarity) {
                 (Some(i), DcsPolarity::Normal) => u16::try_from(i).unwrap_or_default(),
-                (Some(i), DcsPolarity::Inverted) => (i + 105) as u16,
+                (Some(i), DcsPolarity::Inverted) => (i + 105) as u16, // SAFETY: idx ∈ 1..=104 from DCS table lookup; +105 fits u16
                 (None, _) => 0,
             }
         }

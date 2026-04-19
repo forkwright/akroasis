@@ -33,6 +33,7 @@ const DEFAULT_MAX_FILE_BYTES: u64 = 100 * 1024 * 1024;
 
 /// Errors produced by [`TamperLog`] and [`verify_chain`].
 #[derive(Debug, Snafu)]
+#[non_exhaustive]
 pub enum TamperLogError {
     /// I/O error accessing the log file.
     #[snafu(display("I/O error on {}: {source}", path.display()))]
@@ -160,7 +161,7 @@ pub fn encode_entry(
     hasher.update(prev_hash);
     let hash: [u8; 32] = hasher.finalize().into();
 
-    let len = cbor_bytes.len() as u32;
+    let len = cbor_bytes.len() as u32; // SAFETY: CBOR payload size validated <= MAX_ENTRY_BYTES (16 MiB), fits u32
     let mut wire = Vec::with_capacity(4 + cbor_bytes.len() + 32);
     wire.extend_from_slice(&len.to_le_bytes());
     wire.extend_from_slice(&cbor_bytes);
@@ -217,6 +218,7 @@ pub fn decode_entry(bytes: &[u8]) -> Result<(LogEntry, [u8; 32]), TamperLogError
 
 /// Status of a chain verification pass.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum ChainStatus {
     /// All entries verified successfully.
     Intact,
@@ -437,7 +439,7 @@ impl TamperLog {
         let seq = self.sequence;
         self.prev_hash = hash;
         self.sequence += 1;
-        self.bytes_written += wire.len() as u64;
+        self.bytes_written += wire.len() as u64; // SAFETY: wire.len() <= 4 + MAX_ENTRY_BYTES + 32; fits u64 trivially
 
         if self.bytes_written > self.max_file_bytes {
             self.rotate()?;
@@ -596,9 +598,10 @@ fn parse_rotation_number(name: &str, stem: &str) -> Option<u32> {
     reason = "test code: panics and unwraps acceptable in assertions"
 )]
 mod tests {
-    use super::*;
     use compact_str::CompactString;
     use ulid::Ulid;
+
+    use super::*;
 
     fn signal_kind() -> LogEntryKind {
         LogEntryKind::SignalObserved {

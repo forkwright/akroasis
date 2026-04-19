@@ -39,12 +39,12 @@ pub(crate) fn quantize(coords: &Coordinates, resolution: u32) -> GridCell {
         clippy::cast_possible_truncation,
         reason = "lat * resolution bounded by 900_000 for resolution ≤ 10_000; fits i32"
     )]
-    let lat_cell = (coords.latitude * res) as i32;
+    let lat_cell = (coords.latitude * res) as i32; // SAFETY: lat*resolution bounded by 900_000 (resolution ≤ 10_000); fits i32
     #[expect(
         clippy::cast_possible_truncation,
         reason = "lon * resolution bounded by 1_800_000 for resolution ≤ 10_000; fits i32"
     )]
-    let lon_cell = (coords.longitude * res) as i32;
+    let lon_cell = (coords.longitude * res) as i32; // SAFETY: lon*resolution bounded by 1_800_000 (resolution ≤ 10_000); fits i32
     GridCell(lat_cell, lon_cell)
 }
 
@@ -137,7 +137,7 @@ impl ConvergenceGrid {
             clippy::cast_possible_truncation,
             reason = "Duration::as_millis() returns u128; converting to i64 is safe for any reasonable window (i64::MAX ms >> practical window sizes)"
         )]
-        let window_ms = window.as_millis() as i64;
+        let window_ms = window.as_millis() as i64; // SAFETY: Duration::as_millis() returns u128 but real windows are bounded; fits i64
         let cutoff_ms = now.as_unix_millis() - window_ms;
 
         let mut result = Vec::new();

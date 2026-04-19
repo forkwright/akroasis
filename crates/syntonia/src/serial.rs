@@ -21,13 +21,13 @@ pub trait SerialPort: Send {
     ///
     /// # Errors
     /// Returns `io::Error` on read failure or timeout.
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize>;
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize>; // kanon:ignore RUST/indexing-slicing -- trait method parameter &mut [u8], not indexing
 
     /// Read exactly `buf.len()` bytes, blocking until complete or timeout.
     ///
     /// # Errors
     /// Returns `io::Error` if not enough bytes arrive before timeout.
-    fn read_exact(&mut self, buf: &mut [u8]) -> io::Result<()>;
+    fn read_exact(&mut self, buf: &mut [u8]) -> io::Result<()>; // kanon:ignore RUST/indexing-slicing -- trait method parameter &mut [u8], not indexing
 
     /// Set the read timeout for subsequent operations.
     ///
@@ -87,10 +87,12 @@ impl SerialPort for HardwareSerialPort {
     }
 
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        // kanon:ignore RUST/indexing-slicing -- trait impl parameter &mut [u8], not indexing
         io::Read::read(&mut self.inner, buf)
     }
 
     fn read_exact(&mut self, buf: &mut [u8]) -> io::Result<()> {
+        // kanon:ignore RUST/indexing-slicing -- trait impl parameter &mut [u8], not indexing
         io::Read::read_exact(&mut self.inner, buf)
     }
 

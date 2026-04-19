@@ -12,6 +12,7 @@ pub struct Timestamp(JiffTimestamp);
 
 /// Errors returned when constructing a [`Timestamp`].
 #[derive(Debug, Snafu)]
+#[non_exhaustive]
 pub enum TimestampError {
     /// The millisecond value was outside the representable range.
     #[snafu(display("invalid unix milliseconds {millis}: {source}"))]

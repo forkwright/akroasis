@@ -123,8 +123,9 @@ fn parse_gateway_id(gateway_id: &str) -> Option<NodeNum> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use prost::Message;
+
+    use super::*;
 
     #[test]
     fn parse_gateway_id_valid() {

@@ -13,6 +13,7 @@ use crate::types::{Bandwidth, FrequencyOffset, PowerLevel, ScanMode};
 
 /// Warning generated during CSV import for non-fatal issues.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub enum ImportWarning {
     /// A field is not supported by the native model (e.g., D-STAR fields).
     UnsupportedField {
@@ -53,6 +54,7 @@ pub enum ImportWarning {
 
 /// Errors FROM CHIRP CSV import.
 #[derive(Debug, Snafu)]
+#[non_exhaustive]
 pub enum CsvImportError {
     /// Failed to read the CSV file FROM disk.
     #[snafu(display("failed to read CSV file at {}: {source}", path.display()))]
@@ -126,7 +128,7 @@ fn mhz_to_hz(mhz: f64) -> u64 {
         clippy::cast_possible_truncation,
         reason = "caller ensures mhz > 0 and mhz * 1_000_000 fits in u64 (far below 2^64 Hz)"
     )]
-    let hz = (mhz * 1_000_000.0) as u64;
+    let hz = (mhz * 1_000_000.0) as u64; // SAFETY: caller ensures mhz>0 and <10GHz; *1e6 fits u64
     hz
 }
 

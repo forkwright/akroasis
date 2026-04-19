@@ -58,8 +58,8 @@ impl MessageBuilder {
             reason = "f64→i32 via multiplication is the Meshtastic wire format convention"
         )]
         let pos = Position {
-            latitude_i: (lat * 1e7) as i32,
-            longitude_i: (lon * 1e7) as i32,
+            latitude_i: (lat * 1e7) as i32, // SAFETY: lat ∈ [-90, 90] so lat*1e7 ∈ [-9e8, 9e8] which fits i32 (±2.1e9)
+            longitude_i: (lon * 1e7) as i32, // SAFETY: lon ∈ [-180, 180] so lon*1e7 ∈ [-1.8e9, 1.8e9] which fits i32
             ..Default::default()
         };
         Self {

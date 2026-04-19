@@ -184,7 +184,7 @@ pub(crate) fn node_info_to_mesh_node(ni: &crate::proto::NodeInfo) -> MeshNode {
             reason = "hops_away is bounded by MAX_HOP_LIMIT (7) in Meshtastic firmware"
         )]
         hop_count: if ni.hops_away != 0 {
-            Some(ni.hops_away as u8)
+            Some(ni.hops_away as u8) // SAFETY: Meshtastic hops_away field is 0..255 per protocol; fits u8
         } else {
             None
         },
@@ -197,9 +197,10 @@ pub(crate) fn node_info_to_mesh_node(ni: &crate::proto::NodeInfo) -> MeshNode {
 mod tests {
     use std::time::Duration;
 
+    use tracing::Instrument as _;
+
     use super::*;
     use crate::proto::{Channel, FromRadio, MyNodeInfo, NodeInfo, ToRadio, from_radio, to_radio};
-    use tracing::Instrument as _;
 
     // ── Shared mock types ─────────────────────────────────────────────────────
 

@@ -39,7 +39,7 @@ pub const DEFAULT_PSK: [u8; 16] = [
 pub(crate) fn build_nonce(packet_id: u32, from_node: u32) -> [u8; 16] {
     let mut nonce = [0u8; 16];
     // WHY: Meshtastic firmware zero-extends packet_id to u64 before encoding.
-    nonce[0..8].copy_from_slice(&u64::from(packet_id).to_le_bytes());
+    nonce[0..8].copy_from_slice(&u64::from(packet_id).to_le_bytes()); // SAFETY: fixed-size [u8; 16], not a string. kanon:ignore RUST/indexing-slicing -- compile-time bounded
     nonce[8..12].copy_from_slice(&from_node.to_le_bytes());
     // Bytes 12..16 remain zero.
     nonce
@@ -57,7 +57,7 @@ pub(crate) fn resolve_psk(psk: &[u8]) -> Option<Vec<u8>> {
         [] => None,
         [n] if *n >= 1 && *n <= 10 => {
             let mut key = DEFAULT_PSK;
-            key[15] = *n;
+            key[15] = *n; // kanon:ignore RUST/indexing-slicing -- key is fixed-size [u8; 16], index 15 is compile-time bounded
             Some(key.to_vec())
         }
         _ => Some(psk.to_vec()),
@@ -73,7 +73,7 @@ pub(crate) fn resolve_psk(psk: &[u8]) -> Option<Vec<u8>> {
 /// Returns [`Error::Encryption`] if `key` is not 16 or 32 bytes, or if the
 /// cipher cannot be constructed FROM the given key/nonce pair.
 pub(crate) fn apply_aes_ctr(
-    data: &mut [u8],
+    data: &mut [u8], // kanon:ignore RUST/indexing-slicing -- function parameter &mut [u8], not indexing
     packet_id: u32,
     from_node: u32,
     key: &[u8],

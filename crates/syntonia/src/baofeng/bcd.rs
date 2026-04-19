@@ -4,6 +4,7 @@ use snafu::Snafu;
 
 /// BCD codec errors.
 #[derive(Debug, Snafu)]
+#[non_exhaustive]
 pub enum BcdError {
     /// A byte contains a nibble value greater than 9.
     #[snafu(display("invalid BCD nibble in byte 0x{byte:02X}"))]
@@ -71,9 +72,9 @@ pub fn lbcd4_encode(freq_hz: u64) -> Result<[u8; 4], BcdError> {
     let mut bytes = [0u8; 4];
 
     for byte in &mut bytes {
-        let lo = (value % 10) as u8;
+        let lo = (value % 10) as u8; // SAFETY: value%10 ∈ 0..=9 fits u8 trivially
         value /= 10;
-        let hi = (value % 10) as u8;
+        let hi = (value % 10) as u8; // SAFETY: value%10 ∈ 0..=9 fits u8 trivially
         value /= 10;
         *byte = (hi << 4) | lo;
     }

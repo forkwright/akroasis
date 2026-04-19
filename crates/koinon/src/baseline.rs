@@ -51,7 +51,7 @@ impl Baseline {
     pub fn observe(&mut self, value: f64) {
         self.count += 1;
         let delta = value - self.mean;
-        self.mean += delta / (self.count as f64);
+        self.mean += delta / (self.count as f64); // SAFETY: u64→f64 precision loss only matters beyond 2^53 observations; statistical accumulation
         let delta2 = value - self.mean;
         self.m2 += delta * delta2;
         if value < self.min {
@@ -84,7 +84,7 @@ impl Baseline {
         if self.count < 2 {
             None
         } else {
-            Some(self.m2 / (self.count - 1) as f64)
+            Some(self.m2 / (self.count - 1) as f64) // SAFETY: u64→f64 precision loss only matters beyond 2^53 observations
         }
     }
 
@@ -94,7 +94,7 @@ impl Baseline {
         if self.count == 0 {
             None
         } else {
-            Some(self.m2 / (self.count as f64))
+            Some(self.m2 / (self.count as f64)) // SAFETY: u64→f64 precision loss only matters beyond 2^53 observations
         }
     }
 
@@ -153,9 +153,9 @@ impl Baseline {
         }
         let combined_count = self.count + other.count;
         let delta = other.mean - self.mean;
-        let self_weight = self.count as f64;
-        let other_weight = other.count as f64;
-        let combined_weight = combined_count as f64;
+        let self_weight = self.count as f64; // SAFETY: u64→f64 precision loss only matters beyond 2^53 observations
+        let other_weight = other.count as f64; // SAFETY: u64→f64 precision loss only matters beyond 2^53 observations
+        let combined_weight = combined_count as f64; // SAFETY: u64→f64 precision loss only matters beyond 2^53 observations
         self.mean += delta * (other_weight / combined_weight);
         self.m2 += (delta * delta).mul_add(self_weight * other_weight / combined_weight, other.m2);
         self.count = combined_count;

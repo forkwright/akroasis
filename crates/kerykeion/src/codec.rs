@@ -41,9 +41,9 @@ impl Decoder for MeshCodec {
 
             // Locate the 0x94 0xC3 magic pair.
             // SAFETY: the range is 0..len-1, so i+1 < len; get() is used to satisfy clippy.
+            let [magic0, magic1] = FRAME_MAGIC;
             let magic_pos = (0..src.len().saturating_sub(1)).find(|&i| {
-                src.get(i).copied() == Some(FRAME_MAGIC[0])
-                    && src.get(i + 1).copied() == Some(FRAME_MAGIC[1])
+                src.get(i).copied() == Some(magic0) && src.get(i + 1).copied() == Some(magic1)
             });
 
             match magic_pos {
@@ -133,11 +133,12 @@ impl Encoder<ToRadio> for MeshCodec {
             clippy::cast_possible_truncation,
             reason = "payload_len is bounded by MAX_PACKET_SIZE (512) which fits in u16"
         )]
-        let len_u16 = len as u16;
+        let len_u16 = len as u16; // SAFETY: len is validated <= MAX_PACKET_SIZE (4096) before this point
 
         dst.reserve(4 + len);
-        dst.put_u8(FRAME_MAGIC[0]);
-        dst.put_u8(FRAME_MAGIC[1]);
+        let [magic0, magic1] = FRAME_MAGIC;
+        dst.put_u8(magic0);
+        dst.put_u8(magic1);
         dst.put_u16(len_u16); // big-endian
         dst.put_slice(&payload);
 

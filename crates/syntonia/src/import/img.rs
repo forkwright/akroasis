@@ -19,6 +19,7 @@ const IDENT_HEADER_LEN: usize = 8;
 
 /// Errors from `.img` file import.
 #[derive(Debug, Snafu)]
+#[non_exhaustive]
 pub enum ImgImportError {
     /// Failed to read the `.img` file from disk.
     #[snafu(display("failed to read .img file at {}: {source}", path.display()))]
@@ -93,6 +94,8 @@ pub fn import_img_bytes(data: &[u8]) -> Result<FrequencyPlan, ImgImportError> {
     reason = "test code: panics and unwraps acceptable in assertions"
 )]
 mod tests {
+    use koinon::Frequency;
+
     use super::*;
     use crate::baofeng::codec;
     use crate::baofeng::image::MemoryImage;
@@ -100,7 +103,6 @@ mod tests {
     use crate::plan::FrequencyPlan;
     use crate::tone::ToneMode;
     use crate::types::{Bandwidth, FrequencyOffset, PowerLevel, ScanMode};
-    use koinon::Frequency;
 
     fn make_img_bytes(eeprom_size: usize) -> Vec<u8> {
         let mut image = MemoryImage::new(eeprom_size);

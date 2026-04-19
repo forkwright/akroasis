@@ -1,9 +1,11 @@
 //! In-memory database of known mesh nodes.
 
-use crate::types::NodeNum;
+use std::collections::HashMap;
+
 use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+
+use crate::types::NodeNum;
 
 /// In-memory store of all mesh nodes seen during a session.
 #[derive(Debug, Default)]

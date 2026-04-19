@@ -16,6 +16,7 @@ use crate::types::{Bandwidth, FrequencyOffset, PowerLevel, ScanMode};
 
 /// Channel codec errors.
 #[derive(Debug, Snafu)]
+#[non_exhaustive]
 pub enum CodecError {
     /// Failed to decode BCD frequency data.
     #[snafu(display("BCD decode error for channel {index}: {source}"))]
@@ -204,11 +205,11 @@ pub fn encode_channel(
 
     // SAFETY(indexing): ch_data is always 16 bytes, indices are within bounds
     let mut ch_data = [0u8; 16];
-    ch_data[0..4].copy_from_slice(&rx_bytes);
+    ch_data[0..4].copy_from_slice(&rx_bytes); // SAFETY: ch_data is fixed-size [u8; 16], not a string. kanon:ignore RUST/indexing-slicing -- compile-time bounded
     ch_data[4..8].copy_from_slice(&tx_bytes);
     ch_data[8..10].copy_from_slice(&tone_bytes);
     ch_data[10..12].copy_from_slice(&tone_bytes);
-    ch_data[14] = power_to_bits(channel.power);
+    ch_data[14] = power_to_bits(channel.power); // kanon:ignore RUST/indexing-slicing -- ch_data is fixed-size [u8; 16]; index 14 is compile-time bounded
 
     let mut byte15: u8 = 0;
     if channel.bandwidth == Bandwidth::Wide {
@@ -220,14 +221,14 @@ pub fn encode_channel(
     if channel.busy_lock {
         byte15 |= 0x08;
     }
-    ch_data[15] = byte15;
+    ch_data[15] = byte15; // kanon:ignore RUST/indexing-slicing -- ch_data is fixed-size [u8; 16]; index 15 is compile-time bounded
 
     image.write_bytes(ch_addr, &ch_data);
 
     let name_addr = NAME_BASE + u16::from(index) * NAME_STRIDE;
     let mut name_data = [0xFFu8; 16];
     for (i, &byte) in channel.name.as_bytes().iter().take(NAME_LENGTH).enumerate() {
-        name_data[i] = byte;
+        name_data[i] = byte; // kanon:ignore RUST/indexing-slicing -- name_data is fixed-size [u8; 16]; iterator take(NAME_LENGTH) bounds i
     }
     image.write_bytes(name_addr, &name_data);
 

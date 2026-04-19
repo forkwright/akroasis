@@ -116,7 +116,7 @@ impl MeshCollector {
     )]
     const fn compute_hop_count(hop_start: u32, hop_limit: u32) -> Option<u8> {
         if hop_start > 0 && hop_limit <= hop_start {
-            Some((hop_start - hop_limit) as u8)
+            Some((hop_start - hop_limit) as u8) // SAFETY: hop_start >= hop_limit is checked by caller; difference fits u8
         } else {
             None
         }
@@ -462,9 +462,10 @@ where
 
 #[cfg(test)]
 mod tests {
+    use tracing::Instrument as _;
+
     use super::*;
     use crate::config::{ConnectionConfig, MeshConfig, StoreForwardConfig, TopologyConfig};
-    use tracing::Instrument as _;
 
     fn make_config(connections: Vec<ConnectionConfig>) -> MeshConfig {
         MeshConfig {

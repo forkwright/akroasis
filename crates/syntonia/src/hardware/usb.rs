@@ -27,6 +27,7 @@ pub struct UsbCable {
 
 /// Errors from USB cable scanning.
 #[derive(Debug, Snafu)]
+#[non_exhaustive]
 pub enum ScanError {
     /// Failed to enumerate available serial ports.
     #[snafu(display("failed to enumerate serial ports"))]

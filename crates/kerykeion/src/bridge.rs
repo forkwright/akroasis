@@ -242,7 +242,7 @@ impl GatewayBridge {
         // WHY: decay packet loss toward zero on successful response.
         gw.packet_loss *= 0.5;
 
-        let threshold_ms = DEGRADED_RESPONSE_THRESHOLD.as_millis() as f64;
+        let threshold_ms = DEGRADED_RESPONSE_THRESHOLD.as_millis() as f64; // SAFETY: DEGRADED_RESPONSE_THRESHOLD is a compile-time constant in ms; fits any f64 exactly
         let new_health = if response_ms > threshold_ms || gw.packet_loss > DEGRADED_LOSS_THRESHOLD {
             GatewayHealth::Degraded {
                 reason: format!(
@@ -380,8 +380,9 @@ const fn health_rank(health: &GatewayHealth) -> u8 {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use tracing::Instrument as _;
+
+    use super::*;
 
     fn first_health(bridge: &GatewayBridge) -> &GatewayHealth {
         #[expect(clippy::indexing_slicing, reason = "test-only: first gateway exists")]

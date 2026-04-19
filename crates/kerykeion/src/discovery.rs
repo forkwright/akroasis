@@ -2,6 +2,7 @@
 
 use std::time::Duration;
 
+use koinon::GeoSignal;
 use tokio::sync::broadcast;
 use tokio_util::sync::CancellationToken;
 
@@ -10,10 +11,10 @@ use crate::connection::MeshConnection;
 use crate::processor::PacketProcessor;
 use crate::signals::{MeshEvent, mesh_event_to_signal};
 use crate::types::NodeNum;
-use koinon::GeoSignal;
 
 /// Node lifecycle state based on time since last heard.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum NodeState {
     /// Node is actively communicating.
     Active,
@@ -177,7 +178,7 @@ async fn run_stale_detection(
                 clippy::cast_sign_loss,
                 reason = "elapsed_ms is always non-negative since now >= last_heard"
             )]
-            let elapsed = Duration::from_millis(elapsed_ms as u64);
+            let elapsed = Duration::from_millis(elapsed_ms as u64); // SAFETY: elapsed_ms comes from Instant::elapsed().as_millis() capped earlier; fits u64
             let state = classify_node_state(elapsed, stale_timeout);
 
             if state == NodeState::Offline {

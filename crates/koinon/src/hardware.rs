@@ -207,6 +207,7 @@ impl fmt::Display for ConnectionType {
 
 /// Operational status of a hardware asset.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub enum AssetStatus {
     /// Registered but not currently detected.
     Offline,
@@ -329,6 +330,7 @@ pub fn lookup_usb_device(vid: u16, pid: u16) -> Option<&'static KnownUsbDevice> 
 
 /// Errors produced by [`AssetRegistry`] operations.
 #[derive(Debug, Snafu)]
+#[non_exhaustive]
 pub enum RegistryError {
     /// A device with the same ID was already registered.
     #[snafu(display("device {device_id} already registered"))]

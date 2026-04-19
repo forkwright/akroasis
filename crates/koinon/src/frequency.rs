@@ -45,19 +45,19 @@ impl Frequency {
     /// Return the frequency as kilohertz.
     #[must_use]
     pub fn as_khz_f64(&self) -> f64 {
-        (self.0 as f64) / 1_000.0
+        (self.0 as f64) / 1_000.0 // SAFETY: u64→f64 precision loss only matters beyond 2^53 Hz (~9 PHz), far beyond any real RF range
     }
 
     /// Return the frequency as megahertz.
     #[must_use]
     pub fn as_mhz_f64(&self) -> f64 {
-        (self.0 as f64) / 1_000_000.0
+        (self.0 as f64) / 1_000_000.0 // SAFETY: u64→f64 precision loss only matters beyond 2^53 Hz (~9 PHz), far beyond any real RF range
     }
 
     /// Return the frequency as gigahertz.
     #[must_use]
     pub fn as_ghz_f64(&self) -> f64 {
-        (self.0 as f64) / 1_000_000_000.0
+        (self.0 as f64) / 1_000_000_000.0 // SAFETY: u64→f64 precision loss only matters beyond 2^53 Hz (~9 PHz), far beyond any real RF range
     }
 }
 

@@ -183,8 +183,9 @@ mod tests {
 
     #[test]
     fn multiple_radios_generates_warning() {
-        use crate::hardware::detect::{RadioIdent, VariantConfig};
         use koinon::RadioKind;
+
+        use crate::hardware::detect::{RadioIdent, VariantConfig};
 
         let detected = vec![
             DetectedRadio {
@@ -222,8 +223,9 @@ mod tests {
 
     #[test]
     fn single_radio_generates_no_detection_warning() {
-        use crate::hardware::detect::{RadioIdent, VariantConfig};
         use koinon::RadioKind;
+
+        use crate::hardware::detect::{RadioIdent, VariantConfig};
 
         let detected = vec![DetectedRadio {
             cable: make_cable("/dev/ttyUSB0", CableChip::Ch340, None),

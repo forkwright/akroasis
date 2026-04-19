@@ -12,6 +12,7 @@ use crate::channel::Channel;
 
 /// Errors from Yaesu codec operations.
 #[derive(Debug, Snafu)]
+#[non_exhaustive]
 pub enum YaesuCodecError {
     /// Channel index exceeds the FTM-510DR's 900-channel limit.
     #[snafu(display("channel index {index} exceeds maximum 899"))]
@@ -68,7 +69,7 @@ pub fn decode_channel(_image: &[u8], _index: u16) -> Result<Channel, YaesuCodecE
     reason = "stub; real implementation will write to `_image` and will not be const (see #80)"
 )]
 pub fn encode_channel(
-    _image: &mut [u8],
+    _image: &mut [u8], // kanon:ignore RUST/indexing-slicing -- function parameter &mut [u8], not indexing
     _index: u16,
     _channel: &Channel,
 ) -> Result<(), YaesuCodecError> {

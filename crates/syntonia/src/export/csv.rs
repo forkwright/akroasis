@@ -11,6 +11,7 @@ use crate::types::{Bandwidth, FrequencyOffset, PowerLevel, ScanMode};
 
 /// Errors from CHIRP CSV export.
 #[derive(Debug, Snafu)]
+#[non_exhaustive]
 pub enum CsvExportError {
     /// CSV serialization error.
     #[snafu(display("CSV write error: {source}"))]
@@ -170,10 +171,11 @@ fn channel_to_record(ch: &Channel) -> [String; 19] {
     reason = "test code: panics and unwraps acceptable in assertions"
 )]
 mod tests {
+    use koinon::Frequency;
+
     use super::*;
     use crate::import::csv::import_chirp_csv_reader;
     use crate::tone::CtcssTone;
-    use koinon::Frequency;
 
     fn make_test_plan() -> FrequencyPlan {
         FrequencyPlan {

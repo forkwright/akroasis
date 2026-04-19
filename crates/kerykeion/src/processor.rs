@@ -1,5 +1,6 @@
 //! Central packet dispatch for incoming `FromRadio` messages after handshake.
 
+use koinon::GeoSignal;
 use prost::Message as _;
 use tokio::sync::broadcast;
 
@@ -11,7 +12,6 @@ use crate::proto::{MeshPacket, Routing, routing};
 use crate::signals::{MeshEvent, mesh_event_to_signal};
 use crate::topology::MeshTopology;
 use crate::types::{NodeNum, PacketId};
-use koinon::GeoSignal;
 
 /// `NeighborInfo` protobuf (portnum 71)  -  not in vendored protos, decoded manually.
 #[derive(prost::Message)]
@@ -159,7 +159,7 @@ impl PacketProcessor {
                 clippy::cast_possible_truncation,
                 reason = "hop VALUES are bounded by MAX_HOP_LIMIT (7)"
             )]
-            Some((packet.hop_start.saturating_sub(packet.hop_limit)) as u8)
+            Some((packet.hop_start.saturating_sub(packet.hop_limit)) as u8) // SAFETY: saturating_sub result is bounded by hop_start (u8 domain)
         } else {
             None
         };
@@ -284,7 +284,7 @@ impl PacketProcessor {
             clippy::cast_precision_loss,
             reason = "altitude i32→f32 is acceptable for metre-scale VALUES"
         )]
-        let alt_f32 = alt.map(|a| a as f32);
+        let alt_f32 = alt.map(|a| a as f32); // SAFETY: altitude is f32-representable; f64→f32 precision loss is acceptable for position telemetry
         events.push(MeshEvent::PositionUpdate {
             node: from,
             lat,
@@ -396,12 +396,12 @@ impl PacketProcessor {
         }
 
         for (i, window) in path.windows(2).enumerate() {
-            let (hop_from, hop_to) = (window[0], window[1]);
+            let (hop_from, hop_to) = (window[0], window[1]); // kanon:ignore RUST/indexing-slicing -- windows(2) always yields 2-element slice; indices 0 and 1 are compile-time bounded
             #[expect(
                 clippy::cast_precision_loss,
                 reason = "SNR i32→f32 preserves sufficient precision for dB VALUES"
             )]
-            let snr = route.snr_towards.get(i).map_or(0.0, |&s| s as f32);
+            let snr = route.snr_towards.get(i).map_or(0.0, |&s| s as f32); // SAFETY: SNR values are small-magnitude (±60 dB); f64→f32 is safe for this range
 
             self.topology.update_link(hop_from, hop_to, snr);
             events.push(MeshEvent::TopologyChange {
@@ -418,12 +418,12 @@ impl PacketProcessor {
             back_path.push(from);
 
             for (i, window) in back_path.windows(2).enumerate() {
-                let (hop_from, hop_to) = (window[0], window[1]);
+                let (hop_from, hop_to) = (window[0], window[1]); // kanon:ignore RUST/indexing-slicing -- windows(2) always yields 2-element slice; indices 0 and 1 are compile-time bounded
                 #[expect(
                     clippy::cast_precision_loss,
                     reason = "SNR i32→f32 preserves sufficient precision"
                 )]
-                let snr = route.snr_back.get(i).map_or(0.0, |&s| s as f32);
+                let snr = route.snr_back.get(i).map_or(0.0, |&s| s as f32); // SAFETY: SNR values are small-magnitude (±60 dB); f64→f32 is safe for this range
 
                 self.topology.update_link(hop_from, hop_to, snr);
             }

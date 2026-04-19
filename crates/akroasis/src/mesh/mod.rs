@@ -275,8 +275,9 @@ pub fn build_nodes_table(db: &NodeDb) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use kerykeion::node_db::{DeviceMetrics, UserInfo};
+
+    use super::*;
 
     #[test]
     fn parse_hex_node_id() {

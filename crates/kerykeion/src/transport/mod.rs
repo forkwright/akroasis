@@ -7,19 +7,20 @@
 pub mod serial;
 pub mod tcp;
 
+use self::serial::SerialTransport;
+use self::tcp::TcpTransport;
 use crate::Error;
 use crate::config::ConnectionConfig;
 use crate::connection::MeshConnection;
 use crate::error::BleConnectSnafu;
 use crate::proto::{FromRadio, ToRadio};
-use serial::SerialTransport;
-use tcp::TcpTransport;
 
 /// A concrete, enum-dispatched connection to a Meshtastic radio.
 ///
 /// Implements [`MeshConnection`] by forwarding calls to the active transport
 /// variant.  An enum is used instead of `Box<dyn MeshConnection>` because
 /// native async fn in traits (Rust 2024) is not object-safe.
+#[non_exhaustive]
 pub enum ConnectionHandle {
     /// USB serial transport.
     Serial(SerialTransport),

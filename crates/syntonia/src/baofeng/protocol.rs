@@ -333,8 +333,8 @@ impl<P: SerialPort> Uv5rProtocol<P> {
     /// Returns [`ProtocolError::BadResponseHeader`] on header mismatch,
     /// [`ProtocolError::Timeout`], or [`ProtocolError::SerialIo`].
     pub(crate) fn read_block(&mut self, addr: u16, len: u8) -> Result<Vec<u8>> {
-        let addr_h = (addr >> 8) as u8;
-        let addr_l = (addr & 0xFF) as u8;
+        let addr_h = (addr >> 8) as u8; // SAFETY: u16 >> 8 yields the high byte; fits u8 by construction
+        let addr_l = (addr & 0xFF) as u8; // SAFETY: u16 & 0xFF yields the low byte; fits u8 by construction
         let cmd = [CMD_READ, addr_h, addr_l, len];
 
         self.port
@@ -379,9 +379,9 @@ impl<P: SerialPort> Uv5rProtocol<P> {
             return Err(ProtocolError::ForbiddenAddress { addr });
         }
 
-        let addr_h = (addr >> 8) as u8;
-        let addr_l = (addr & 0xFF) as u8;
-        let len = data.len() as u8;
+        let addr_h = (addr >> 8) as u8; // SAFETY: u16 >> 8 yields the high byte; fits u8 by construction
+        let addr_l = (addr & 0xFF) as u8; // SAFETY: u16 & 0xFF yields the low byte; fits u8 by construction
+        let len = data.len() as u8; // SAFETY: data.len() is bounded to CHUNK_SIZE (≤255) by framing; fits u8
 
         let mut packet = Vec::with_capacity(4 + data.len());
         packet.push(CMD_WRITE);
@@ -569,7 +569,7 @@ impl<P: SerialPort> Uv5rProtocol<P> {
     }
 
     /// Read exactly `buf.len()` bytes, mapping timeouts to `ProtocolError`.
-    fn read_exact_timeout(&mut self, buf: &mut [u8]) -> Result<()> {
+    fn read_exact_timeout(&mut self, buf: &mut [u8]) -> Result<()> { // kanon:ignore RUST/indexing-slicing -- function parameter &mut [u8], not indexing
         match self.port.read_exact(buf) {
             Ok(()) => Ok(()),
             Err(e) if e.kind() == io::ErrorKind::TimedOut => Err(ProtocolError::Timeout),

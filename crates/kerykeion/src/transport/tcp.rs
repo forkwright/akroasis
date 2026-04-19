@@ -133,11 +133,12 @@ impl MeshConnection for TcpTransport {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::proto::from_radio;
     use prost::Message as _;
     use tokio::io::AsyncWriteExt as _;
     use tokio::net::TcpListener;
+
+    use super::*;
+    use crate::proto::from_radio;
 
     /// Spawn a mock TCP listener that sends one framed `FromRadio` message.
     ///

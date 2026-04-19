@@ -1,7 +1,8 @@
 //! Core mesh networking type primitives.
 
-use serde::{Deserialize, Serialize};
 use std::fmt;
+
+use serde::{Deserialize, Serialize};
 
 /// Node number: the last four bytes of the node's MAC address, encoded as a `u32`.
 ///

@@ -159,7 +159,7 @@ impl SemainoPipeline {
                                 reason = "Duration::as_millis() returns u128; cast to i64 is safe because i64::MAX ms is larger than any realistic eviction window"
                             )]
                             let evict_before_ms = koinon::Timestamp::now().as_unix_millis()
-                                - self.time_window.as_millis() as i64;
+                                - self.time_window.as_millis() as i64; // SAFETY: Duration::as_millis() returns u128 but time_window is config-bounded; fits i64
                             if let Ok(ts) = koinon::Timestamp::from_unix_millis(evict_before_ms) {
                                 self.grid.evict(ts);
                             }
@@ -216,6 +216,8 @@ impl SemainoPipeline {
     reason = "test code: panics and unwraps acceptable in assertions"
 )]
 mod tests {
+    use std::sync::{Arc, Mutex};
+
     use koinon::{
         AnomalyScore, Frequency, GeoSignal, Power, Timestamp,
         signal::{RfDetail, SignalKind},
@@ -224,8 +226,6 @@ mod tests {
 
     use super::*;
     use crate::alert::{Alert, AlertSink};
-
-    use std::sync::{Arc, Mutex};
 
     /// A sink that collects alerts for assertion.
     #[derive(Clone, Default)]

@@ -57,10 +57,12 @@ where
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
+    use tokio::sync::Mutex;
+
     use super::*;
     use crate::proto::FromRadio;
-    use std::sync::Arc;
-    use tokio::sync::Mutex;
 
     /// Mock connection that counts how many times `send()` is called.
     struct CountingConn {

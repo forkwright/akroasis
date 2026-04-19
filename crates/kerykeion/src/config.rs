@@ -1,7 +1,8 @@
 //! Configuration types for kerykeion mesh networking.
 
-use crate::types::ChannelIndex;
 use serde::{Deserialize, Serialize};
+
+use crate::types::ChannelIndex;
 
 /// Top-level kerykeion configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -125,12 +125,11 @@ impl<P: Provider> Provider for VaultProvider<P> {
 #[expect(clippy::unwrap_used, reason = "test assertions use unwrap for clarity")]
 #[expect(clippy::expect_used, reason = "test assertions use expect for clarity")]
 mod tests {
-    use super::*;
-
     use figment::Figment;
     use figment::providers::Serialized;
     use serde::{Deserialize, Serialize};
 
+    use super::*;
     use crate::storage::Vault;
     use crate::vault::CredentialType;
 

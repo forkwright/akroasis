@@ -84,7 +84,7 @@ impl DestStats {
                 clippy::as_conversions,
                 reason = "u64→f64 for ratio calculation; precision loss acceptable for stats"
             )]
-            Some((self.acknowledged as f64) / (self.attempted as f64))
+            Some((self.acknowledged as f64) / (self.attempted as f64)) // SAFETY: u32→f64 always fits; ratio is intentionally lossy for display
         } else {
             None
         }
@@ -149,7 +149,7 @@ impl DeliveryTracker {
                 clippy::as_conversions,
                 reason = "u128→u64 after min(u64::MAX) guarantees no truncation"
             )]
-            let latency_u64 = latency_ms.min(u128::from(u64::MAX)) as u64;
+            let latency_u64 = latency_ms.min(u128::from(u64::MAX)) as u64; // SAFETY: .min(u64::MAX) clamps the value into u64 range
             stats.latency_sum_ms = stats.latency_sum_ms.saturating_add(latency_u64);
         }
     }

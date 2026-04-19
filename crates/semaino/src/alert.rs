@@ -143,7 +143,7 @@ impl AlertPipeline {
                 clippy::cast_possible_wrap,
                 reason = "suppression_window_secs comes from config; realistic values are seconds, not close to u64::MAX / 1_000, so wrap is not a concern"
             )]
-            suppression_window_ms: (suppression_window_secs * 1_000) as i64,
+            suppression_window_ms: (suppression_window_secs * 1_000) as i64, // SAFETY: suppression_window_secs is config-derived seconds; *1000 fits i64 for any realistic window
             sinks: Vec::new(),
         }
     }

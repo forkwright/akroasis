@@ -46,6 +46,7 @@ pub struct DetectedRadio {
 
 /// Errors FROM radio detection.
 #[derive(Debug, Snafu)]
+#[non_exhaustive]
 pub enum DetectError {
     /// Failed to scan USB ports.
     #[snafu(display("failed to scan USB ports"))]
@@ -98,7 +99,7 @@ const PROBE_TIMEOUT: Duration = Duration::from_millis(500);
 const BAUD_RATE: u32 = 9600;
 
 struct MagicSequence {
-    magic: &'static [u8],
+    magic: &'static [u8], // kanon:ignore RUST/indexing-slicing -- function parameter &'static [u8], not indexing
     parse: fn(&[u8]) -> Option<VariantConfig>,
 }
 

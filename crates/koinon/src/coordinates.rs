@@ -5,6 +5,7 @@ use snafu::Snafu;
 
 /// Geodetic datum used for coordinate interpretation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
+#[non_exhaustive]
 pub enum Datum {
     /// World Geodetic System 1984 — the GPS standard.
     #[default]
@@ -26,6 +27,7 @@ pub struct Coordinates {
 
 /// Errors returned when constructing [`Coordinates`].
 #[derive(Debug, Snafu)]
+#[non_exhaustive]
 pub enum CoordinatesError {
     /// Latitude was outside the valid range.
     #[snafu(display("latitude {value} is out of range [-90, 90]"))]

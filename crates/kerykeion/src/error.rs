@@ -249,8 +249,9 @@ impl From<std::io::Error> for Error {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use snafu::ResultExt as _;
+
+    use super::*;
 
     fn make_io_error() -> std::io::Error {
         std::io::Error::new(std::io::ErrorKind::BrokenPipe, "pipe broken")

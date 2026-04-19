@@ -16,6 +16,7 @@ use super::variant;
 
 /// Errors from Yaesu protocol operations.
 #[derive(Debug, Snafu)]
+#[non_exhaustive]
 pub enum YaesuProtocolError {
     /// Protocol not yet reverse-engineered.
     #[snafu(display(

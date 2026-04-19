@@ -41,11 +41,11 @@ impl CtcssTone {
     /// if the value is not one of the 50 standard CTCSS tones.
     pub fn new(value: f32) -> crate::error::Result<Self> {
         #[expect(clippy::cast_sign_loss, reason = "CTCSS tones are always positive")]
-        let tenths = (value * 10.0).round() as u32;
+        let tenths = (value * 10.0).round() as u32; // SAFETY: CTCSS value validated positive and <300.0 Hz; *10 fits u32
         #[expect(clippy::cast_sign_loss, reason = "CTCSS tones are always positive")]
         let valid = ALL_CTCSS_TONES
             .iter()
-            .any(|&t| (t * 10.0).round() as u32 == tenths);
+            .any(|&t| (t * 10.0).round() as u32 == tenths); // SAFETY: ALL_CTCSS_TONES values are positive, <300 Hz; *10 fits u32
         ensure!(valid, InvalidCtcssToneSnafu { value });
         Ok(Self(value))
     }

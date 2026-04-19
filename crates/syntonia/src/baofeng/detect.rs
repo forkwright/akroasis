@@ -30,7 +30,7 @@ pub(crate) trait SerialPort {
     ///
     /// Returns [`DetectError::Timeout`] if the read times out, or
     /// [`DetectError::SerialIo`] on other I/O errors.
-    fn read_exact(&mut self, buf: &mut [u8]) -> Result<(), DetectError>;
+    fn read_exact(&mut self, buf: &mut [u8]) -> Result<(), DetectError>; // kanon:ignore RUST/indexing-slicing -- function parameter &mut [u8], not indexing
 
     /// Flush transmit buffer.
     ///
@@ -125,7 +125,7 @@ fn try_magic(
     // Read ident response: length byte + ident data
     let mut len_buf = [0u8; 1];
     port.read_exact(&mut len_buf)?;
-    let ident_len = len_buf.get(0).copied().unwrap_or_default() as usize;
+    let ident_len = len_buf.get(0).copied().unwrap_or_default() as usize; // SAFETY: u8→usize is lossless (u8 max 255, usize always ≥32-bit)
 
     let mut ident_data = vec![0u8; ident_len];
     port.read_exact(&mut ident_data)?;
