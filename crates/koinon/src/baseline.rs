@@ -726,7 +726,7 @@ mod tests {
     fn baseline_detects_outlier_after_stable_period() {
         let mut b = Baseline::new();
         // 100 observations drawn from N(50, 1) using the deterministic generator.
-        let samples = generate_normal_samples(0xC0FFEE_DEAD, 50.0, 1.0, 100);
+        let samples = generate_normal_samples(0x00C0_FFEE_DEAD, 50.0, 1.0, 100);
         for s in samples {
             b.observe(s);
         }
@@ -841,10 +841,10 @@ mod tests {
         /// z_score evaluated at the mean is zero for any baseline with ≥ 2 observations.
         #[test]
         fn z_score_of_mean_is_zero(
-            VALUES in proptest::collection::vec(-1000.0_f64..1000.0_f64, 2_usize..50),
+            values in proptest::collection::vec(-1000.0_f64..1000.0_f64, 2_usize..50),
         ) {
             let mut baseline = Baseline::new();
-            for v in &VALUES {
+            for v in &values {
                 baseline.observe(*v);
             }
             if let Some(mean) = baseline.mean() {

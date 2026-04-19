@@ -714,22 +714,22 @@ mod tests {
     // Tampering detection
     // -----------------------------------------------------------------------
 
-    /// Walks wire-format bytes and returns the byte OFFSET of entry `target_idx`.
+    /// Walks wire-format bytes and returns the byte offset of entry `target_idx`.
     fn entry_offset(data: &[u8], target_idx: usize) -> usize {
-        let mut OFFSET = 0usize;
+        let mut offset = 0usize;
         for i in 0..target_idx {
             let len = u32::from_le_bytes([
-                data[OFFSET],
-                data[OFFSET + 1],
-                data[OFFSET + 2],
-                data[OFFSET + 3],
+                data[offset],
+                data[offset + 1],
+                data[offset + 2],
+                data[offset + 3],
             ]) as usize;
             // Only advance if not at target.
             if i < target_idx {
-                OFFSET += 4 + len + 32;
+                offset += 4 + len + 32;
             }
         }
-        OFFSET
+        offset
     }
 
     #[test]

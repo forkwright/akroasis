@@ -687,9 +687,15 @@ mod tests {
         .with_metadata("floor", serde_json::json!(3));
 
         assert_eq!(signal.metadata.len(), 3);
-        assert_eq!(signal.metadata["sensor"], serde_json::json!("roof"));
-        assert_eq!(signal.metadata["building"], serde_json::json!("HQ"));
-        assert_eq!(signal.metadata["floor"], serde_json::json!(3));
+        assert_eq!(
+            signal.metadata.get("sensor"),
+            Some(&serde_json::json!("roof"))
+        );
+        assert_eq!(
+            signal.metadata.get("building"),
+            Some(&serde_json::json!("HQ"))
+        );
+        assert_eq!(signal.metadata.get("floor"), Some(&serde_json::json!(3)));
     }
 
     /// Signals with distinct unix-millisecond timestamps sort in chronological order.
@@ -704,12 +710,12 @@ mod tests {
         let s2 = GeoSignal::new(kind(), t2, None);
         let s3 = GeoSignal::new(kind(), t3, None);
 
-        let mut signals = vec![s3.clone(), s1.clone(), s2.clone()];
+        let mut signals = [s3, s1, s2];
         signals.sort_by_key(|s| s.timestamp);
 
-        assert_eq!(signals[0].timestamp, t1);
-        assert_eq!(signals[1].timestamp, t2);
-        assert_eq!(signals[2].timestamp, t3);
+        assert_eq!(signals.first().map(|s| s.timestamp), Some(t1));
+        assert_eq!(signals.get(1).map(|s| s.timestamp), Some(t2));
+        assert_eq!(signals.get(2).map(|s| s.timestamp), Some(t3));
     }
 
     // --- GeoSignal serde roundtrips ---
