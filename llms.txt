@@ -4,12 +4,12 @@
 
 Rust workspace for vehicle systems, radio programming, communications infrastructure, and field preparedness tools. Designed for a 1997 Dodge Ram 2500 12V Cummins platform.
 
-17 crates across 10 capability domains: radio programming, signal intelligence, navigation, network security, communications, vehicle telemetry, field operations, encryption, power management, and shared foundations.
+Capability domains: radio programming, signal intelligence, navigation, network security, communications, vehicle telemetry, field operations, encryption, power management, and shared foundations.
 
 ## Documentation
 
 - [CLAUDE.md](CLAUDE.md): Project conventions
 - [README.md](README.md): Domain map and crate overview
 - [standards/STANDARDS.md](standards/STANDARDS.md): Coding standards
-- [docs/gnomon.md](docs/gnomon.md): Greek naming methodology
+- [standards/GNOMON.md](standards/GNOMON.md): Greek naming methodology
 - [docs/lexicon.md](docs/lexicon.md): Project name registry
