@@ -96,6 +96,10 @@ pub fn import_from_string(
 
 /// Parses a CHIRP-compatible CSV INTO a `FrequencyPlan`.
 #[allow(clippy::indexing_slicing)] // Column access is safe: we verify cols.len() >= 15 above each use.
+#[allow(
+    clippy::too_many_lines,
+    reason = "flat CSV-column parsing; splitting into helpers would fragment a linear schema decode without clarity gain"
+)]
 pub fn parse_chirp_csv(content: &str) -> Result<FrequencyPlan, RadioError> {
     let mut channels = Vec::new();
     let mut lines = content.lines();
@@ -116,22 +120,52 @@ pub fn parse_chirp_csv(content: &str) -> Result<FrequencyPlan, RadioError> {
             });
         }
 
-        let index: u16 = cols.first().copied().unwrap_or_default().trim().parse().map_err(|_| RadioError::CsvParse {
-            line: line_num + 2,
-            message: format!("invalid location: '{}'", cols.first().copied().unwrap_or_default().trim()),
-        })?;
+        let index: u16 = cols
+            .first()
+            .copied()
+            .unwrap_or_default()
+            .trim()
+            .parse()
+            .map_err(|_| RadioError::CsvParse {
+                line: line_num + 2,
+                message: format!(
+                    "invalid location: '{}'",
+                    cols.first().copied().unwrap_or_default().trim()
+                ),
+            })?;
 
-        let name = cols.get(1).copied().unwrap_or_default().trim().trim_matches('"').to_string();
+        let name = cols
+            .get(1)
+            .copied()
+            .unwrap_or_default()
+            .trim()
+            .trim_matches('"')
+            .to_string();
 
-        let rx_mhz: f64 = cols.get(2).copied().unwrap_or_default().trim().parse().map_err(|_| RadioError::CsvParse {
-            line: line_num + 2,
-            message: format!("invalid frequency: '{}'", cols.get(2).copied().unwrap_or_default().trim()),
-        })?;
+        let rx_mhz: f64 = cols
+            .get(2)
+            .copied()
+            .unwrap_or_default()
+            .trim()
+            .parse()
+            .map_err(|_| RadioError::CsvParse {
+                line: line_num + 2,
+                message: format!(
+                    "invalid frequency: '{}'",
+                    cols.get(2).copied().unwrap_or_default().trim()
+                ),
+            })?;
         #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
         let rx_freq = Frequency::hz((rx_mhz * 1_000_000.0).round() as u64);
 
         let duplex = cols.get(3).copied().unwrap_or_default().trim();
-        let offset_mhz: f64 = cols.get(4).copied().unwrap_or_default().trim().parse().unwrap_or(0.0);
+        let offset_mhz: f64 = cols
+            .get(4)
+            .copied()
+            .unwrap_or_default()
+            .trim()
+            .parse()
+            .unwrap_or(0.0);
 
         #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
         let offset_freq = Frequency::hz((offset_mhz * 1_000_000.0).round() as u64);
