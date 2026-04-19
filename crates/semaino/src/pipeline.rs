@@ -6,6 +6,7 @@
 use std::time::Duration;
 
 use koinon::GeoSignal;
+use serde::{Deserialize, Serialize};
 use tokio::sync::{broadcast, mpsc};
 use tracing::Instrument as _;
 
@@ -19,7 +20,14 @@ use crate::{
 // ---------------------------------------------------------------------------
 
 /// Runtime configuration for the semaino pipeline.
-#[derive(Debug, Clone)]
+///
+/// Every field is a behavioral tuning knob: changing it alters when
+/// convergence is detected and when alerts are emitted, but does not
+/// change the signal protocol or the external event schema. Serde
+/// support + `#[serde(default)]` lets operators and agents override
+/// a subset of fields via TOML without knowing the rest of the schema.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct SemainoConfig {
     /// Grid quantization factor. 10 000 ≈ 10 m resolution.
     pub grid_resolution: u32,
@@ -325,6 +333,44 @@ mod tests {
         assert_eq!(cfg.time_window_secs, 30);
         assert_eq!(cfg.suppression_window_secs, 60);
         assert_eq!(cfg.min_convergence_domains, 2);
+    }
+
+    #[test]
+    fn config_toml_roundtrip_preserves_values() {
+        // WHY: agent or operator tuning expressed in TOML must survive a
+        // serialize→deserialize round-trip so the persisted config remains
+        // canonical.
+        let cfg = SemainoConfig {
+            grid_resolution: 50_000,
+            time_window_secs: 12,
+            suppression_window_secs: 7,
+            min_convergence_domains: 4,
+        };
+        let toml_str = toml::to_string(&cfg).unwrap();
+        let parsed: SemainoConfig = toml::from_str(&toml_str).unwrap();
+        assert_eq!(parsed.grid_resolution, 50_000);
+        assert_eq!(parsed.time_window_secs, 12);
+        assert_eq!(parsed.suppression_window_secs, 7);
+        assert_eq!(parsed.min_convergence_domains, 4);
+    }
+
+    #[test]
+    fn config_partial_toml_falls_through_to_defaults() {
+        // WHY: agents must be able to override a single knob without
+        // restating every other knob in the file.
+        let partial = "grid_resolution = 99";
+        let parsed: SemainoConfig = toml::from_str(partial).unwrap();
+        assert_eq!(parsed.grid_resolution, 99);
+        let defaults = SemainoConfig::default();
+        assert_eq!(parsed.time_window_secs, defaults.time_window_secs);
+        assert_eq!(
+            parsed.suppression_window_secs,
+            defaults.suppression_window_secs
+        );
+        assert_eq!(
+            parsed.min_convergence_domains,
+            defaults.min_convergence_domains
+        );
     }
 
     // ── pipeline ignores OSINT signals gracefully ──────────────────────────────

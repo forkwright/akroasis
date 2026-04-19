@@ -3,14 +3,14 @@
 use prost::Message as _;
 use rand_core::{OsRng, RngCore as _};
 
+use crate::config::MessageConfig;
 use crate::crypto;
 use crate::error::Error;
 use crate::proto::mesh_packet::Priority;
 use crate::proto::{AdminMessage, Data, MeshPacket, PortNum, Position, mesh_packet};
 use crate::types::{ChannelIndex, MAX_HOP_LIMIT, NodeNum};
 
-/// Default hop LIMIT for outbound packets.
-const DEFAULT_HOP_LIMIT: u8 = 3;
+// Historical default (hop_limit = 3) now lives in [`MessageConfig::default`].
 
 /// Constructs outbound [`MeshPacket`] messages with a builder pattern.
 ///
@@ -32,26 +32,38 @@ pub struct MessageBuilder {
 }
 
 impl MessageBuilder {
-    /// Build a text message (`TEXT_MESSAGE_APP`).
+    /// Build a text message (`TEXT_MESSAGE_APP`) with the default hop limit.
     #[must_use]
     pub fn text(dest: NodeNum, text: &str) -> Self {
+        Self::text_with_config(dest, text, &MessageConfig::default())
+    }
+
+    /// Build a text message with a caller-supplied [`MessageConfig`].
+    #[must_use]
+    pub fn text_with_config(dest: NodeNum, text: &str, config: &MessageConfig) -> Self {
         Self {
             dest,
             portnum: PortNum::TextMessageApp,
             payload: text.as_bytes().to_vec(),
             channel: ChannelIndex(0),
             want_ack: false,
-            hop_limit: DEFAULT_HOP_LIMIT,
+            hop_limit: config.default_hop_limit,
             priority: Priority::Default,
         }
     }
 
-    /// Build a position message (`POSITION_APP`).
+    /// Build a position message (`POSITION_APP`) with the default hop limit.
     ///
     /// Latitude and longitude are in decimal degrees; they are converted to
     /// Meshtastic's `i32` representation (`value * 1e7`).
     #[must_use]
     pub fn position(dest: NodeNum, lat: f64, lon: f64) -> Self {
+        Self::position_with_config(dest, lat, lon, &MessageConfig::default())
+    }
+
+    /// Build a position message with a caller-supplied [`MessageConfig`].
+    #[must_use]
+    pub fn position_with_config(dest: NodeNum, lat: f64, lon: f64, config: &MessageConfig) -> Self {
         // WHY: Meshtastic firmware stores lat/lon as fixed-point i32 = degrees * 1e7.
         #[expect(
             clippy::as_conversions,
@@ -68,21 +80,31 @@ impl MessageBuilder {
             payload: pos.encode_to_vec(),
             channel: ChannelIndex(0),
             want_ack: false,
-            hop_limit: DEFAULT_HOP_LIMIT,
+            hop_limit: config.default_hop_limit,
             priority: Priority::Default,
         }
     }
 
-    /// Build an admin message (`ADMIN_APP`).
+    /// Build an admin message (`ADMIN_APP`) with the default hop limit.
     #[must_use]
     pub fn admin(dest: NodeNum, admin_msg: &AdminMessage) -> Self {
+        Self::admin_with_config(dest, admin_msg, &MessageConfig::default())
+    }
+
+    /// Build an admin message with a caller-supplied [`MessageConfig`].
+    #[must_use]
+    pub fn admin_with_config(
+        dest: NodeNum,
+        admin_msg: &AdminMessage,
+        config: &MessageConfig,
+    ) -> Self {
         Self {
             dest,
             portnum: PortNum::AdminApp,
             payload: admin_msg.encode_to_vec(),
             channel: ChannelIndex(0),
             want_ack: true,
-            hop_limit: DEFAULT_HOP_LIMIT,
+            hop_limit: config.default_hop_limit,
             priority: Priority::Reliable,
         }
     }
@@ -340,6 +362,22 @@ mod tests {
             .build(FROM_NODE, &[])
             .unwrap();
         assert_eq!(pkt.hop_limit, u32::from(MAX_HOP_LIMIT));
+    }
+
+    #[test]
+    fn configured_hop_limit_observably_changes_output() {
+        // WHY: parameterization-observability test — a MessageConfig with
+        // default_hop_limit=1 must produce a packet with hop_limit=1, where
+        // the default builder produces hop_limit=3.
+        let cfg = MessageConfig {
+            default_hop_limit: 1,
+        };
+        #[expect(clippy::unwrap_used, reason = "test-only")]
+        let pkt = MessageBuilder::text_with_config(DEST, "test", &cfg)
+            .build(FROM_NODE, &[])
+            .unwrap();
+        assert_eq!(pkt.hop_limit, 1);
+        assert_eq!(pkt.hop_start, 1);
     }
 
     #[test]

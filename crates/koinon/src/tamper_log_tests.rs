@@ -429,3 +429,47 @@ fn id_types_usable_in_entry_kinds() {
         kind_tag: CompactString::from("t"),
     };
 }
+
+#[test]
+fn configured_rotation_observably_changes_trigger() {
+    // WHY: parameterization-observability test — open_with_config(max=300)
+    // must trigger rotation after fewer entries than the 100 MiB default
+    // would.
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("cfg.log");
+
+    let cfg = TamperLogConfig {
+        max_file_bytes: 300,
+    };
+    let mut log = TamperLog::open_with_config(&path, &cfg).unwrap();
+    for _ in 0..30 {
+        log.append(alert_kind()).unwrap();
+    }
+    drop(log);
+
+    assert!(
+        dir.path().join("cfg.1.log").exists(),
+        "300-byte threshold must force rotation; default 100 MiB would not"
+    );
+}
+
+#[test]
+fn tamper_log_config_toml_roundtrip() {
+    // WHY: the config must survive TOML round-trip so operators and
+    // agents can express the tuning in the same file that configures
+    // the rest of the service.
+    let cfg = TamperLogConfig {
+        max_file_bytes: 1_048_576,
+    };
+    let toml_str = toml::to_string(&cfg).unwrap();
+    let parsed: TamperLogConfig = toml::from_str(&toml_str).unwrap();
+    assert_eq!(parsed.max_file_bytes, 1_048_576);
+}
+
+#[test]
+fn tamper_log_config_empty_toml_uses_default() {
+    // WHY: an empty or missing [tamper_log] section must fall through
+    // to the default so bootstrap-from-nothing is possible.
+    let parsed: TamperLogConfig = toml::from_str("").unwrap();
+    assert_eq!(parsed.max_file_bytes, DEFAULT_MAX_FILE_BYTES);
+}

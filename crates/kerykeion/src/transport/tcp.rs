@@ -12,6 +12,7 @@ use tokio_util::codec::Framed;
 
 use crate::Error;
 use crate::codec::MeshCodec;
+use crate::config::TransportConfig;
 use crate::connection::MeshConnection;
 use crate::error::{ConnectionLostSnafu, TcpConnectSnafu};
 use crate::proto::{FromRadio, ToRadio};
@@ -19,11 +20,8 @@ use crate::proto::{FromRadio, ToRadio};
 /// Default Meshtastic TCP port.
 pub const DEFAULT_PORT: u16 = 4403;
 
-/// TCP connection timeout.
-const CONNECT_TIMEOUT: Duration = Duration::from_secs(3);
-
-/// Exponential backoff ceiling.
-const MAX_BACKOFF: Duration = Duration::from_secs(30);
+// Historical defaults (connect_timeout = 3 s, max_backoff = 30 s) now live
+// in [`TransportConfig::default`].
 
 /// Meshtastic transport over a TCP/IP connection.
 pub struct TcpTransport {
@@ -35,38 +33,52 @@ pub struct TcpTransport {
     framed: Framed<TcpStream, MeshCodec>,
     /// Whether the TCP connection is currently open.
     connected: bool,
+    /// Transport tuning applied to reconnect attempts.
+    config: TransportConfig,
 }
 
 impl TcpTransport {
-    /// Connect to a Meshtastic node at `addr:port` with a 3-second timeout.
+    /// Connect to a Meshtastic node at `addr:port` with the default timeout.
     ///
     /// # Errors
     ///
     /// Returns [`Error::TcpConnect`] if the connection cannot be established
     /// within the timeout.
     pub async fn connect(addr: &str, port: u16) -> Result<Self, Error> {
-        let stream = tcp_connect(addr, port).await?;
+        Self::connect_with_config(addr, port, &TransportConfig::default()).await
+    }
+
+    /// Connect to a Meshtastic node with the supplied tuning configuration.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::TcpConnect`] if the connection cannot be established
+    /// within [`TransportConfig::tcp_connect_timeout_secs`].
+    pub async fn connect_with_config(
+        addr: &str,
+        port: u16,
+        config: &TransportConfig,
+    ) -> Result<Self, Error> {
+        let stream = tcp_connect(addr, port, config.tcp_connect_timeout()).await?;
         Ok(Self {
             addr: addr.to_owned(),
             port,
             framed: Framed::new(stream, MeshCodec),
             connected: true,
+            config: config.clone(),
         })
     }
 }
 
-/// Open a TCP connection with the configured timeout.
-async fn tcp_connect(addr: &str, port: u16) -> Result<TcpStream, Error> {
+/// Open a TCP connection with the given timeout.
+async fn tcp_connect(addr: &str, port: u16, timeout: Duration) -> Result<TcpStream, Error> {
     let target = format!("{addr}:{port}");
-    tokio::time::timeout(CONNECT_TIMEOUT, TcpStream::connect(&target))
+    tokio::time::timeout(timeout, TcpStream::connect(&target))
         .await
         .map_err(|_| Error::TcpConnect {
             source: std::io::Error::new(
                 std::io::ErrorKind::TimedOut,
-                format!(
-                    "connect to {target} timed out after {}s",
-                    CONNECT_TIMEOUT.as_secs()
-                ),
+                format!("connect to {target} timed out after {}s", timeout.as_secs()),
             ),
             addr: target.clone(),
             location: snafu::Location::new(file!(), line!(), column!()),
@@ -106,11 +118,13 @@ impl MeshConnection for TcpTransport {
 
     async fn reconnect(&mut self) -> Result<(), Error> {
         self.connected = false;
-        let mut delay = Duration::from_secs(1);
+        let mut delay = self.config.reconnect_initial_delay();
+        let max_backoff = self.config.reconnect_max_backoff();
+        let connect_timeout = self.config.tcp_connect_timeout();
 
         loop {
             tokio::time::sleep(delay).await;
-            match tcp_connect(&self.addr, self.port).await {
+            match tcp_connect(&self.addr, self.port, connect_timeout).await {
                 Ok(stream) => {
                     self.framed = Framed::new(stream, MeshCodec);
                     self.connected = true;
@@ -124,7 +138,7 @@ impl MeshConnection for TcpTransport {
                         addr = %self.addr,
                         "TCP reconnect failed; retrying"
                     );
-                    delay = (delay * 2).min(MAX_BACKOFF);
+                    delay = (delay * 2).min(max_backoff);
                 }
             }
         }

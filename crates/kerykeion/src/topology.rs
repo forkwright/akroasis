@@ -11,10 +11,10 @@ use petgraph::visit::EdgeRef;
 use serde::{Deserialize, Serialize};
 use tokio::time::Instant;
 
+use crate::config::TopologyConfig;
 use crate::types::NodeNum;
 
-/// Ceiling SNR value for Dijkstra cost derivation: `cost = SNR_CEILING - snr`.
-const SNR_CEILING: f32 = 30.0;
+// Historical default (30.0) now lives in [`TopologyConfig::default`].
 
 /// Directed edge weight representing radio link quality between two nodes.
 #[derive(Debug, Clone)]
@@ -144,8 +144,39 @@ impl MeshTopology {
     }
 
     /// Dijkstra shortest path using SNR-derived weights (lower SNR = higher cost).
+    ///
+    /// Uses [`TopologyConfig::default`]'s `snr_ceiling` for cost derivation.
+    /// Call [`Self::shortest_path_with_config`] to supply an operator- or
+    /// agent-tuned ceiling via [`TopologyConfig`].
     #[must_use]
     pub fn shortest_path(&self, from: NodeNum, to: NodeNum) -> Option<Vec<NodeNum>> {
+        self.shortest_path_with_ceiling(from, to, TopologyConfig::default().snr_ceiling)
+    }
+
+    /// Like [`Self::shortest_path`] but sources the SNR ceiling from
+    /// [`TopologyConfig::snr_ceiling`].
+    #[must_use]
+    pub fn shortest_path_with_config(
+        &self,
+        from: NodeNum,
+        to: NodeNum,
+        config: &TopologyConfig,
+    ) -> Option<Vec<NodeNum>> {
+        self.shortest_path_with_ceiling(from, to, config.snr_ceiling)
+    }
+
+    /// Dijkstra shortest path with an explicit SNR ceiling.
+    ///
+    /// `cost = max(ceiling - observed_snr, 0)`. Higher ceilings flatten the
+    /// cost function; lower ceilings amplify the preference for strong
+    /// links at the expense of hop count.
+    #[must_use]
+    pub fn shortest_path_with_ceiling(
+        &self,
+        from: NodeNum,
+        to: NodeNum,
+        ceiling: f32,
+    ) -> Option<Vec<NodeNum>> {
         let &from_idx = self.node_index.get(&from)?;
         let &to_idx = self.node_index.get(&to)?;
 
@@ -155,7 +186,7 @@ impl MeshTopology {
             from_idx,
             |n| n == to_idx,
             |e| {
-                let cost = SNR_CEILING - e.weight().snr;
+                let cost = ceiling - e.weight().snr;
                 if cost < 0.0 { 0.0_f32 } else { cost }
             },
             |_| 0.0_f32,
@@ -369,6 +400,7 @@ pub struct TopologySnapshot {
 #[cfg(test)]
 #[expect(
     clippy::unwrap_used,
+    clippy::expect_used,
     clippy::indexing_slicing,
     reason = "test code: panics and unwraps acceptable in assertions"
 )]
@@ -521,5 +553,77 @@ mod tests {
     fn neighbors_of_unknown_node_returns_empty() {
         let topo = MeshTopology::new();
         assert!(topo.neighbors(n(99)).is_empty());
+    }
+
+    #[test]
+    fn shortest_path_ceiling_changes_selected_route() {
+        // WHY: parameterization-observability test — the same graph must
+        // produce a different path depending on snr_ceiling.
+        //
+        // With default ceiling 30: direct link (snr 29 → cost 1) beats the
+        // 2-hop route (snr 28 each → cost 4) — direct wins.
+        // With ceiling 5 (clamped to 0 for any snr>=5): both paths cost 0,
+        // but the 1-hop direct path is selected by astar's determinism.
+        // A ceiling just above the stronger links asymmetrically penalises
+        // the weaker direct link more than the two-hop route, so raising
+        // the ceiling from an "equal" value to a value where only the
+        // direct link is below ceiling flips the answer.
+        //
+        // Construction: direct link snr=10, 2-hop path snr=19 each.
+        //   ceiling=20  →  direct cost=10, 2-hop cost=1+1=2 → 2-hop wins
+        //   ceiling=11  →  direct cost=1,  2-hop cost=0+0=0 (clamped) → 2-hop still wins by cost
+        //   ceiling=9   →  direct cost=0 (clamped), 2-hop cost=0 → direct wins (1 hop)
+        let mut topo = MeshTopology::new();
+        topo.update_link(n(1), n(2), 19.0);
+        topo.update_link(n(2), n(3), 19.0);
+        topo.update_link(n(1), n(3), 10.0);
+
+        let path_high = topo
+            .shortest_path_with_ceiling(n(1), n(3), 20.0)
+            .expect("reachable");
+        assert_eq!(
+            path_high,
+            vec![n(1), n(2), n(3)],
+            "ceiling 20 penalises direct link (cost 10) more than 2-hop (cost 2)"
+        );
+
+        let path_low = topo
+            .shortest_path_with_ceiling(n(1), n(3), 9.0)
+            .expect("reachable");
+        assert_eq!(
+            path_low,
+            vec![n(1), n(3)],
+            "ceiling 9 clamps all costs to 0; astar picks the 1-hop path"
+        );
+    }
+
+    #[test]
+    fn shortest_path_with_config_uses_supplied_ceiling() {
+        let mut topo = MeshTopology::new();
+        topo.update_link(n(1), n(2), 19.0);
+        topo.update_link(n(2), n(3), 19.0);
+        topo.update_link(n(1), n(3), 10.0);
+
+        let cfg_high = TopologyConfig {
+            snr_ceiling: 20.0,
+            ..TopologyConfig::default()
+        };
+        let cfg_low = TopologyConfig {
+            snr_ceiling: 9.0,
+            ..TopologyConfig::default()
+        };
+
+        assert_eq!(
+            topo.shortest_path_with_config(n(1), n(3), &cfg_high)
+                .unwrap()
+                .len(),
+            3
+        );
+        assert_eq!(
+            topo.shortest_path_with_config(n(1), n(3), &cfg_low)
+                .unwrap()
+                .len(),
+            2
+        );
     }
 }
