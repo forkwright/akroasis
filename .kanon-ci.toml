@@ -29,7 +29,10 @@ timeout_secs = 900
 
 [stages."cargo nextest"]
 cmd = "cargo nextest run --workspace --build-jobs 8 --test-threads 8"
-timeout_secs = 1800
+# 2700s (45 min) accommodates the cold-compile path under the 8-thread cap.
+# Warm-cache runs complete in ~30s; the headroom only matters when the build
+# cache is cold (first run after daemon restart or cache eviction). See #109.
+timeout_secs = 2700
 
 [stages."kanon lint"]
 cmd = "kanon lint . --summary"
