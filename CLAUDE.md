@@ -1,3 +1,9 @@
+<!--
+scope: akroasis repo conventions (SIGINT/comms crates: koinon, kryphos)
+defers_to: ~/menos-ops/CLAUDE.md for machine topology; ~/.claude/CLAUDE.md for operator principles
+tightens: per-crate CLAUDE.md files may narrow within their layer
+-->
+
 # CLAUDE.md
 
 Project conventions for AI coding agents working on this codebase.
