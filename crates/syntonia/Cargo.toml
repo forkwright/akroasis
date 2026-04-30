@@ -5,6 +5,11 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
+[features]
+# Opt-in hardware serial backend. Requires `libudev-dev` on Linux; off by
+# default so the crate can build in minimal CI/container environments.
+hardware-serial = ["dep:serialport"]
+
 [dependencies]
 koinon = { path = "../koinon" }
 serde = { workspace = true, features = ["derive"] }
@@ -16,11 +21,6 @@ compact_str = { workspace = true }
 tracing = { workspace = true }
 rusb = { workspace = true }
 serialport = { workspace = true, optional = true }
-
-[features]
-# Opt-in hardware serial backend. Requires `libudev-dev` on Linux; off by
-# default so the crate can build in minimal CI/container environments.
-hardware-serial = ["dep:serialport"]
 
 [dev-dependencies]
 proptest = "1"

@@ -6,9 +6,6 @@ rust-version.workspace = true
 license.workspace = true
 description = "Meshtastic mesh networking integration for Akroasis"
 
-[lints]
-workspace = true
-
 [dependencies]
 koinon = { path = "../koinon" }
 serde = { workspace = true }
@@ -35,3 +32,6 @@ prost-build = "0.14.3"
 proptest = { workspace = true }
 # WHY: test-util provides tokio::time::pause/advance for deterministic async timing tests.
 tokio = { workspace = true, features = ["test-util"] }
+
+[lints]
+workspace = true
