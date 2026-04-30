@@ -51,18 +51,14 @@ pub mod topology;
 pub mod transport;
 pub mod types;
 
-// WHY: generated protobuf code cannot be annotated; allow all clippy/doc
-// lints on this module. #[expect] cannot be used because some lints in the
-// bundle (dead_code, unused) do not fire on every build of the generated
-// output, which would trigger unfulfilled_lint_expectations.
-#[allow( // kanon:ignore RUST/allow-not-expect -- generated code; expect would warn on unfulfilled bundle lints
+// WHY: generated protobuf code cannot be annotated; suppress all clippy/doc
+// lints on this module. Expect is used so stale suppressions fail the build.
+#[expect(
     clippy::all,
     clippy::pedantic,
     clippy::nursery,
     missing_docs,
-    dead_code,
-    unused,
-    reason = "generated protobuf module — bundle lints may not all fire so expect cannot be used"
+    reason = "generated protobuf module — clippy and doc lints vary by generated code"
 )]
 pub mod proto {
     include!(concat!(env!("OUT_DIR"), "/meshtastic.rs"));

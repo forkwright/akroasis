@@ -1,14 +1,21 @@
 //! `akroasis radio read` — download channels from a radio and display them.
 
+use std::io::Write;
+
 use comfy_table::{Cell, ContentArrangement, Table};
+use snafu::ResultExt;
 use syntonia::{Bandwidth, Channel, PowerLevel, ScanMode, ToneMode};
 
-use super::errors::RadioError;
+use super::errors::{IoSnafu, RadioError};
 use super::progress;
 use super::{Hardware, resolve_target};
 
 /// Runs the read subcommand.
-pub(crate) fn run(port: Option<&str>, hw: &dyn Hardware) -> Result<(), RadioError> {
+pub(crate) fn run(
+    port: Option<&str>,
+    hw: &dyn Hardware,
+    out: &mut dyn Write,
+) -> Result<(), RadioError> {
     let target = resolve_target(port, hw)?;
     let mut session = hw.open(&target.port)?;
 
@@ -26,18 +33,23 @@ pub(crate) fn run(port: Option<&str>, hw: &dyn Hardware) -> Result<(), RadioErro
         .filter(|ch| ch.rx_freq.as_hz() > 0)
         .collect();
 
-    print_channel_table(&programmed);
-    println!(
+    print_channel_table(&programmed, out)?;
+    writeln!(
+        out,
         "{} channels programmed (of {} slots)",
         programmed.len(),
         session.variant().max_channels(),
-    );
+    )
+    .context(IoSnafu)?;
 
     Ok(())
 }
 
 /// Formats a channel table for display.
-pub(crate) fn print_channel_table(channels: &[&Channel]) {
+pub(crate) fn print_channel_table(
+    channels: &[&Channel],
+    out: &mut dyn Write,
+) -> Result<(), RadioError> {
     let mut table = Table::new();
     table.set_content_arrangement(ContentArrangement::Dynamic);
     table.set_header(vec![
@@ -61,13 +73,17 @@ pub(crate) fn print_channel_table(channels: &[&Channel]) {
         ]);
     }
 
-    println!("{table}");
+    writeln!(out, "{table}").context(IoSnafu)?;
+    Ok(())
 }
 
 /// Formats a channel table from owned channel references (for import display).
-pub(crate) fn print_channel_table_owned(channels: &[Channel]) {
+pub(crate) fn print_channel_table_owned(
+    channels: &[Channel],
+    out: &mut dyn Write,
+) -> Result<(), RadioError> {
     let refs: Vec<&Channel> = channels.iter().collect();
-    print_channel_table(&refs);
+    print_channel_table(&refs, out)
 }
 
 fn format_tone(tone: ToneMode) -> String {
@@ -149,7 +165,11 @@ mod tests {
     fn channel_table_displays_without_panic() {
         let channels = sample_channels();
         let refs: Vec<&Channel> = channels.iter().collect();
-        print_channel_table(&refs);
+        let mut out = Vec::new();
+        print_channel_table(&refs, &mut out).unwrap();
+        let s = String::from_utf8(out).unwrap();
+        assert!(s.contains("CALL"));
+        assert!(s.contains("RPT-IN"));
     }
 
     #[test]

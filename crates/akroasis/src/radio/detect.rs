@@ -1,40 +1,51 @@
 //! `akroasis radio detect` — discover connected radios.
 
-use super::errors::RadioError;
+use std::io::Write;
+
+use snafu::ResultExt;
+
+use super::errors::{IoSnafu, RadioError};
 use super::{DetectedRadio, Hardware};
 
 /// Runs the detect subcommand.
-pub(crate) fn run(hw: &dyn Hardware) -> Result<(), RadioError> {
+pub(crate) fn run(hw: &dyn Hardware, out: &mut dyn Write) -> Result<(), RadioError> {
     let radios = hw.detect_radios()?;
 
     if radios.is_empty() {
-        println!(
+        writeln!(
+            out,
             "No radios detected. Check that the radio is on \
              and the programming cable is connected."
-        );
+        )
+        .context(IoSnafu)?;
         return Ok(());
     }
 
-    print_detected(&radios);
+    print_detected(&radios, out)?;
     Ok(())
 }
 
 /// Formats and prints detected radios.
-pub(crate) fn print_detected(radios: &[DetectedRadio]) {
-    println!("Detected radios:");
+pub(crate) fn print_detected(
+    radios: &[DetectedRadio],
+    out: &mut dyn Write,
+) -> Result<(), RadioError> {
+    writeln!(out, "Detected radios:").context(IoSnafu)?;
     for (i, radio) in radios.iter().enumerate() {
         let firmware_info = if radio.firmware.is_empty() {
             String::new()
         } else {
             format!(" (firmware: {})", radio.firmware)
         };
-        println!(
+        writeln!(
+            out,
             "  {}. {} on {}{}",
             i + 1,
             radio.variant.display_name(),
             radio.port,
             firmware_info,
-        );
+        )
+        .context(IoSnafu)?;
     }
 
     let warnings: Vec<&str> = radios
@@ -42,11 +53,13 @@ pub(crate) fn print_detected(radios: &[DetectedRadio]) {
         .flat_map(|r| r.warnings.iter().map(String::as_str))
         .collect();
     for warning in warnings {
-        println!("\n\u{26a0} {warning}");
+        writeln!(out, "\n\u{26a0} {warning}").context(IoSnafu)?;
     }
+    Ok(())
 }
 
 #[cfg(test)]
+#[expect(clippy::unwrap_used, reason = "test assertions use unwrap for clarity")]
 mod tests {
     use super::*;
     use crate::radio::RadioVariant;
@@ -60,9 +73,13 @@ mod tests {
             warnings: vec![],
         }];
 
-        // Capture by calling print — we just verify it doesn't panic.
-        // The format is validated by the integration test.
-        print_detected(&radios);
+        let mut out = Vec::new();
+        print_detected(&radios, &mut out).unwrap();
+        let s = String::from_utf8(out).unwrap();
+        assert!(s.contains("Detected radios:"));
+        assert!(s.contains("BF-F8HP"));
+        assert!(s.contains("/dev/ttyUSB0"));
+        assert!(s.contains("BFP3V3"));
     }
 
     #[test]
@@ -84,6 +101,19 @@ mod tests {
             },
         ];
 
-        print_detected(&radios);
+        let mut out = Vec::new();
+        print_detected(&radios, &mut out).unwrap();
+        let s = String::from_utf8(out).unwrap();
+        assert!(s.contains("1. Baofeng BF-F8HP"));
+        assert!(s.contains("2. Baofeng UV-5R"));
+        assert!(s.contains("PL2303 clone detected"));
+    }
+
+    #[test]
+    fn run_no_radios_writes_message() {
+        let mut out = Vec::new();
+        // StubHardware returns HardwareNotAvailable, which means no radios.
+        let result = run(&super::super::StubHardware, &mut out);
+        assert!(result.is_err());
     }
 }

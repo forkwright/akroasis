@@ -78,6 +78,9 @@ pub enum RadioError {
 
     #[snafu(display("hardware support not yet available (syntonia protocol layer pending)"))]
     HardwareNotAvailable,
+
+    #[snafu(display("I/O error: {source}"))]
+    Io { source: std::io::Error },
 }
 
 #[cfg(test)]

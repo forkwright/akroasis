@@ -1,12 +1,13 @@
 //! `akroasis radio program` — write a frequency plan to a radio.
 
+use std::io::Write;
 use std::path::Path;
 
 use dialoguer::Confirm;
 use snafu::ResultExt;
 use syntonia::{FrequencyPlan, ValidationIssue, validate_plan};
 
-use super::errors::{RadioError, ReadFileSnafu, SyntoniaSnafu};
+use super::errors::{IoSnafu, RadioError, ReadFileSnafu, SyntoniaSnafu};
 use super::progress;
 use super::{Hardware, resolve_target};
 
@@ -15,6 +16,7 @@ pub(crate) fn run(
     port: Option<&str>,
     plan_path: &Path,
     hw: &dyn Hardware,
+    out: &mut dyn Write,
 ) -> Result<(), RadioError> {
     let plan = load_plan(plan_path)?;
 
@@ -34,7 +36,7 @@ pub(crate) fn run(
 
     if !errors.is_empty() {
         for e in &errors {
-            eprintln!("error: {e:?}");
+            writeln!(out, "error: {e:?}").context(IoSnafu)?;
         }
         return Err(RadioError::ValidationFailed {
             message: format!("{} validation errors", errors.len()),
@@ -42,15 +44,17 @@ pub(crate) fn run(
     }
 
     for w in &warnings {
-        eprintln!("warning: {w:?}");
+        writeln!(out, "warning: {w:?}").context(IoSnafu)?;
     }
 
-    println!(
+    writeln!(
+        out,
         "About to program {} on {}. {} channels.",
         variant.display_name(),
         target.port,
         plan.channel_count(),
-    );
+    )
+    .context(IoSnafu)?;
 
     let confirmed = Confirm::new()
         .with_prompt("Continue?")
@@ -76,7 +80,7 @@ pub(crate) fn run(
     pb.finish_and_clear();
 
     // Verify: re-download and compare
-    println!("Verifying...");
+    writeln!(out, "Verifying...").context(IoSnafu)?;
     let pb = progress::download_bar(128);
     let readback = session.download_image(&|done, total| {
         pb.set_length(u64::from(total));
@@ -90,10 +94,12 @@ pub(crate) fn run(
         });
     }
 
-    println!(
+    writeln!(
+        out,
         "Programming complete. {} channels written.",
         plan.channel_count()
-    );
+    )
+    .context(IoSnafu)?;
 
     Ok(())
 }

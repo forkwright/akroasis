@@ -80,6 +80,9 @@ pub enum VaultCliError {
     /// The user cancelled the operation.
     #[snafu(display("operation cancelled"))]
     Cancelled,
+
+    #[snafu(display("I/O error: {source}"))]
+    Io { source: std::io::Error },
 }
 
 fn parse_credential_type(s: &str) -> Result<CredentialType, String> {
@@ -127,33 +130,37 @@ fn read_secret(prompt: &str) -> Result<String, VaultCliError> {
 }
 
 /// Dispatches a vault subcommand.
-pub fn dispatch(cmd: &VaultCommand) -> Result<(), VaultCliError> {
+pub fn dispatch(cmd: &VaultCommand, out: &mut dyn Write) -> Result<(), VaultCliError> {
     match cmd {
-        VaultCommand::Init => run_init(),
-        VaultCommand::Add { name, r#type } => run_add(name, r#type),
-        VaultCommand::List => run_list(),
-        VaultCommand::Get { name } => run_get(name),
-        VaultCommand::Rotate { name } => run_rotate(name),
-        VaultCommand::Revoke { name } => run_revoke(name),
+        VaultCommand::Init => run_init(out),
+        VaultCommand::Add { name, r#type } => run_add(name, r#type, out),
+        VaultCommand::List => run_list(out),
+        VaultCommand::Get { name } => run_get(name, out),
+        VaultCommand::Rotate { name } => run_rotate(name, out),
+        VaultCommand::Revoke { name } => run_revoke(name, out),
         VaultCommand::Identity => {
-            run_identity();
+            run_identity(out)?;
             Ok(())
         }
     }
 }
 
-fn run_init() -> Result<(), VaultCliError> {
+fn run_init(out: &mut dyn Write) -> Result<(), VaultCliError> {
     let path = default_vault_path();
 
     let passphrase = read_passphrase_confirmed("Vault passphrase: ")?;
 
     let _vault = Vault::create(&path, passphrase.as_bytes()).context(VaultSnafu)?;
 
-    println!("Vault created at {}", path.display());
+    writeln!(out, "Vault created at {}", path.display()).context(IoSnafu)?;
     Ok(())
 }
 
-fn run_add(name: &str, credential_type: &CredentialType) -> Result<(), VaultCliError> {
+fn run_add(
+    name: &str,
+    credential_type: &CredentialType,
+    out: &mut dyn Write,
+) -> Result<(), VaultCliError> {
     let path = default_vault_path();
     let passphrase = read_passphrase("Vault passphrase: ")?;
 
@@ -164,11 +171,11 @@ fn run_add(name: &str, credential_type: &CredentialType) -> Result<(), VaultCliE
         .add(name, credential_type.clone(), secret.as_bytes())
         .context(VaultSnafu)?;
 
-    println!("Added '{name}' ({credential_type})");
+    writeln!(out, "Added '{name}' ({credential_type})").context(IoSnafu)?;
     Ok(())
 }
 
-fn run_list() -> Result<(), VaultCliError> {
+fn run_list(out: &mut dyn Write) -> Result<(), VaultCliError> {
     let path = default_vault_path();
     let passphrase = read_passphrase("Vault passphrase: ")?;
 
@@ -176,7 +183,7 @@ fn run_list() -> Result<(), VaultCliError> {
     let entries = vault.list().context(VaultSnafu)?;
 
     if entries.is_empty() {
-        println!("Vault is empty.");
+        writeln!(out, "Vault is empty.").context(IoSnafu)?;
         return Ok(());
     }
 
@@ -198,11 +205,11 @@ fn run_list() -> Result<(), VaultCliError> {
         ]);
     }
 
-    println!("{table}");
+    writeln!(out, "{table}").context(IoSnafu)?;
     Ok(())
 }
 
-fn run_get(name: &str) -> Result<(), VaultCliError> {
+fn run_get(name: &str, out: &mut dyn Write) -> Result<(), VaultCliError> {
     let path = default_vault_path();
     let passphrase = read_passphrase("Vault passphrase: ")?;
 
@@ -211,12 +218,11 @@ fn run_get(name: &str) -> Result<(), VaultCliError> {
 
     let secret_str = String::from_utf8_lossy(&entry.secret);
 
-    let mut stdout = io::stdout().lock();
-    let _ = writeln!(stdout, "{secret_str}");
+    writeln!(out, "{secret_str}").context(IoSnafu)?;
     Ok(())
 }
 
-fn run_rotate(name: &str) -> Result<(), VaultCliError> {
+fn run_rotate(name: &str, out: &mut dyn Write) -> Result<(), VaultCliError> {
     let path = default_vault_path();
     let passphrase = read_passphrase("Vault passphrase: ")?;
 
@@ -227,11 +233,11 @@ fn run_rotate(name: &str) -> Result<(), VaultCliError> {
         .rotate(name, new_secret.as_bytes())
         .context(VaultSnafu)?;
 
-    println!("Rotated '{name}'");
+    writeln!(out, "Rotated '{name}'").context(IoSnafu)?;
     Ok(())
 }
 
-fn run_revoke(name: &str) -> Result<(), VaultCliError> {
+fn run_revoke(name: &str, out: &mut dyn Write) -> Result<(), VaultCliError> {
     let path = default_vault_path();
     let passphrase = read_passphrase("Vault passphrase: ")?;
 
@@ -250,14 +256,15 @@ fn run_revoke(name: &str) -> Result<(), VaultCliError> {
     }
 
     vault.revoke(name).context(VaultSnafu)?;
-    println!("Revoked '{name}'");
+    writeln!(out, "Revoked '{name}'").context(IoSnafu)?;
     Ok(())
 }
 
-fn run_identity() {
+fn run_identity(out: &mut dyn Write) -> Result<(), VaultCliError> {
     let identity = InstallationIdentity::generate();
     let pubkey = identity.verifying_key();
-    println!("{pubkey}");
+    writeln!(out, "{pubkey}").context(IoSnafu)?;
+    Ok(())
 }
 
 /// Formats a jiff Timestamp as a human-readable string.
@@ -503,6 +510,19 @@ mod tests {
         assert_eq!(hex.len(), 64, "hex fingerprint must be 64 characters");
         assert!(
             hex.chars().all(|c| c.is_ascii_hexdigit()),
+            "fingerprint must be hex"
+        );
+    }
+
+    #[test]
+    fn run_identity_outputs_pubkey() {
+        let mut out = Vec::new();
+        run_identity(&mut out).unwrap();
+        let s = String::from_utf8(out).unwrap();
+        let trimmed = s.trim();
+        assert_eq!(trimmed.len(), 64, "hex fingerprint must be 64 characters");
+        assert!(
+            trimmed.chars().all(|c| c.is_ascii_hexdigit()),
             "fingerprint must be hex"
         );
     }

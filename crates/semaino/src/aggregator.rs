@@ -278,7 +278,6 @@ mod tests {
         )
     }
 
-    #[allow(dead_code)]
     fn env_signal(celsius: f32) -> GeoSignal {
         GeoSignal::new(
             SignalKind::Environmental(EnvironmentalDetail::Temperature { celsius }),

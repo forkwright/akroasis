@@ -1,8 +1,10 @@
 //! Mesh networking CLI — status, nodes, send, topology.
 
+use std::io::Write;
+
 use clap::Subcommand;
 use comfy_table::{Attribute, Cell, ContentArrangement, Table};
-use snafu::Snafu;
+use snafu::{ResultExt, Snafu};
 
 use kerykeion::bridge::{GatewayBridge, GatewayHealth};
 use kerykeion::node_db::{MeshNode, NodeDb};
@@ -18,6 +20,9 @@ pub enum MeshError {
         /// The identifier used to look up the node.
         identifier: String,
     },
+
+    #[snafu(display("I/O error: {source}"))]
+    Io { source: std::io::Error },
 }
 
 /// Mesh subcommands.
@@ -55,14 +60,14 @@ pub enum MeshCommand {
 /// # Errors
 ///
 /// Returns `MeshError` if the command fails.
-pub fn dispatch(command: &MeshCommand) -> Result<(), MeshError> {
+pub fn dispatch(command: &MeshCommand, out: &mut dyn Write) -> Result<(), MeshError> {
     match command {
         MeshCommand::Status => {
-            print_status();
+            print_status(out)?;
             Ok(())
         }
         MeshCommand::Nodes => {
-            print_nodes();
+            print_nodes(out)?;
             Ok(())
         }
         MeshCommand::Send {
@@ -70,16 +75,16 @@ pub fn dispatch(command: &MeshCommand) -> Result<(), MeshError> {
             message,
             channel,
             no_ack,
-        } => print_send(dest, message, *channel, *no_ack),
+        } => print_send(dest, message, *channel, *no_ack, out),
         MeshCommand::Topology => {
-            print_topology();
+            print_topology(out)?;
             Ok(())
         }
     }
 }
 
 /// Print mesh network status summary.
-fn print_status() {
+fn print_status(out: &mut dyn Write) -> Result<(), MeshError> {
     let mut table = Table::new();
     table.set_content_arrangement(ContentArrangement::Dynamic);
     table.set_header(vec![
@@ -93,13 +98,18 @@ fn print_status() {
     table.add_row(vec!["Gateway", "none"]);
     table.add_row(vec!["Known nodes", "0"]);
 
-    println!("{table}");
-    println!();
-    println!("Start the daemon with `akroasis serve` for live mesh data.");
+    writeln!(out, "{table}").context(IoSnafu)?;
+    writeln!(out).context(IoSnafu)?;
+    writeln!(
+        out,
+        "Start the daemon with `akroasis serve` for live mesh data."
+    )
+    .context(IoSnafu)?;
+    Ok(())
 }
 
 /// Print detailed node table.
-fn print_nodes() {
+fn print_nodes(out: &mut dyn Write) -> Result<(), MeshError> {
     let mut table = Table::new();
     table.set_content_arrangement(ContentArrangement::Dynamic);
     table.set_header(vec![
@@ -113,39 +123,55 @@ fn print_nodes() {
         Cell::new("Last Heard").add_attribute(Attribute::Bold),
     ]);
 
-    println!("{table}");
-    println!();
-    println!("No live connection. Start the daemon for node data.");
+    writeln!(out, "{table}").context(IoSnafu)?;
+    writeln!(out).context(IoSnafu)?;
+    writeln!(out, "No live connection. Start the daemon for node data.").context(IoSnafu)?;
+    Ok(())
 }
 
 /// Format and print a send command.
-fn print_send(dest: &str, message: &str, channel: u8, no_ack: bool) -> Result<(), MeshError> {
+fn print_send(
+    dest: &str,
+    message: &str,
+    channel: u8,
+    no_ack: bool,
+    out: &mut dyn Write,
+) -> Result<(), MeshError> {
     let dest_num = parse_node_identifier(dest).ok_or_else(|| MeshError::NodeNotFound {
         identifier: dest.to_string(),
     })?;
 
-    println!("Sending to {dest_num} on channel {channel}:");
-    println!("  \"{message}\"");
+    writeln!(out, "Sending to {dest_num} on channel {channel}:").context(IoSnafu)?;
+    writeln!(out, "  \"{message}\"").context(IoSnafu)?;
     if no_ack {
-        println!("  (fire-and-forget — no ACK requested)");
+        writeln!(out, "  (fire-and-forget — no ACK requested)").context(IoSnafu)?;
     } else {
-        println!("  (awaiting ACK...)");
+        writeln!(out, "  (awaiting ACK...)").context(IoSnafu)?;
     }
-    println!();
-    println!("Send requires a running daemon. Use `akroasis serve` first.");
+    writeln!(out).context(IoSnafu)?;
+    writeln!(
+        out,
+        "Send requires a running daemon. Use `akroasis serve` first."
+    )
+    .context(IoSnafu)?;
 
     Ok(())
 }
 
 /// Print mesh topology as adjacency list.
-fn print_topology() {
-    println!("Mesh Topology");
-    println!("─────────────");
-    println!("No live connection. Start the daemon for topology data.");
-    println!();
-    println!("When running, topology shows:");
-    println!("  NodeA -> NodeB (SNR: -5.2 dB, hops: 1)");
-    println!("  NodeB -> NodeC (SNR: -8.1 dB, hops: 1)");
+fn print_topology(out: &mut dyn Write) -> Result<(), MeshError> {
+    writeln!(out, "Mesh Topology").context(IoSnafu)?;
+    writeln!(out, "─────────────").context(IoSnafu)?;
+    writeln!(
+        out,
+        "No live connection. Start the daemon for topology data."
+    )
+    .context(IoSnafu)?;
+    writeln!(out).context(IoSnafu)?;
+    writeln!(out, "When running, topology shows:").context(IoSnafu)?;
+    writeln!(out, "  NodeA -> NodeB (SNR: -5.2 dB, hops: 1)").context(IoSnafu)?;
+    writeln!(out, "  NodeB -> NodeC (SNR: -8.1 dB, hops: 1)").context(IoSnafu)?;
+    Ok(())
 }
 
 /// Format a node table row from a [`MeshNode`].
@@ -274,6 +300,7 @@ pub fn build_nodes_table(db: &NodeDb) -> String {
 }
 
 #[cfg(test)]
+#[expect(clippy::unwrap_used, reason = "test assertions use unwrap for clarity")]
 mod tests {
     use kerykeion::node_db::{DeviceMetrics, UserInfo};
 
@@ -412,41 +439,63 @@ mod tests {
     }
 
     #[test]
-    fn dispatch_status_succeeds() {
-        assert!(dispatch(&MeshCommand::Status).is_ok());
+    fn dispatch_status_captures_output() {
+        let mut out = Vec::new();
+        dispatch(&MeshCommand::Status, &mut out).unwrap();
+        let s = String::from_utf8(out).unwrap();
+        assert!(s.contains("kerykeion"));
+        assert!(s.contains("Start the daemon"));
     }
 
     #[test]
-    fn dispatch_nodes_succeeds() {
-        assert!(dispatch(&MeshCommand::Nodes).is_ok());
+    fn dispatch_nodes_captures_output() {
+        let mut out = Vec::new();
+        dispatch(&MeshCommand::Nodes, &mut out).unwrap();
+        let s = String::from_utf8(out).unwrap();
+        assert!(s.contains("Node"));
+        assert!(s.contains("No live connection"));
     }
 
     #[test]
-    fn dispatch_topology_succeeds() {
-        assert!(dispatch(&MeshCommand::Topology).is_ok());
+    fn dispatch_topology_captures_output() {
+        let mut out = Vec::new();
+        dispatch(&MeshCommand::Topology, &mut out).unwrap();
+        let s = String::from_utf8(out).unwrap();
+        assert!(s.contains("Mesh Topology"));
     }
 
     #[test]
     fn dispatch_send_valid_dest() {
+        let mut out = Vec::new();
         assert!(
-            dispatch(&MeshCommand::Send {
-                dest: "0x1234".into(),
-                message: "hello".into(),
-                channel: 0,
-                no_ack: false,
-            })
+            dispatch(
+                &MeshCommand::Send {
+                    dest: "0x1234".into(),
+                    message: "hello".into(),
+                    channel: 0,
+                    no_ack: false,
+                },
+                &mut out,
+            )
             .is_ok()
         );
+        let s = String::from_utf8(out).unwrap();
+        assert!(s.contains("Sending to"));
+        assert!(s.contains("hello"));
     }
 
     #[test]
     fn dispatch_send_invalid_dest() {
-        let result = dispatch(&MeshCommand::Send {
-            dest: "not_a_node".into(),
-            message: "hello".into(),
-            channel: 0,
-            no_ack: false,
-        });
+        let mut out = Vec::new();
+        let result = dispatch(
+            &MeshCommand::Send {
+                dest: "not_a_node".into(),
+                message: "hello".into(),
+                channel: 0,
+                no_ack: false,
+            },
+            &mut out,
+        );
         assert!(result.is_err());
     }
 }

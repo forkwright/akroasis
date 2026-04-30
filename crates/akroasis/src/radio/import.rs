@@ -1,12 +1,13 @@
 //! `akroasis radio import`  -  parse and display a frequency plan FROM a file.
 
+use std::io::Write;
 use std::path::Path;
 
 use koinon::Frequency;
 use snafu::ResultExt;
 use syntonia::{Bandwidth, Channel, FrequencyPlan, PowerLevel, ScanMode, ToneMode};
 
-use super::errors::{RadioError, ReadFileSnafu, SyntoniaSnafu};
+use super::errors::{IoSnafu, RadioError, ReadFileSnafu, SyntoniaSnafu};
 use super::read;
 
 /// Supported file formats for import.
@@ -34,11 +35,11 @@ pub(crate) fn detect_format(path: &Path) -> Result<FileFormat, RadioError> {
 }
 
 /// Runs the import subcommand.
-pub(crate) fn run(file: &Path) -> Result<(), RadioError> {
+pub(crate) fn run(file: &Path, out: &mut dyn Write) -> Result<(), RadioError> {
     let format = detect_format(file)?;
     let plan = import_plan(file, format)?;
 
-    read::print_channel_table_owned(&plan.channels);
+    read::print_channel_table_owned(&plan.channels, out)?;
 
     let warning_count = plan
         .channels
@@ -46,14 +47,16 @@ pub(crate) fn run(file: &Path) -> Result<(), RadioError> {
         .filter(|ch| ch.rx_freq.as_hz() == 0)
         .count();
     if warning_count > 0 {
-        println!("\u{26a0} {warning_count} empty channel slots skipped");
+        writeln!(out, "\u{26a0} {warning_count} empty channel slots skipped").context(IoSnafu)?;
     }
 
-    println!(
+    writeln!(
+        out,
         "Imported {} channels FROM {}",
         plan.channel_count(),
         file.display(),
-    );
+    )
+    .context(IoSnafu)?;
 
     Ok(())
 }
@@ -386,5 +389,33 @@ busy_lock = false
         let plan = import_from_string(toml, FileFormat::Toml, Path::new("test.toml")).unwrap();
         assert_eq!(plan.channels.len(), 1);
         assert_eq!(plan.channels[0].name, "CALL");
+    }
+
+    #[test]
+    fn import_run_outputs_channels() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("plan.toml");
+        let toml = r#"
+name = "Test Plan"
+radio_model = "Baofeng UV-5R"
+
+[[channels]]
+index = 0
+name = "CALL"
+rx_freq = 146520000
+offset = "None"
+tone = "None"
+power = "High"
+bandwidth = "Wide"
+scan = "Include"
+busy_lock = false
+"#;
+        std::fs::write(&path, toml).unwrap();
+
+        let mut out = Vec::new();
+        run(&path, &mut out).unwrap();
+        let s = String::from_utf8(out).unwrap();
+        assert!(s.contains("CALL"));
+        assert!(s.contains("Imported 1 channels FROM"));
     }
 }

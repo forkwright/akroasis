@@ -4,8 +4,13 @@
 //! 17 crates. 10 capability domains. One shared signal model.
 
 mod cli;
-// WHY: helper functions in mesh module are used by daemon; not called from CLI dispatch path.
-#[allow(dead_code)]
+#[cfg_attr(
+    not(test),
+    expect(
+        dead_code,
+        reason = "mesh helpers used by daemon; unused in CLI binary build"
+    )
+)]
 mod mesh;
 mod radio;
 mod vault;
@@ -44,11 +49,15 @@ enum Error {
     /// A mesh operation failed.
     #[snafu(display("{source}"))]
     Mesh { source: mesh::MeshError },
+
+    /// An I/O operation failed.
+    #[snafu(display("I/O error: {source}"))]
+    Io { source: std::io::Error },
 }
 
 /// Application configuration loaded from TOML file and environment overrides.
 #[derive(Debug, Deserialize, Default)]
-#[allow(dead_code)]
+#[expect(dead_code, reason = "config fields reserved for future CLI options")]
 struct Config {
     /// Path to the configuration file (default: `~/.config/akroasis/config.toml`).
     config_path: Option<PathBuf>,
@@ -68,30 +77,51 @@ fn load_config() -> Result<Config, Error> {
         .context(ConfigSnafu)
 }
 
-fn dispatch(command: &Command) -> Result<(), Error> {
+fn dispatch(command: &Command, out: &mut dyn std::io::Write) -> Result<(), Error> {
     match command {
         Command::Radio(args) => {
-            radio::dispatch(&args.command).context(RadioSnafu)?;
+            radio::dispatch(&args.command, out).context(RadioSnafu)?;
         }
         Command::Mesh(args) => {
-            mesh::dispatch(&args.command).context(MeshSnafu)?;
+            mesh::dispatch(&args.command, out).context(MeshSnafu)?;
         }
-        Command::Sdr => println!("dektis — SDR reception (not yet implemented)"),
-        Command::Proximity => println!("engys — proximity intelligence (not yet implemented)"),
-        Command::Shield => println!("aspis — network defense (not yet implemented)"),
-        Command::Watch => println!("skopos — OSINT collection (not yet implemented)"),
-        Command::Test => println!("peira — offensive security (not yet implemented)"),
+        Command::Sdr => {
+            writeln!(out, "dektis — SDR reception (not yet implemented)").context(IoSnafu)?;
+        }
+        Command::Proximity => writeln!(out, "engys — proximity intelligence (not yet implemented)")
+            .context(IoSnafu)?,
+        Command::Shield => {
+            writeln!(out, "aspis — network defense (not yet implemented)").context(IoSnafu)?;
+        }
+        Command::Watch => {
+            writeln!(out, "skopos — OSINT collection (not yet implemented)").context(IoSnafu)?;
+        }
+        Command::Test => {
+            writeln!(out, "peira — offensive security (not yet implemented)").context(IoSnafu)?;
+        }
         Command::Intel => {
-            println!("semaino + ichneutes — intelligence (not yet implemented)");
+            writeln!(
+                out,
+                "semaino + ichneutes — intelligence (not yet implemented)"
+            )
+            .context(IoSnafu)?;
         }
-        Command::Auto => println!("praxis — automation (not yet implemented)"),
-        Command::Nav => println!("chorografia — navigation (not yet implemented)"),
-        Command::Know => println!("pinax — knowledge repository (not yet implemented)"),
+        Command::Auto => {
+            writeln!(out, "praxis — automation (not yet implemented)").context(IoSnafu)?;
+        }
+        Command::Nav => {
+            writeln!(out, "chorografia — navigation (not yet implemented)").context(IoSnafu)?;
+        }
+        Command::Know => {
+            writeln!(out, "pinax — knowledge repository (not yet implemented)").context(IoSnafu)?;
+        }
         Command::Vault(args) => {
-            vault::dispatch(&args.command).context(VaultSnafu)?;
+            vault::dispatch(&args.command, out).context(VaultSnafu)?;
         }
-        Command::Privacy => println!("lethe — privacy (not yet implemented)"),
-        Command::Serve => println!("daemon mode (not yet implemented)"),
+        Command::Privacy => {
+            writeln!(out, "lethe — privacy (not yet implemented)").context(IoSnafu)?;
+        }
+        Command::Serve => writeln!(out, "daemon mode (not yet implemented)").context(IoSnafu)?,
     }
     Ok(())
 }
@@ -99,7 +129,8 @@ fn dispatch(command: &Command) -> Result<(), Error> {
 fn run() -> Result<(), Error> {
     let _config = load_config()?;
     let cli = Cli::parse();
-    dispatch(&cli.command)
+    let mut stdout = std::io::stdout().lock();
+    dispatch(&cli.command, &mut stdout)
 }
 
 fn main() {

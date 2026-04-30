@@ -1,12 +1,12 @@
 //! `akroasis radio export` — read radio and export channels to a file.
 
-use std::fmt::Write;
+use std::io::Write;
 use std::path::Path;
 
 use snafu::ResultExt;
 use syntonia::{Bandwidth, Channel, FrequencyPlan, PowerLevel, ScanMode, ToneMode};
 
-use super::errors::{RadioError, SyntoniaSnafu, WriteFileSnafu};
+use super::errors::{IoSnafu, RadioError, SyntoniaSnafu, WriteFileSnafu};
 use super::progress;
 use super::{ExportFormat, Hardware, resolve_target};
 
@@ -16,6 +16,7 @@ pub(crate) fn run(
     format: &ExportFormat,
     output: Option<&Path>,
     hw: &dyn Hardware,
+    out: &mut dyn Write,
 ) -> Result<(), RadioError> {
     let target = resolve_target(port, hw)?;
     let mut session = hw.open(&target.port)?;
@@ -43,13 +44,15 @@ pub(crate) fn run(
             std::fs::write(path, &content).context(WriteFileSnafu {
                 path: path.to_path_buf(),
             })?;
-            println!(
+            writeln!(
+                out,
                 "Exported {} channels to {}",
                 plan.channel_count(),
                 path.display()
-            );
+            )
+            .context(IoSnafu)?;
         }
-        None => print!("{content}"),
+        None => write!(out, "{content}").context(IoSnafu)?,
     }
 
     Ok(())
@@ -74,6 +77,7 @@ pub(crate) fn serialize_plan(
 
 /// Exports a plan as a simple CSV with the most useful fields.
 pub(crate) fn export_native_csv(plan: &FrequencyPlan) -> String {
+    use std::fmt::Write;
     let mut out = String::from("Index,Name,RX Freq (MHz),TX Freq (MHz),Tone,Power\n");
     for ch in &plan.channels {
         let tx = ch.tx_freq.unwrap_or(ch.rx_freq);
@@ -101,6 +105,7 @@ const CHIRP_HEADER: &str = "Location,Name,Frequency,Duplex,Offset,Tone,rToneFreq
 
 /// Exports a plan as a CHIRP-compatible 20-column CSV.
 pub(crate) fn export_chirp_csv(plan: &FrequencyPlan) -> String {
+    use std::fmt::Write;
     let mut out = String::from(CHIRP_HEADER);
     out.push('\n');
 

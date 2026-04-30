@@ -76,7 +76,10 @@ pub enum ExportFormat {
 
 /// Known radio variants.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[allow(dead_code)]
+#[expect(
+    dead_code,
+    reason = "radio variants used in test mocks; not all exercised in binary"
+)]
 pub enum RadioVariant {
     Uv5r,
     BfF8hp,
@@ -200,22 +203,26 @@ pub fn resolve_target(port: Option<&str>, hw: &dyn Hardware) -> Result<DetectedR
 // ---------------------------------------------------------------------------
 
 /// Dispatches a radio subcommand.
-pub fn dispatch(cmd: &RadioCommand) -> Result<(), RadioError> {
-    dispatch_with(cmd, &StubHardware)
+pub fn dispatch(cmd: &RadioCommand, out: &mut dyn std::io::Write) -> Result<(), RadioError> {
+    dispatch_with(cmd, &StubHardware, out)
 }
 
 /// Dispatches with a specific hardware backend (for testing).
-pub fn dispatch_with(cmd: &RadioCommand, hw: &dyn Hardware) -> Result<(), RadioError> {
+pub fn dispatch_with(
+    cmd: &RadioCommand,
+    hw: &dyn Hardware,
+    out: &mut dyn std::io::Write,
+) -> Result<(), RadioError> {
     match cmd {
-        RadioCommand::Detect => detect::run(hw),
-        RadioCommand::Read { port } => read::run(port.as_deref(), hw),
-        RadioCommand::Program { port, plan } => program::run(port.as_deref(), plan, hw),
+        RadioCommand::Detect => detect::run(hw, out),
+        RadioCommand::Read { port } => read::run(port.as_deref(), hw, out),
+        RadioCommand::Program { port, plan } => program::run(port.as_deref(), plan, hw, out),
         RadioCommand::Export {
             port,
             format,
             output,
-        } => export::run(port.as_deref(), format, output.as_deref(), hw),
-        RadioCommand::Import { file } => import::run(file),
+        } => export::run(port.as_deref(), format, output.as_deref(), hw, out),
+        RadioCommand::Import { file } => import::run(file, out),
     }
 }
 
