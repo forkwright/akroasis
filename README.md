@@ -16,26 +16,31 @@ Capability domains span radio, mesh, SDR, proximity, network defense, OSINT, off
 
 ## What it does
 
-| Domain | Crate | Status | What |
-|--------|-------|--------|------|
-| **Foundation** | koinon | ✓ | Shared types, signal model (7 domains), entity index, temporal baseline engine (Welford's algorithm), tamper-evident logging. |
-| **Foundation** | kryphos | ✓ | Encryption (ChaCha20-Poly1305), key management (Ed25519), credential vault, Argon2id derivation, identity segregation. |
-| **Radio Management** | syntonia | ✓ | Frequency plans, channel programming, serial protocols  -  clean-room CHIRP replacement. Programs Baofeng UV-5R family directly. Yaesu FTM-510DR planned. |
-| **Mesh Networking** | kerykeion | ✓ | Full Meshtastic protocol stack. Node management, topology awareness, message routing. Delay-tolerant networking with PACE automated failover. |
-| **Signal Intelligence** | semaino | ✓ | Signal aggregation, convergence detection, anomaly baselines, alert pipeline with deduplication and severity classification. |
-| **SDR / Reception** | dektis | ◻ | Spectrum monitoring, FM/AM/SSB demodulation, protocol decoding (APRS, ADS-B, P25). Jamming detection, direction finding, emitter fingerprinting. |
-| **Proximity Intelligence** | engys | ◻ | WiFi, BLE, Zigbee, Z-Wave, NFC, RFID. Presence analytics, rogue device detection, counter-surveillance input. |
-| **Network Defense** | aspis | ◻ | IDS/IPS  -  Suricata and Zeek orchestration with active response. CAN bus security for vehicle networks. IoT monitoring. |
-| **OSINT** | skopos | ◻ | Feed aggregation, threat intelligence (STIX/TAXII), asset discovery. All collection routed through anonymization infrastructure. |
-| **Offensive Security** | peira | ◻ | Penetration testing, vulnerability scanning, wireless security testing. Scope-locked with full audit trail. |
-| **Signal Intelligence** | ichneutes | ◻ | Entity correlation, focal point synthesis, threat scoring. Forensic timeline reconstruction across all domains. |
-| **Automation** | praxis | ◻ | Event-driven triggers, named playbooks, PACE communications, operational state machines. |
-| **Navigation** | chorografia | ◻ | RF propagation modeling, infrastructure graphs, offline OSM navigation, space weather HF prediction. |
-| **Knowledge** | pinax | ◻ | Offline knowledge repository  -  frequency databases, protocol specs, equipment manuals, topo maps. |
-| **Privacy** | lethe | ◻ | VPN/proxy management, anonymization, IMSI catcher detection, OPSEC scoring. The etymological complement to [Aletheia](https://github.com/forkwright/aletheia). |
-| **Interface** | opsis | ◻ | TUI (ratatui), native app (Dioxus), web UI (Axum). Spectrum waterfall, mesh topology, intelligence dashboard. |
+| Domain | Crate | Compiles | Hardware Wired | What |
+|--------|-------|:--------:|:--------------:|------|
+| **Foundation** | koinon | ✓ |  -  | Shared types, signal model (7 domains), entity index, temporal baseline engine (Welford's algorithm), tamper-evident logging. |
+| **Foundation** | kryphos | ✓ |  -  | Encryption (ChaCha20-Poly1305), key management (Ed25519), credential vault, Argon2id derivation, identity segregation. |
+| **Radio Management** | syntonia | ✓ | ◻ | Frequency plans, channel programming, serial protocols  -  clean-room CHIRP replacement. Baofeng UV-5R family codec complete; Yaesu FTM-510DR stubbed. Binary dispatches to `StubHardware`. |
+| **Mesh Networking** | kerykeion | ✓ | ✓ | Full Meshtastic protocol stack. Node management, topology awareness, message routing. Delay-tolerant networking with PACE automated failover. |
+| **Signal Intelligence** | semaino | ✓ |  -  | Signal aggregation, convergence detection, anomaly baselines, alert pipeline with deduplication and severity classification. |
+| **SDR / Reception** | dektis | ◻ | ◻ | Spectrum monitoring, FM/AM/SSB demodulation, protocol decoding (APRS, ADS-B, P25). Jamming detection, direction finding, emitter fingerprinting. |
+| **Proximity Intelligence** | engys | ◻ | ◻ | WiFi, BLE, Zigbee, Z-Wave, NFC, RFID. Presence analytics, rogue device detection, counter-surveillance input. |
+| **Network Defense** | aspis | ◻ | ◻ | IDS/IPS  -  Suricata and Zeek orchestration with active response. CAN bus security for vehicle networks. IoT monitoring. |
+| **OSINT** | skopos | ◻ | ◻ | Feed aggregation, threat intelligence (STIX/TAXII), asset discovery. All collection routed through anonymization infrastructure. |
+| **Offensive Security** | peira | ◻ | ◻ | Penetration testing, vulnerability scanning, wireless security testing. Scope-locked with full audit trail. |
+| **Signal Intelligence** | ichneutes | ◻ | ◻ | Entity correlation, focal point synthesis, threat scoring. Forensic timeline reconstruction across all domains. |
+| **Automation** | praxis | ◻ | ◻ | Event-driven triggers, named playbooks, PACE communications, operational state machines. |
+| **Navigation** | chorografia | ◻ | ◻ | RF propagation modeling, infrastructure graphs, offline OSM navigation, space weather HF prediction. |
+| **Knowledge** | pinax | ◻ | ◻ | Offline knowledge repository  -  frequency databases, protocol specs, equipment manuals, topo maps. |
+| **Privacy** | lethe | ◻ | ◻ | VPN/proxy management, anonymization, IMSI catcher detection, OPSEC scoring. The etymological complement to [Aletheia](https://github.com/forkwright/aletheia). |
+| **Interface** | opsis | ◻ | ◻ | TUI (ratatui), native app (Dioxus), web UI (Axum). Spectrum waterfall, mesh topology, intelligence dashboard. |
 
-✓ = shipped, ◻ = planned
+**Legend:** ✓ = yes, ◻ = not yet,  -  = not applicable (no hardware backend).
+
+> **Snapshot 2026-05-02.** Workspace ships 6 crates under `crates/`. Stub backends detected:
+> `StubHardware` in `crates/akroasis/src/radio/mod.rs` (binary radio dispatch returns
+> `HardwareNotAvailable`); `print_send` in `crates/akroasis/src/mesh/mod.rs` (CLI send
+> prints instead of transmitting).
 
 ---
 
@@ -112,7 +117,9 @@ Every collection crate produces typed `GeoSignal` objects into koinon. Semaino a
 
 ## Status
 
-Architecture finalized. Active development ongoing. See the domain table above for shipped vs planned crates; merged waves are visible via `gh pr list --state merged --repo forkwright/akroasis`.
+**Phase 02 complete** (kanon STATE 2026-04-22). Kerykeion mesh networking fully landed.
+No open issues. For current planning and phase status, see
+`~/dev/kanon/projects/akroasis/STATE.md`.
 
 The scope is massive. Each domain is independent: a crate with clear boundaries, producing typed signals into the shared model. Pieces don't need to arrive simultaneously. They just need to speak the same language when they do.
 
