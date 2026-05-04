@@ -10,37 +10,38 @@ Akroasis is the attempt to fix that.
 
 One system. One signal model. Every domain produces typed signals into the same pipeline. Radio anomalies correlate with network threats correlate with proximity intelligence correlate with OSINT. The convergence is where the intelligence lives - not in any single domain but in the relationships between them.
 
-Capability domains span radio, mesh, SDR, proximity, network defense, OSINT, offensive security, signal intelligence, and geospatial modeling. Rust from the ground up. See the domain table below for shipped (✓) vs planned (◻).
+Capability domains span radio, mesh, SDR, proximity, network defense, OSINT, offensive security, signal intelligence, and geospatial modeling. Rust from the ground up. See the domain table below for shipped crates (✓) vs planned crates (◻).
 
 ---
 
 ## What it does
 
-| Domain | Crate | Compiles | Hardware Wired | What |
-|--------|-------|:--------:|:--------------:|------|
-| **Foundation** | koinon | ✓ |  -  | Shared types, signal model (7 domains), entity index, temporal baseline engine (Welford's algorithm), tamper-evident logging. |
-| **Foundation** | kryphos | ✓ |  -  | Encryption (ChaCha20-Poly1305), key management (Ed25519), credential vault, Argon2id derivation, identity segregation. |
-| **Radio Management** | syntonia | ✓ | ◻ | Frequency plans, channel programming, serial protocols  -  clean-room CHIRP replacement. Baofeng UV-5R family codec complete; Yaesu FTM-510DR stubbed. Binary dispatches to `StubHardware`. |
-| **Mesh Networking** | kerykeion | ✓ | ✓ | Full Meshtastic protocol stack. Node management, topology awareness, message routing. Delay-tolerant networking with PACE automated failover. |
-| **Signal Intelligence** | semaino | ✓ |  -  | Signal aggregation, convergence detection, anomaly baselines, alert pipeline with deduplication and severity classification. |
-| **SDR / Reception** | dektis | ◻ | ◻ | Spectrum monitoring, FM/AM/SSB demodulation, protocol decoding (APRS, ADS-B, P25). Jamming detection, direction finding, emitter fingerprinting. |
-| **Proximity Intelligence** | engys | ◻ | ◻ | WiFi, BLE, Zigbee, Z-Wave, NFC, RFID. Presence analytics, rogue device detection, counter-surveillance input. |
-| **Network Defense** | aspis | ◻ | ◻ | IDS/IPS  -  Suricata and Zeek orchestration with active response. CAN bus security for vehicle networks. IoT monitoring. |
-| **OSINT** | skopos | ◻ | ◻ | Feed aggregation, threat intelligence (STIX/TAXII), asset discovery. All collection routed through anonymization infrastructure. |
-| **Offensive Security** | peira | ◻ | ◻ | Penetration testing, vulnerability scanning, wireless security testing. Scope-locked with full audit trail. |
-| **Signal Intelligence** | ichneutes | ◻ | ◻ | Entity correlation, focal point synthesis, threat scoring. Forensic timeline reconstruction across all domains. |
-| **Automation** | praxis | ◻ | ◻ | Event-driven triggers, named playbooks, PACE communications, operational state machines. |
-| **Navigation** | chorografia | ◻ | ◻ | RF propagation modeling, infrastructure graphs, offline OSM navigation, space weather HF prediction. |
-| **Knowledge** | pinax | ◻ | ◻ | Offline knowledge repository  -  frequency databases, protocol specs, equipment manuals, topo maps. |
-| **Privacy** | lethe | ◻ | ◻ | VPN/proxy management, anonymization, IMSI catcher detection, OPSEC scoring. The etymological complement to [Aletheia](https://github.com/forkwright/aletheia). |
-| **Interface** | opsis | ◻ | ◻ | TUI (ratatui), native app (Dioxus), web UI (Axum). Spectrum waterfall, mesh topology, intelligence dashboard. |
+| Domain | Crate | Crate Shipped | Hardware Backend | What |
+|--------|-------|:-------------:|:----------------:|------|
+| **Application shell** | akroasis | ✓ | ◻ | Single binary with CLI dispatch for radio, mesh, vault, and future domain stubs. Radio uses `StubHardware`; mesh CLI shows static/no-live-connection status until daemon mode is implemented. |
+| **Foundation** | koinon | ✓ |  -  | Shared IDs, coordinates, frequency and power types, 7-domain `GeoSignal` model, hardware asset registry, temporal baselines, and tamper-evident logging. |
+| **Foundation** | kryphos | ✓ |  -  | Credential vault and installation identity: fjall-backed encrypted storage, Argon2id derivation, ChaCha20-Poly1305 encryption, Ed25519 signing keys, rotation/revocation metadata. |
+| **Radio Management** | syntonia | ✓ | ◻ | Frequency plans, CHIRP CSV/IMG import, CHIRP CSV export, validation, USB detection metadata, and Baofeng UV-5R-family codec. Hardware serial backend is optional; the shipped binary does not yet connect live radios. |
+| **Mesh Networking** | kerykeion | ✓ | ✓ | Clean-room Meshtastic stack: protobuf framing, serial/TCP transports, handshake, encryption, node database, topology, discovery, routing, delivery tracking, store-and-forward, gateway bridge, and signal conversion. |
+| **Signal Processing** | semaino | ✓ |  -  | Signal aggregation, per-kind anomaly baselines, convergence detection, and deduplicated severity-classified alert pipeline. |
+| **SDR / Reception** | dektis | ◻ | ◻ | Future spectrum monitoring, FM/AM/SSB demodulation, protocol decoding (APRS, ADS-B, P25), jamming detection, direction finding, and emitter fingerprinting. |
+| **Proximity Intelligence** | engys | ◻ | ◻ | Future WiFi, BLE, Zigbee, Z-Wave, NFC, and RFID collection with presence analytics, rogue device detection, and counter-surveillance input. |
+| **Network Defense** | aspis | ◻ | ◻ | Future IDS/IPS orchestration, CAN bus security, IoT monitoring, and active response. |
+| **OSINT** | skopos | ◻ | ◻ | Future feed aggregation, threat intelligence, asset discovery, and anonymized collection paths. |
+| **Offensive Security** | peira | ◻ | ◻ | Future penetration testing, vulnerability scanning, wireless security testing, scope locks, and audit trails. |
+| **Signal Intelligence** | ichneutes | ◻ |  -  | Future entity correlation, focal point synthesis, threat scoring, and forensic timeline reconstruction across all domains. |
+| **Automation** | praxis | ◻ |  -  | Future event-driven triggers, named playbooks, PACE communications, and operational state machines. |
+| **Navigation** | chorografia | ◻ | ◻ | Future RF propagation modeling, infrastructure graphs, offline OSM navigation, and space weather HF prediction. |
+| **Knowledge** | pinax | ◻ |  -  | Future offline repository for frequency databases, protocol specs, equipment manuals, topo maps, and indexed references. |
+| **Privacy** | lethe | ◻ | ◻ | Future VPN/proxy management, anonymization, IMSI catcher detection, and OPSEC scoring. The etymological complement to [Aletheia](https://github.com/forkwright/aletheia). |
+| **Interface** | opsis | ◻ |  -  | Future TUI, native app, and web UI for spectrum waterfall, mesh topology, and intelligence dashboard views. |
 
-**Legend:** ✓ = yes, ◻ = not yet,  -  = not applicable (no hardware backend).
+**Legend:** ✓ = shipped in `crates/`, ◻ = planned/not shipped,  -  = not applicable.
 
-> **Snapshot 2026-05-02.** Workspace ships 6 crates under `crates/`. Stub backends detected:
-> `StubHardware` in `crates/akroasis/src/radio/mod.rs` (binary radio dispatch returns
-> `HardwareNotAvailable`); `print_send` in `crates/akroasis/src/mesh/mod.rs` (CLI send
-> prints instead of transmitting).
+> **Snapshot 2026-05-04.** Workspace ships 6 crates under `crates/`: `akroasis`,
+> `kerykeion`, `koinon`, `kryphos`, `semaino`, and `syntonia`. The long-term
+> domains below are architectural targets, not claims of current crate or hardware
+> availability.
 
 ---
 
@@ -90,22 +91,21 @@ Every collection crate produces typed `GeoSignal` objects into koinon. Semaino a
 
 ## Technical
 
-| | |
-|---|---|
-| Language | Rust (edition 2024, MSRV in Cargo.toml) |
-| Errors | snafu (context wrapping, not thiserror) |
-| Async | tokio, native async traits |
-| SDR runtime | FutureSDR (async block graph) |
-| FFT | rustfft + realfft |
-| SDR hardware | rtl-sdr-rs (RTL-SDR V4), soapysdr (multi-hardware) |
-| Mesh | Clean-room Meshtastic (prost protobuf, not official crate) |
-| IDS/IPS | Suricata + Zeek orchestration |
-| Maps | OSM vector tiles, SRTM elevation |
-| Search | tantivy (full-text indexing) |
-| TUI | ratatui |
-| Desktop | Dioxus |
-| Web | Axum |
-| License | AGPL-3.0-or-later |
+| Area | Current / Planned |
+|------|-------------------|
+| Language | Rust edition 2024, MSRV 1.85 |
+| Version | 0.1.11 workspace package version |
+| Errors | snafu context wrapping |
+| Async | tokio |
+| Storage | fjall for vault state; CBOR + BLAKE3 hash chains for tamper logs |
+| Mesh | Shipped: clean-room Meshtastic stack with prost protobuf, serial/TCP transports, AES-CTR channel crypto, routing, topology, and store-and-forward |
+| Radio | Shipped: frequency-plan model, validation, import/export, Baofeng UV-5R-family codec; planned: live binary hardware connection beyond stub dispatch |
+| SDR | Planned: FutureSDR, FFT, RTL-SDR, and SoapySDR work will land with `dektis` |
+| IDS/IPS | Planned: Suricata and Zeek orchestration will land with `aspis` |
+| Maps | Planned: OSM vector tiles and SRTM elevation will land with `chorografia` |
+| Search | Planned: full-text indexing will land with `pinax` |
+| Interfaces | Planned: ratatui, Dioxus, and Axum surfaces will land with `opsis` |
+| License | AGPL-3.0-only |
 
 ---
 
@@ -118,7 +118,7 @@ Every collection crate produces typed `GeoSignal` objects into koinon. Semaino a
 ## Status
 
 **Phase 02 complete** (kanon STATE 2026-04-22). Kerykeion mesh networking fully landed.
-No open issues. For current planning and phase status, see
+For current planning and phase status, see
 `~/dev/kanon/projects/akroasis/STATE.md`.
 
 The scope is massive. Each domain is independent: a crate with clear boundaries, producing typed signals into the shared model. Pieces don't need to arrive simultaneously. They just need to speak the same language when they do.
