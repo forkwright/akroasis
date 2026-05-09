@@ -1,3 +1,7 @@
+# archetype: B
+# forge-only: false
+# spdx: AGPL-3.0-or-later
+
 # Forge CI pipeline for forkwright/akroasis.
 #
 # Mirrors the hardcoded default Rust gate (fmt → check → clippy → nextest
