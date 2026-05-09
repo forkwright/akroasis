@@ -1,0 +1,15 @@
+[meta]
+name = "akroasis"
+repo = "forkwright/akroasis"
+generated = false
+source_docs = [
+  "README.md",
+  "Cargo.toml",
+]
+
+[apis]
+summary = "Akroasis exposes a single CLI shell today; future TUI, desktop, and web surfaces are planned under opsis."
+
+[[cli_commands]]
+name = "akroasis"
+purpose = "Single binary with CLI dispatch for radio, mesh, vault, and future domain stubs."

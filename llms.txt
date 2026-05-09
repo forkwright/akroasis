@@ -1,15 +1,26 @@
 # Akroasis
 
-> attentive reception
+> Signals-intelligence and communications-sovereignty workspace built around one typed signal model.
 
-Rust workspace for vehicle systems, radio programming, communications infrastructure, and field preparedness tools. Designed for a 1997 Dodge Ram 2500 12V Cummins platform.
+Akroasis unifies radio, mesh, SDR, proximity, network defense, OSINT, offensive security, geospatial, privacy, and interface domains by having each domain emit typed signals into shared foundations.
 
-Capability domains: radio programming, signal intelligence, navigation, network security, communications, vehicle telemetry, field operations, encryption, power management, and shared foundations.
+## Binary
 
-## Documentation
+`akroasis` - single CLI shell under `crates/akroasis`.
 
-- [CLAUDE.md](CLAUDE.md): Project conventions
-- [README.md](README.md): Domain map and crate overview
-- [standards/STANDARDS.md](standards/STANDARDS.md): Coding standards
-- [standards/GNOMON.md](standards/GNOMON.md): Greek naming methodology
-- [docs/lexicon.md](docs/lexicon.md): Project name registry
+## Architecture
+
+Structured LLM corpus:
+- [_llm/architecture.toml](_llm/architecture.toml): current and planned layers and crates
+- [_llm/current_state.toml](_llm/current_state.toml): phase and blockers
+- [_llm/decisions.toml](_llm/decisions.toml): accepted architecture decisions
+- [_llm/glossary.toml](_llm/glossary.toml): akroasis vocabulary
+- [_llm/apis.toml](_llm/apis.toml): current CLI surface
+
+## Agent Entry Points
+
+- [README.md](README.md): domain map and crate status
+- [CLAUDE.md](CLAUDE.md): repo conventions
+- [AGENTS.md](AGENTS.md): cross-tool instructions
+- [docs/lexicon.md](docs/lexicon.md): name registry
+- [standards/](standards/): kanon-synced standards

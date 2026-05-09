@@ -1,0 +1,47 @@
+[meta]
+name = "akroasis"
+repo = "forkwright/akroasis"
+generated = false
+source_docs = [
+  "README.md",
+  "docs/lexicon.md",
+  "kanon/projects/akroasis/STATE.md",
+]
+
+[glossary]
+description = "Domain vocabulary for akroasis."
+
+[[terms]]
+term = "akroasis"
+definition = "Attentive reception; the signals-intelligence workspace."
+canonical = true
+
+[[terms]]
+term = "GeoSignal"
+definition = "Typed signal object carrying domain, location, temporal, and severity data."
+canonical = true
+
+[[terms]]
+term = "koinon"
+definition = "Shared foundation crate for IDs, signal types, baselines, hardware registry, and tamper log."
+canonical = true
+
+[[terms]]
+term = "kryphos"
+definition = "Credential vault and installation identity crate."
+canonical = true
+
+[[terms]]
+term = "syntonia"
+definition = "Radio management crate."
+canonical = true
+
+[[terms]]
+term = "kerykeion"
+definition = "Clean-room Meshtastic mesh networking crate."
+canonical = true
+
+[[terms]]
+term = "semaino"
+definition = "Signal aggregation and anomaly/convergence detection crate."
+canonical = true

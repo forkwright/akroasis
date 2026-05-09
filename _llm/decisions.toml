@@ -1,0 +1,52 @@
+[meta]
+name = "akroasis"
+repo = "forkwright/akroasis"
+generated = false
+source_docs = [
+  "README.md",
+  "CLAUDE.md",
+  "kanon/projects/akroasis/STATE.md",
+]
+
+[decisions]
+summary = "Core decisions for the akroasis signals-intelligence workspace."
+
+[[decision]]
+id = "D-one-signal-model"
+title = "Unify domains through typed signals"
+status = "accepted"
+context = "Radio, mesh, network, proximity, OSINT, and field operations otherwise fragment into separate tools."
+decision = "Every domain emits typed GeoSignal objects into shared koinon/semaino models."
+consequences = "Correlation and convergence are domain-agnostic."
+
+[[decision]]
+id = "D-dual-write"
+title = "Use broadcast plus tamper log for signal pipeline"
+status = "accepted"
+context = "Signals need real-time fanout and durable/auditable persistence."
+decision = "Use a broadcast channel for real-time delivery and append-only CBOR+BLAKE3 tamper log for persistence."
+consequences = "Consumers get live updates while evidence remains reconstructable."
+
+[[decision]]
+id = "D-fjall-vault"
+title = "Use fjall for queryable state"
+status = "accepted"
+context = "Credential and queryable operational state must be embedded and encrypted where appropriate."
+decision = "Use fjall-backed storage for vault/queryable state and tamper logs for signal evidence."
+consequences = "Runtime remains local-first without external databases."
+
+[[decision]]
+id = "D-collector-trait"
+title = "Hardware-facing crates implement Collector"
+status = "accepted"
+context = "Hardware domains vary but need a common integration shape."
+decision = "Define hardware abstraction through the Collector trait in koinon."
+consequences = "Hardware tests can use mocks and recorded replay."
+
+[[decision]]
+id = "D-toml-playbooks"
+title = "Use TOML playbooks, not embedded scripting"
+status = "accepted"
+context = "Embedded interpreters would increase attack surface and operational ambiguity."
+decision = "Represent playbooks in TOML rather than Lua, Rhai, or other scripting runtimes."
+consequences = "Automation stays declarative and auditable."

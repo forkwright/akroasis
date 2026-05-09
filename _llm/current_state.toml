@@ -1,0 +1,31 @@
+[meta]
+name = "akroasis"
+repo = "forkwright/akroasis"
+generated = false
+source_docs = [
+  "README.md",
+  "kanon/projects/akroasis/STATE.md",
+]
+
+[state]
+summary = "Akroasis Phase 02 is complete with Kerykeion mesh networking fully landed and no open issues."
+current_phase = "Phase 02 complete."
+updated = "2026-04-23"
+
+[[recent]]
+date = "2026-04-22"
+item = "Nextest timeout raised and LICENSE canonicalized after forge lint surfaced drift."
+
+[[recent]]
+date = "2026-04-22"
+item = "Kerykeion mesh networking fully landed."
+
+[[open_threads]]
+name = "FTM-510DR model string"
+issue = 0
+status = "Needs ADMS-14 USB traffic capture; hardware-blocked."
+
+[[open_threads]]
+name = "bot PRs"
+issue = 0
+status = "Release-please and dependabot patch-update PRs were the only open PRs in STATE snapshot."

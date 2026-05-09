@@ -1,0 +1,59 @@
+[meta]
+name = "akroasis"
+repo = "forkwright/akroasis"
+generated = false
+source_docs = [
+  "README.md",
+  "AGENTS.md",
+  "CLAUDE.md",
+  "Cargo.toml",
+  "kanon/projects/akroasis/STATE.md",
+]
+
+[architecture]
+summary = "Rust workspace for signals intelligence, radio management, clean-room Meshtastic mesh networking, signal aggregation, credentials, and future field-operation domains."
+layers = [
+  "application-shell",
+  "foundation",
+  "credentials",
+  "radio-management",
+  "mesh-networking",
+  "signal-processing",
+  "planned-collection-domains",
+  "planned-interface",
+]
+
+[[architecture.crates]]
+name = "akroasis"
+path = "crates/akroasis"
+role = "Single binary shell with CLI dispatch for shipped and future domain stubs."
+
+[[architecture.crates]]
+name = "koinon"
+path = "crates/koinon"
+role = "Shared IDs, coordinates, frequency/power types, GeoSignal model, hardware registry, baselines, and tamper log."
+
+[[architecture.crates]]
+name = "kryphos"
+path = "crates/kryphos"
+role = "Credential vault, installation identity, encrypted fjall storage, and signing keys."
+
+[[architecture.crates]]
+name = "syntonia"
+path = "crates/syntonia"
+role = "Radio plans, CHIRP import/export, validation, USB metadata, and Baofeng codec."
+
+[[architecture.crates]]
+name = "kerykeion"
+path = "crates/kerykeion"
+role = "Clean-room Meshtastic stack: transports, framing, encryption, routing, topology, and gateway bridge."
+
+[[architecture.crates]]
+name = "semaino"
+path = "crates/semaino"
+role = "Signal aggregation, baselines, convergence detection, and alert pipeline."
+
+[[interfaces]]
+name = "akroasis"
+kind = "cli"
+path = "crates/akroasis"
