@@ -7,7 +7,7 @@ source_docs = [
   "AGENTS.md",
   "CLAUDE.md",
   "Cargo.toml",
-  "kanon/projects/akroasis/STATE.md",
+  "<canonical-state-doc>/STATE.md",
 ]
 
 [architecture]

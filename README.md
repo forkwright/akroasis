@@ -111,15 +111,15 @@ Every collection crate produces typed `GeoSignal` objects into koinon. Semaino a
 
 ## Documentation
 
-- `~/dev/kanon/crates/basanos/standards/STANDARDS.md`: Coding standards (universal + per-language)
-- `~/dev/kanon/crates/basanos/standards/GNOMON.md`: Naming methodology
+- `<standards-doc>/STANDARDS.md`: Coding standards (universal + per-language)
+- `<standards-doc>/GNOMON.md`: Naming methodology
 - [docs/lexicon.md](docs/lexicon.md): Project name registry
 
 ## Status
 
-**Phase 02 complete** (kanon STATE 2026-04-22). Kerykeion mesh networking fully landed.
+**Phase 02 complete** (project state 2026-04-22). Kerykeion mesh networking fully landed.
 For current planning and phase status, see
-`~/dev/kanon/projects/akroasis/STATE.md`.
+`<canonical-state-doc>/STATE.md`.
 
 The scope is massive. Each domain is independent: a crate with clear boundaries, producing typed signals into the shared model. Pieces don't need to arrive simultaneously. They just need to speak the same language when they do.
 
@@ -143,13 +143,13 @@ Hardware support is additive: if it speaks serial, USB, or IP, it can be integra
 
 ἀκρόασις - from Aristotle's Physics, "Physike Akroasis" - learning through attentive reception. Not passive hearing but the disciplined act of listening that brings understanding to what is received.
 
-Names follow kanon's `~/dev/kanon/crates/basanos/standards/GNOMON.md` naming philosophy, where each name reveals its essential nature across four layers of reading.
+Names follow the project naming philosophy, where each name reveals its essential nature across four layers of reading.
 
 **Lethe** (λήθη) and **Aletheia** (ἀ-λήθεια) share the same root. One unconceals truth. The other conceals the operator. Same word, opposite directions. Two systems, one for understanding and one for sovereignty, and the Greek already knew they were the same thing.
 
 ---
 
-*See [docs/lexicon.md](docs/lexicon.md) for the complete name registry and `~/dev/kanon/crates/basanos/standards/GNOMON.md` for the naming methodology.*
+*See [docs/lexicon.md](docs/lexicon.md) for the complete name registry and naming methodology.*
 
 ---
 

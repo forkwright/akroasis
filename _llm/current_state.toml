@@ -4,7 +4,7 @@ repo = "forkwright/akroasis"
 generated = false
 source_docs = [
   "README.md",
-  "kanon/projects/akroasis/STATE.md",
+  "<canonical-state-doc>/STATE.md",
 ]
 
 [state]
