@@ -111,8 +111,8 @@ Every collection crate produces typed `GeoSignal` objects into koinon. Semaino a
 
 ## Documentation
 
-- [standards/STANDARDS.md](standards/STANDARDS.md): Coding standards (universal + per-language)
-- [standards/GNOMON.md](standards/GNOMON.md): Naming methodology
+- `~/dev/kanon/crates/basanos/standards/STANDARDS.md`: Coding standards (universal + per-language)
+- `~/dev/kanon/crates/basanos/standards/GNOMON.md`: Naming methodology
 - [docs/lexicon.md](docs/lexicon.md): Project name registry
 
 ## Status
@@ -143,13 +143,13 @@ Hardware support is additive: if it speaks serial, USB, or IP, it can be integra
 
 ἀκρόασις - from Aristotle's Physics, "Physike Akroasis" - learning through attentive reception. Not passive hearing but the disciplined act of listening that brings understanding to what is received.
 
-Names follow [gnomon](https://github.com/forkwright/aletheia/blob/main/docs/gnomon.md) - the naming philosophy where each name reveals its essential nature across four layers of reading.
+Names follow kanon's `~/dev/kanon/crates/basanos/standards/GNOMON.md` naming philosophy, where each name reveals its essential nature across four layers of reading.
 
 **Lethe** (λήθη) and **Aletheia** (ἀ-λήθεια) share the same root. One unconceals truth. The other conceals the operator. Same word, opposite directions. Two systems, one for understanding and one for sovereignty, and the Greek already knew they were the same thing.
 
 ---
 
-*See [docs/lexicon.md](docs/lexicon.md) for the complete name registry and [standards/GNOMON.md](standards/GNOMON.md) for the naming methodology.*
+*See [docs/lexicon.md](docs/lexicon.md) for the complete name registry and `~/dev/kanon/crates/basanos/standards/GNOMON.md` for the naming methodology.*
 
 ---
 

@@ -30,9 +30,9 @@ Communications sovereignty and RF intelligence platform. Rust workspace, single 
 
 ## Where to add things
 
-- New crate: `crates/<greek-name>/`, register in root `Cargo.toml` members, follow `standards/GNOMON.md` for naming, add entry to `docs/lexicon.md`
+- New crate: `crates/<greek-name>/`, register in root `Cargo.toml` members, follow `~/dev/kanon/crates/basanos/standards/GNOMON.md` for naming, add entry to `docs/lexicon.md`
 - New signal type: extend `GeoSignal` enum in `koinon`; downstream crates match exhaustively
-- New standard or convention: `standards/<TOPIC>.md`; cross-link from `standards/STANDARDS.md`
+- New standard or convention: propose it in `~/dev/kanon/crates/basanos/standards/`; cross-link from this repo's `standards/README.md`
 
 ## Boundaries
 

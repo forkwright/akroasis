@@ -10,10 +10,10 @@ Project conventions for AI coding agents working on this codebase.
 
 ## Standards
 
-Universal: [standards/STANDARDS.md](standards/STANDARDS.md)
-Rust: [standards/RUST.md](standards/RUST.md)
-Shell: [standards/SHELL.md](standards/SHELL.md)
-Writing: [standards/WRITING.md](standards/WRITING.md)
+Universal: `~/dev/kanon/crates/basanos/standards/STANDARDS.md`
+Rust: `~/dev/kanon/crates/basanos/standards/RUST.md`
+Shell: `~/dev/kanon/crates/basanos/standards/SHELL.md`
+Writing: `~/dev/kanon/crates/basanos/standards/WRITING.md`
 
 ## Structure
 
@@ -36,7 +36,7 @@ cargo clippy --workspace               # Lint (zero warnings)
 - **Async:** Tokio
 - **Lints:** `#[expect(lint, reason = "...")]` over `#[allow]`
 - **Visibility:** `pub(crate)` by default
-- **Naming:** Greek names per [standards/GNOMON.md](standards/GNOMON.md), registry at [docs/lexicon.md](docs/lexicon.md)
+- **Naming:** Greek names per `~/dev/kanon/crates/basanos/standards/GNOMON.md`, registry at [docs/lexicon.md](docs/lexicon.md)
 
 ## Before submitting
 
