@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.1.12](https://github.com/forkwright/akroasis/compare/v0.1.11...v0.1.12) (2026-05-21)
+
+
+### Features
+
+* **_llm:** add T0 corpus per [#667](https://github.com/forkwright/akroasis/issues/667) / [#673](https://github.com/forkwright/akroasis/issues/673) fleet rollout ([#12](https://github.com/forkwright/akroasis/issues/12)) ([973b096](https://github.com/forkwright/akroasis/commit/973b09663a789ecc611139210ad48db0317f16d4))
+
+
+### Bug Fixes
+
+* **akroasis:** allow too_many_lines on parse_chirp_csv with WHY ([815f8b2](https://github.com/forkwright/akroasis/commit/815f8b21779c1951dbb3cf00e8d622d95617c3f0))
+* **ci:** raise cargo nextest stage timeout for cold-compile path ([#111](https://github.com/forkwright/akroasis/issues/111)) ([b6dde93](https://github.com/forkwright/akroasis/commit/b6dde93ca9ada761c0f09a4d5f450b8982c622ab))
+* **kerykeion:** remove stale expect_used expectations and .get(0) anti-patterns ([c83f80d](https://github.com/forkwright/akroasis/commit/c83f80d319240c03e71aef90c6a13c8bdf038d52))
+* **koinon:** non-snake-case, hex grouping, indexing panics in tests ([6353c81](https://github.com/forkwright/akroasis/commit/6353c815be48817628774b0a83debdbcee94ecd8))
+* **syntonia:** restore hardware-serial feature and fix stub lint debt ([5926e3e](https://github.com/forkwright/akroasis/commit/5926e3e96b8c6a027e2cfc1e930d6a9b3d4788f3))
+
 ## [0.1.11](https://github.com/forkwright/akroasis/compare/v0.1.10...v0.1.11) (2026-04-15)
 
 
