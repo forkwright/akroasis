@@ -32,3 +32,10 @@ paths = [
   '''vendor/''',
   '''\.gitleaks\.toml''',
 ]
+regexes = [
+  '''sk-secret-123''', # WHY: A2 - vault unit-test fixture; see small-repo-security-triage-2026-05-21.md
+  '''plain-key-value''', # WHY: A3 - test fixture; see small-repo-security-triage-2026-05-21.md
+  '''vault:nonexistent_key''', # WHY: A4 - vault sentinel test fixture; see small-repo-security-triage-2026-05-21.md
+  '''vault:some_key''', # WHY: A5 - vault sentinel test fixture; see small-repo-security-triage-2026-05-21.md
+  '''ChaCha20-Poly1305''', # WHY: A1 - doc-comment cipher-name false-positive; see small-repo-security-triage-2026-05-21.md
+]
