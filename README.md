@@ -94,7 +94,7 @@ Every collection crate produces typed `GeoSignal` objects into koinon. Semaino a
 | Area | Current / Planned |
 |------|-------------------|
 | Language | Rust edition 2024, MSRV 1.85 |
-| Version | 0.1.11 workspace package version |
+| Version | 0.1.12 workspace package version |
 | Errors | snafu context wrapping |
 | Async | tokio |
 | Storage | fjall for vault state; CBOR + BLAKE3 hash chains for tamper logs |
