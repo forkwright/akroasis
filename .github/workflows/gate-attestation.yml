@@ -1,0 +1,47 @@
+name: Gate Attestation
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gate-attestation:
+    name: gate-attestation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify Gate-Passed trailer
+        run: |
+          commits=$(git log --format="%H" "origin/${{ github.base_ref }}..HEAD")
+          if [ -z "$commits" ]; then
+            echo "ERROR: No commits found in PR"
+            exit 1
+          fi
+
+          found=false
+          for sha in $commits; do
+            body=$(git log -1 --format="%b" "$sha")
+            if echo "$body" | grep -q "^Gate-Passed:"; then
+              version=$(echo "$body" | grep "^Gate-Passed:" | head -1)
+              echo "Found gate attestation: $version"
+              found=true
+              break
+            fi
+          done
+
+          if [ "$found" = false ]; then
+            echo "ERROR: No Gate-Passed trailer found in any PR commit."
+            echo "Run the local gate and commit with the trailer."
+            exit 1
+          fi

@@ -111,15 +111,14 @@ Every collection crate produces typed `GeoSignal` objects into koinon. Semaino a
 
 ## Documentation
 
-- `<standards-doc>/STANDARDS.md`: Coding standards (universal + per-language)
-- `<standards-doc>/GNOMON.md`: Naming methodology
+- [standards/](standards/): Pointer to canonical kanon standards (STANDARDS.md, GNOMON.md, etc.)
 - [docs/lexicon.md](docs/lexicon.md): Project name registry
 
 ## Status
 
 **Phase 02 complete** (project state 2026-04-22). Kerykeion mesh networking fully landed.
 For current planning and phase status, see
-`<canonical-state-doc>/STATE.md`.
+[CLAUDE.md](CLAUDE.md) and the kanon planning substrate at `kanon:projects/akroasis/STATE.md`.
 
 The scope is massive. Each domain is independent: a crate with clear boundaries, producing typed signals into the shared model. Pieces don't need to arrive simultaneously. They just need to speak the same language when they do.
 
