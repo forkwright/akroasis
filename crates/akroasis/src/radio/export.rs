@@ -3,16 +3,33 @@
 use std::io::Write;
 use std::path::Path;
 
+use serde::Serialize;
 use snafu::ResultExt;
 use syntonia::{Bandwidth, Channel, FrequencyPlan, PowerLevel, ScanMode, ToneMode};
 
-use super::errors::{IoSnafu, RadioError, SyntoniaSnafu, WriteFileSnafu};
+use super::errors::{IoSnafu, JsonReportSnafu, RadioError, SyntoniaSnafu, WriteFileSnafu};
 use super::progress;
-use super::{ExportFormat, Hardware, resolve_target};
+use super::{ExportFormat, Hardware, RadioVariant, resolve_target};
+
+const RADIO_EXPORT_JSON_SCHEMA: u8 = 1;
+
+#[derive(Serialize)]
+struct ExportReport<'a> {
+    schema_version: u8,
+    command: &'static str,
+    port: &'a str,
+    variant: &'static str,
+    firmware: &'a str,
+    format: &'static str,
+    output: &'a str,
+    channel_count: usize,
+    plan: &'a FrequencyPlan,
+}
 
 /// Runs the export subcommand.
 pub(crate) fn run(
     port: Option<&str>,
+    json: bool,
     format: &ExportFormat,
     output: Option<&Path>,
     hw: &dyn Hardware,
@@ -44,6 +61,18 @@ pub(crate) fn run(
             std::fs::write(path, &content).context(WriteFileSnafu {
                 path: path.to_path_buf(),
             })?;
+            if json {
+                write_json_report(
+                    &target.port,
+                    target.variant,
+                    &target.firmware,
+                    format,
+                    path,
+                    &plan,
+                    out,
+                )?;
+                return Ok(());
+            }
             writeln!(
                 out,
                 "Exported {} channels to {}",
@@ -55,6 +84,33 @@ pub(crate) fn run(
         None => write!(out, "{content}").context(IoSnafu)?,
     }
 
+    Ok(())
+}
+
+fn write_json_report(
+    port: &str,
+    variant: RadioVariant,
+    firmware: &str,
+    format: &ExportFormat,
+    output: &Path,
+    plan: &FrequencyPlan,
+    out: &mut dyn Write,
+) -> Result<(), RadioError> {
+    let output = output.display().to_string();
+    let report = ExportReport {
+        schema_version: RADIO_EXPORT_JSON_SCHEMA,
+        command: "radio export",
+        port,
+        variant: variant.display_name(),
+        firmware,
+        format: format.as_str(),
+        output: &output,
+        channel_count: plan.channel_count(),
+        plan,
+    };
+
+    serde_json::to_writer_pretty(&mut *out, &report).context(JsonReportSnafu)?;
+    writeln!(out).context(IoSnafu)?;
     Ok(())
 }
 
@@ -227,6 +283,7 @@ mod tests {
     use syntonia::types::FrequencyOffset;
 
     use super::*;
+    use crate::radio::{DetectedRadio, Session};
 
     fn sample_plan() -> FrequencyPlan {
         FrequencyPlan {
@@ -259,6 +316,58 @@ mod tests {
                 },
             ],
             created: None,
+        }
+    }
+
+    struct FakeHardware {
+        plan: FrequencyPlan,
+    }
+
+    impl Hardware for FakeHardware {
+        fn detect_radios(&self) -> Result<Vec<DetectedRadio>, RadioError> {
+            Ok(vec![DetectedRadio {
+                variant: RadioVariant::Uv5r,
+                port: "/dev/ttyUSB0".to_string(),
+                firmware: "BFB297".to_string(),
+                warnings: Vec::new(),
+            }])
+        }
+
+        fn open(&self, _port: &str) -> Result<Box<dyn Session>, RadioError> {
+            Ok(Box::new(FakeSession {
+                plan: self.plan.clone(),
+            }))
+        }
+    }
+
+    struct FakeSession {
+        plan: FrequencyPlan,
+    }
+
+    impl Session for FakeSession {
+        fn variant(&self) -> RadioVariant {
+            RadioVariant::Uv5r
+        }
+
+        fn download_image(&mut self, on_block: &dyn Fn(u16, u16)) -> Result<Vec<u8>, RadioError> {
+            on_block(128, 128);
+            Ok(vec![0; 16])
+        }
+
+        fn upload_image(
+            &mut self,
+            _data: &[u8],
+            _on_block: &dyn Fn(u16, u16),
+        ) -> Result<(), RadioError> {
+            Ok(())
+        }
+
+        fn decode_channels(&self, _image: &[u8]) -> Result<Vec<Channel>, RadioError> {
+            Ok(self.plan.channels.clone())
+        }
+
+        fn encode_channels(&self, _channels: &[Channel]) -> Result<Vec<u8>, RadioError> {
+            Ok(Vec::new())
         }
     }
 
@@ -301,5 +410,29 @@ mod tests {
         let cols: Vec<&str> = rpt_line.split(',').collect();
         assert_eq!(cols[5], "Tone"); // Tone mode
         assert_eq!(cols[6], "100.0"); // rToneFreq
+    }
+
+    #[test]
+    fn run_json_outputs_export_completion_report() {
+        let dir = tempfile::tempdir().unwrap();
+        let output = dir.path().join("channels.csv");
+        let hw = FakeHardware {
+            plan: sample_plan(),
+        };
+        let mut out = Vec::new();
+
+        run(None, true, &ExportFormat::Csv, Some(&output), &hw, &mut out).unwrap();
+
+        assert!(output.exists());
+        let report: serde_json::Value = serde_json::from_slice(&out).unwrap();
+        assert_eq!(report["schema_version"], 1);
+        assert_eq!(report["command"], "radio export");
+        assert_eq!(report["port"], "/dev/ttyUSB0");
+        assert_eq!(report["variant"], "Baofeng UV-5R");
+        assert_eq!(report["firmware"], "BFB297");
+        assert_eq!(report["format"], "csv");
+        assert_eq!(report["output"], output.display().to_string());
+        assert_eq!(report["channel_count"], 2);
+        assert_eq!(report["plan"]["name"], "Baofeng UV-5R export");
     }
 }
