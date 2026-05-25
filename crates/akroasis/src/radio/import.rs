@@ -4,11 +4,25 @@ use std::io::Write;
 use std::path::Path;
 
 use koinon::Frequency;
+use serde::Serialize;
 use snafu::ResultExt;
 use syntonia::{Bandwidth, Channel, FrequencyPlan, PowerLevel, ScanMode, ToneMode};
 
-use super::errors::{IoSnafu, RadioError, ReadFileSnafu, SyntoniaSnafu};
+use super::errors::{IoSnafu, JsonReportSnafu, RadioError, ReadFileSnafu, SyntoniaSnafu};
 use super::read;
+
+const RADIO_IMPORT_JSON_SCHEMA: u8 = 1;
+
+#[derive(Serialize)]
+struct ImportReport<'a> {
+    schema_version: u8,
+    command: &'static str,
+    source: String,
+    format: &'static str,
+    channel_count: usize,
+    empty_channel_slots: usize,
+    plan: &'a FrequencyPlan,
+}
 
 /// Supported file formats for import.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -35,9 +49,14 @@ pub(crate) fn detect_format(path: &Path) -> Result<FileFormat, RadioError> {
 }
 
 /// Runs the import subcommand.
-pub(crate) fn run(file: &Path, out: &mut dyn Write) -> Result<(), RadioError> {
+pub(crate) fn run(file: &Path, json: bool, out: &mut dyn Write) -> Result<(), RadioError> {
     let format = detect_format(file)?;
     let plan = import_plan(file, format)?;
+
+    if json {
+        write_json_report(file, format, &plan, out)?;
+        return Ok(());
+    }
 
     read::print_channel_table_owned(&plan.channels, out)?;
 
@@ -59,6 +78,45 @@ pub(crate) fn run(file: &Path, out: &mut dyn Write) -> Result<(), RadioError> {
     .context(IoSnafu)?;
 
     Ok(())
+}
+
+fn write_json_report(
+    file: &Path,
+    format: FileFormat,
+    plan: &FrequencyPlan,
+    out: &mut dyn Write,
+) -> Result<(), RadioError> {
+    let report = ImportReport {
+        schema_version: RADIO_IMPORT_JSON_SCHEMA,
+        command: "radio import",
+        source: file.display().to_string(),
+        format: format.as_str(),
+        channel_count: plan.channel_count(),
+        empty_channel_slots: empty_channel_slots(plan),
+        plan,
+    };
+
+    serde_json::to_writer_pretty(&mut *out, &report).context(JsonReportSnafu)?;
+    writeln!(out).context(IoSnafu)?;
+    Ok(())
+}
+
+fn empty_channel_slots(plan: &FrequencyPlan) -> usize {
+    plan.channels
+        .iter()
+        .filter(|ch| ch.rx_freq.as_hz() == 0)
+        .count()
+}
+
+impl FileFormat {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::Toml => "toml",
+            Self::Json => "json",
+            Self::ChirpCsv => "chirp-csv",
+            Self::BinaryImage => "binary-image",
+        }
+    }
 }
 
 /// Imports a plan FROM a file in the detected format.
@@ -409,9 +467,43 @@ busy_lock = false
         std::fs::write(&path, toml).unwrap();
 
         let mut out = Vec::new();
-        run(&path, &mut out).unwrap();
+        run(&path, false, &mut out).unwrap();
         let s = String::from_utf8(out).unwrap();
         assert!(s.contains("CALL"));
         assert!(s.contains("Imported 1 channels FROM"));
+    }
+
+    #[test]
+    fn import_run_json_outputs_machine_readable_report() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("plan.toml");
+        let toml = r#"
+name = "Test Plan"
+radio_model = "Baofeng UV-5R"
+
+[[channels]]
+index = 0
+name = "CALL"
+rx_freq = 146520000
+offset = "None"
+tone = "None"
+power = "High"
+bandwidth = "Wide"
+scan = "Include"
+busy_lock = false
+"#;
+        std::fs::write(&path, toml).unwrap();
+
+        let mut out = Vec::new();
+        run(&path, true, &mut out).unwrap();
+
+        let report: serde_json::Value = serde_json::from_slice(&out).unwrap();
+        assert_eq!(report["schema_version"], 1);
+        assert_eq!(report["command"], "radio import");
+        assert_eq!(report["format"], "toml");
+        assert_eq!(report["channel_count"], 1);
+        assert_eq!(report["empty_channel_slots"], 0);
+        assert_eq!(report["plan"]["name"], "Test Plan");
+        assert_eq!(report["plan"]["channels"][0]["name"], "CALL");
     }
 }

@@ -67,6 +67,9 @@ pub enum RadioError {
     #[snafu(display("{source}"))]
     Syntonia { source: syntonia::Error },
 
+    #[snafu(display("failed to write JSON report: {source}"))]
+    JsonReport { source: serde_json::Error },
+
     #[snafu(display("write aborted by user"))]
     WriteAborted,
 
