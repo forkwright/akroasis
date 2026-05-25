@@ -92,6 +92,14 @@ impl SemainoPipeline {
     /// 2. The main task fans out each incoming [`GeoSignal`] to the convergence
     ///    grid and consumes [`AggregatedSignal`]s from the mpsc channel to run
     ///    the alert pipeline.
+    #[tracing::instrument(
+        level = "debug",
+        skip(self, rx),
+        fields(
+            time_window_secs = self.time_window.as_secs(),
+            min_convergence_domains = self.min_convergence_domains
+        )
+    )]
     pub async fn run(&mut self, rx: broadcast::Receiver<GeoSignal>) {
         // WHY: We need two consumers of the broadcast:
         //   (a) the aggregator, for baseline scoring, and

@@ -146,6 +146,11 @@ impl SignalAggregator {
     ///
     /// `recv()` on a broadcast receiver is cancel-safe; no signal is lost on
     /// cancellation at the `select!` boundary.
+    #[tracing::instrument(
+        level = "debug",
+        skip(self, rx, tx),
+        fields(baselines = self.baselines.len())
+    )]
     pub async fn run(
         &mut self,
         mut rx: broadcast::Receiver<GeoSignal>,
