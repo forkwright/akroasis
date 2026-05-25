@@ -361,8 +361,7 @@ pub async fn run_health_monitor(
 ) -> Result<(), Error> {
     // WHY: lock once up front to capture the configured tick cadence. The
     // config is copied by value so we release the lock before entering the
-    // long-running loop; live reconfig is a future concern tracked in the
-    // parameter registry (aletheia #2306).
+    // long-running loop; live reconfig is a future concern tracked at TODO(#142).
     let tick_interval = bridge.lock().await.config.health_check_interval();
     let mut interval = tokio::time::interval(tick_interval);
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
