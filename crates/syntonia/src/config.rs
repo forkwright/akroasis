@@ -134,7 +134,7 @@ mod tests {
         let cfg = BaofengTimingConfig::default();
         assert_eq!(cfg.inter_byte_delay(), Duration::from_millis(10));
         assert_eq!(cfg.post_ack_delay(), Duration::from_millis(50));
-        assert_eq!(cfg.ident_retry_delay(), Duration::from_millis(2_000));
+        assert_eq!(cfg.ident_retry_delay(), Duration::from_secs(2));
         assert_eq!(cfg.read_timeout(), Duration::from_millis(1_500));
         assert_eq!(cfg.max_retries, 3);
     }

@@ -17,6 +17,7 @@
 //! - [`import`] — CHIRP `.img` and `.csv` import
 //! - [`export`] — CHIRP `.csv` export
 //! - [`baofeng`] — Baofeng UV-5R EEPROM codec
+//! - [`hardware`] — optional serial cable and radio detection APIs
 
 #![deny(missing_docs)]
 
@@ -25,6 +26,9 @@ pub mod channel;
 pub mod config;
 pub mod error;
 pub mod export;
+#[cfg(feature = "hardware-serial")]
+// kanon:ignore RUST/feature-gate-check -- declared in syntonia/Cargo.toml [features]
+pub mod hardware;
 pub mod import;
 pub mod plan;
 pub(crate) mod serial;

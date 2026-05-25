@@ -47,10 +47,6 @@ pub trait SerialPort: Send {
 /// Only available with the `hardware-serial` feature (requires `libudev-dev`
 /// on Linux).
 #[cfg(feature = "hardware-serial")] // kanon:ignore RUST/feature-gate-check -- declared in syntonia/Cargo.toml [features]
-#[expect(
-    dead_code,
-    reason = "public hardware adapter; consumers live outside this crate (baofeng::protocol module not yet re-wired, see #80-follow-up)"
-)]
 pub(crate) struct HardwareSerialPort {
     inner: Box<dyn serialport::SerialPort>,
 }

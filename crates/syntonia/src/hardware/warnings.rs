@@ -63,6 +63,13 @@ impl fmt::Display for HardwareWarning {
 
 /// Collect warnings from a cable scan result.
 #[must_use]
+#[cfg_attr(
+    not(test),
+    expect(
+        dead_code,
+        reason = "crate-local warning helpers are staged for the akroasis hardware backend"
+    )
+)]
 pub(crate) fn collect_scan_warnings(cables: &[UsbCable]) -> Vec<HardwareWarning> {
     let mut warnings = Vec::new();
     for cable in cables {
@@ -84,6 +91,13 @@ pub(crate) fn collect_scan_warnings(cables: &[UsbCable]) -> Vec<HardwareWarning>
 
 /// Collect warnings from radio detection results.
 #[must_use]
+#[cfg_attr(
+    not(test),
+    expect(
+        dead_code,
+        reason = "crate-local warning helpers are staged for the akroasis hardware backend"
+    )
+)]
 pub(crate) fn collect_detection_warnings(detected: &[DetectedRadio]) -> Vec<HardwareWarning> {
     let mut warnings = Vec::new();
     if detected.len() > 1 {
@@ -96,6 +110,13 @@ pub(crate) fn collect_detection_warnings(detected: &[DetectedRadio]) -> Vec<Hard
 
 /// Create a port-access-denied warning.
 #[must_use]
+#[cfg_attr(
+    not(test),
+    expect(
+        dead_code,
+        reason = "crate-local warning helpers are staged for the akroasis hardware backend"
+    )
+)]
 pub(crate) fn port_access_denied(port: &str) -> HardwareWarning {
     HardwareWarning::PortAccessDenied {
         port: port.to_string(),
@@ -103,7 +124,7 @@ pub(crate) fn port_access_denied(port: &str) -> HardwareWarning {
 }
 
 #[cfg(test)]
-#[expect(
+#[allow(
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::indexing_slicing,
@@ -139,7 +160,7 @@ mod tests {
         let warnings = collect_scan_warnings(&cables);
         assert_eq!(warnings.len(), 1);
         assert!(matches!(
-            &warnings.get(0).copied().unwrap_or_default(),
+            warnings.first().unwrap(),
             HardwareWarning::Pl2303Clone { port } if port == "/dev/ttyUSB0"
         ));
     }
@@ -164,7 +185,7 @@ mod tests {
         let warnings = collect_scan_warnings(&cables);
         assert_eq!(warnings.len(), 1);
         assert!(matches!(
-            &warnings.get(0).copied().unwrap_or_default(),
+            warnings.first().unwrap(),
             HardwareWarning::UnknownCable {
                 vid: 0xDEAD,
                 pid: 0xBEEF,
@@ -216,7 +237,7 @@ mod tests {
         let warnings = collect_detection_warnings(&detected);
         assert_eq!(warnings.len(), 1);
         assert!(matches!(
-            &warnings.get(0).copied().unwrap_or_default(),
+            warnings.first().unwrap(),
             HardwareWarning::MultipleRadiosDetected { count: 2 }
         ));
     }

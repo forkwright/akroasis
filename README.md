@@ -21,7 +21,7 @@ Capability domains span radio, mesh, SDR, proximity, network defense, OSINT, off
 | **Application shell** | akroasis | ✓ | ◻ | Single binary with CLI dispatch for radio, mesh, vault, and future domain stubs. Radio uses `StubHardware`; mesh CLI shows static/no-live-connection status until daemon mode is implemented. |
 | **Foundation** | koinon | ✓ |  -  | Shared IDs, coordinates, frequency and power types, 7-domain `GeoSignal` model, hardware asset registry, temporal baselines, and tamper-evident logging. |
 | **Foundation** | kryphos | ✓ |  -  | Credential vault and installation identity: fjall-backed encrypted storage, Argon2id derivation, ChaCha20-Poly1305 encryption, Ed25519 signing keys, rotation/revocation metadata, and mutation audit logging at `tamper.log` beside the vault store. |
-| **Radio Management** | syntonia | ✓ | ◻ | Frequency plans, CHIRP CSV/IMG import, CHIRP CSV export, validation, USB detection metadata, and Baofeng UV-5R-family codec. Hardware serial backend is optional; the shipped binary does not yet connect live radios. |
+| **Radio Management** | syntonia | ✓ | ◻ | Frequency plans, CHIRP CSV/IMG import, CHIRP CSV export, validation, USB detection metadata, and Baofeng UV-5R-family codec. With `akroasis/hardware-serial`, `radio detect` uses live serial probing; read/program/export still require the future protocol session backend. |
 | **Mesh Networking** | kerykeion | ✓ | ✓ | Clean-room Meshtastic stack: protobuf framing, serial/TCP transports, handshake, encryption, node database, topology, discovery, routing, delivery tracking, store-and-forward, gateway bridge, and signal conversion. |
 | **Signal Processing** | semaino | ✓ |  -  | Signal aggregation, per-kind anomaly baselines, convergence detection, and deduplicated severity-classified alert pipeline. |
 | **SDR / Reception** | dektis | ◻ | ◻ | Future spectrum monitoring, FM/AM/SSB demodulation, protocol decoding (APRS, ADS-B, P25), jamming detection, direction finding, and emitter fingerprinting. |
@@ -99,7 +99,7 @@ Every collection crate is expected to produce typed `GeoSignal` objects into koi
 | Async | tokio |
 | Storage | fjall for vault state; CBOR + BLAKE3 hash chains for tamper logs |
 | Mesh | Shipped: clean-room Meshtastic stack with prost protobuf, serial/TCP transports, AES-CTR channel crypto, routing, topology, and store-and-forward |
-| Radio | Shipped: frequency-plan model, validation, import/export, Baofeng UV-5R-family codec; planned: live binary hardware connection beyond stub dispatch |
+| Radio | Shipped: frequency-plan model, validation, import/export, Baofeng UV-5R-family codec, and opt-in live serial detection through `akroasis/hardware-serial`; planned: live read/program/export protocol sessions beyond stub dispatch |
 | SDR | Planned: FutureSDR, FFT, RTL-SDR, and SoapySDR work will land with `dektis` |
 | IDS/IPS | Planned: Suricata and Zeek orchestration will land with `aspis` |
 | Maps | Planned: OSM vector tiles and SRTM elevation will land with `chorografia` |

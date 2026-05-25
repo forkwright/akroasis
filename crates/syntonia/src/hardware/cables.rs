@@ -92,7 +92,7 @@ pub fn lookup_cable(vid: u16, pid: u16) -> Option<&'static KnownCable> {
 }
 
 #[cfg(test)]
-#[expect(
+#[allow(
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::indexing_slicing,

@@ -82,6 +82,12 @@ pub enum RadioError {
     #[snafu(display("hardware support not yet available (syntonia protocol layer pending)"))]
     HardwareNotAvailable,
 
+    #[cfg(feature = "hardware-serial")] // kanon:ignore RUST/feature-gate-check -- declared in akroasis/Cargo.toml [features]
+    #[snafu(display("radio hardware detection failed: {source}"))]
+    HardwareDetect {
+        source: syntonia::hardware::DetectError,
+    },
+
     #[snafu(display("I/O error: {source}"))]
     Io { source: std::io::Error },
 }

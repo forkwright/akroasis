@@ -147,7 +147,8 @@ pub trait RadioProber {
 /// Default prober that opens real serial ports.
 struct DefaultProber;
 
-impl RadioProber for DefaultProber { // kanon:ignore ARCHITECTURE/trait-impl-colocation -- RadioProber trait exists for testability; DefaultProber is the production path
+impl RadioProber for DefaultProber {
+    // kanon:ignore ARCHITECTURE/trait-impl-colocation -- RadioProber trait exists for testability; DefaultProber is the production path
     fn probe(&self, port_path: &str) -> Result<Option<(VariantConfig, RadioIdent)>, DetectError> {
         let mut port = serialport::new(port_path, BAUD_RATE)
             .timeout(PROBE_TIMEOUT)
@@ -173,7 +174,7 @@ fn try_magic_sequence(
 
     let mut ack = [0u8; 1];
     port.read_exact(&mut ack).ok()?;
-    if ack.get(0).copied().unwrap_or_default() != ACK {
+    if ack.first().copied().unwrap_or_default() != ACK {
         return None;
     }
 
@@ -295,10 +296,11 @@ fn find_cable_for_port(port_path: &str) -> Result<UsbCable, DetectError> {
 // ── Tests ────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
-#[expect(
+#[allow(
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::indexing_slicing,
+    clippy::type_complexity,
     clippy::missing_docs_in_private_items,
     reason = "test code: panics and unwraps acceptable in assertions"
 )]
@@ -391,7 +393,7 @@ mod tests {
         let response = [&[ACK][..], b"BFB297\x00\x00"].concat();
         let mut port = MockSerial::new(response);
 
-        let result = try_magic_sequence(&mut port, &MAGIC_SEQUENCES.get(0).copied().unwrap_or_default());
+        let result = try_magic_sequence(&mut port, MAGIC_SEQUENCES.first().unwrap());
         assert!(result.is_some());
 
         let (variant, ident) = result.unwrap();
@@ -404,7 +406,7 @@ mod tests {
         let response = [&[ACK][..], b"BFF800\x00\x00"].concat();
         let mut port = MockSerial::new(response);
 
-        let result = try_magic_sequence(&mut port, &MAGIC_SEQUENCES.get(0).copied().unwrap_or_default());
+        let result = try_magic_sequence(&mut port, MAGIC_SEQUENCES.first().unwrap());
         assert!(result.is_some());
         assert_eq!(result.unwrap().0.kind, RadioKind::BaofengBfF8hp);
     }
@@ -413,20 +415,20 @@ mod tests {
     fn try_magic_returns_none_on_no_ack() {
         let response = vec![0xFF]; // Not an ACK
         let mut port = MockSerial::new(response);
-        assert!(try_magic_sequence(&mut port, &MAGIC_SEQUENCES.get(0).copied().unwrap_or_default()).is_none());
+        assert!(try_magic_sequence(&mut port, MAGIC_SEQUENCES.first().unwrap()).is_none());
     }
 
     #[test]
     fn try_magic_returns_none_on_empty_response() {
         let mut port = MockSerial::new(vec![]);
-        assert!(try_magic_sequence(&mut port, &MAGIC_SEQUENCES.get(0).copied().unwrap_or_default()).is_none());
+        assert!(try_magic_sequence(&mut port, MAGIC_SEQUENCES.first().unwrap()).is_none());
     }
 
     #[test]
     fn try_magic_returns_none_for_unrecognized_ident() {
         let response = [&[ACK][..], b"ZZZ999\x00\x00"].concat();
         let mut port = MockSerial::new(response);
-        assert!(try_magic_sequence(&mut port, &MAGIC_SEQUENCES.get(0).copied().unwrap_or_default()).is_none());
+        assert!(try_magic_sequence(&mut port, MAGIC_SEQUENCES.first().unwrap()).is_none());
     }
 
     #[test]
@@ -453,8 +455,11 @@ mod tests {
 
         let results = detect_radios_impl(cables, &prober);
         assert_eq!(results.len(), 1);
-        assert_eq!(results.get(0).copied().unwrap_or_default().variant.kind, RadioKind::BaofengUv5r);
-        assert_eq!(results.get(0).copied().unwrap_or_default().cable.serial_port, "/dev/ttyUSB0");
+        assert_eq!(
+            results.first().unwrap().variant.kind,
+            RadioKind::BaofengUv5r
+        );
+        assert_eq!(results.first().unwrap().cable.serial_port, "/dev/ttyUSB0");
     }
 
     #[test]
@@ -495,8 +500,11 @@ mod tests {
 
         let results = detect_radios_impl(cables, &prober);
         assert_eq!(results.len(), 1);
-        assert_eq!(results.get(0).copied().unwrap_or_default().cable.serial_port, "/dev/ttyUSB1");
-        assert_eq!(results.get(0).copied().unwrap_or_default().variant.kind, RadioKind::BaofengBfF8hp);
+        assert_eq!(results.first().unwrap().cable.serial_port, "/dev/ttyUSB1");
+        assert_eq!(
+            results.first().unwrap().variant.kind,
+            RadioKind::BaofengBfF8hp
+        );
     }
 
     #[test]
