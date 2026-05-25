@@ -6,13 +6,14 @@ use std::path::{Path, PathBuf};
 use compact_str::CompactString;
 use fs2::FileExt;
 use jiff::Timestamp;
+use koinon::{LogEntryKind, TamperLog};
 use serde::{Deserialize, Serialize};
 use snafu::ResultExt;
 
 use crate::crypto::{self, decrypt, encrypt};
 use crate::error::{
     AlreadyExistsSnafu, EntryCryptoSnafu, EntryNotDeletableSnafu, EntryRevokedSnafu, IoSnafu,
-    SerializationSnafu, VaultError, WrongPassphraseSnafu,
+    SerializationSnafu, TamperLogSnafu, VaultError, WrongPassphraseSnafu,
 };
 use crate::key::VaultKey;
 use crate::vault::{
@@ -31,6 +32,9 @@ const LOCK_FILE: &str = "vault.lock";
 
 /// Subdirectory for the fjall keyspace.
 const DATA_DIR: &str = "data";
+
+/// Name of the tamper-evident vault audit log within the vault directory.
+const TAMPER_LOG_FILE: &str = "tamper.log";
 
 /// On-disk vault header stored as JSON.
 #[derive(Debug, Serialize, Deserialize)]
@@ -242,6 +246,7 @@ impl Vault {
         self.db
             .persist(fjall::PersistMode::SyncAll)
             .map_err(fjall_err)?;
+        self.append_vault_audit(name, "add")?;
 
         Ok(())
     }
@@ -329,6 +334,7 @@ impl Vault {
         self.db
             .persist(fjall::PersistMode::SyncAll)
             .map_err(fjall_err)?;
+        self.append_vault_audit(name, "remove")?;
 
         Ok(())
     }
@@ -371,6 +377,7 @@ impl Vault {
         self.db
             .persist(fjall::PersistMode::SyncAll)
             .map_err(fjall_err)?;
+        self.append_vault_audit(name, "rotate")?;
 
         Ok(())
     }
@@ -410,6 +417,7 @@ impl Vault {
         self.db
             .persist(fjall::PersistMode::SyncAll)
             .map_err(fjall_err)?;
+        self.append_vault_audit(name, "revoke")?;
 
         Ok(())
     }
@@ -443,6 +451,22 @@ impl Vault {
     #[must_use]
     pub fn path(&self) -> &Path {
         &self.path
+    }
+
+    /// Returns the filesystem path of the vault mutation audit log.
+    #[must_use]
+    pub fn tamper_log_path(&self) -> PathBuf {
+        self.path.join(TAMPER_LOG_FILE)
+    }
+
+    fn append_vault_audit(&self, name: &str, operation: &str) -> Result<(), VaultError> {
+        let mut log = TamperLog::open(self.tamper_log_path()).context(TamperLogSnafu)?;
+        log.append(LogEntryKind::VaultMutation {
+            credential_name: CompactString::from(name),
+            operation: CompactString::from(operation),
+        })
+        .context(TamperLogSnafu)?;
+        Ok(())
     }
 }
 

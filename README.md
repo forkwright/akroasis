@@ -20,7 +20,7 @@ Capability domains span radio, mesh, SDR, proximity, network defense, OSINT, off
 |--------|-------|:-------------:|:----------------:|------|
 | **Application shell** | akroasis | ✓ | ◻ | Single binary with CLI dispatch for radio, mesh, vault, and future domain stubs. Radio uses `StubHardware`; mesh CLI shows static/no-live-connection status until daemon mode is implemented. |
 | **Foundation** | koinon | ✓ |  -  | Shared IDs, coordinates, frequency and power types, 7-domain `GeoSignal` model, hardware asset registry, temporal baselines, and tamper-evident logging. |
-| **Foundation** | kryphos | ✓ |  -  | Credential vault and installation identity: fjall-backed encrypted storage, Argon2id derivation, ChaCha20-Poly1305 encryption, Ed25519 signing keys, rotation/revocation metadata. |
+| **Foundation** | kryphos | ✓ |  -  | Credential vault and installation identity: fjall-backed encrypted storage, Argon2id derivation, ChaCha20-Poly1305 encryption, Ed25519 signing keys, rotation/revocation metadata, and mutation audit logging at `tamper.log` beside the vault store. |
 | **Radio Management** | syntonia | ✓ | ◻ | Frequency plans, CHIRP CSV/IMG import, CHIRP CSV export, validation, USB detection metadata, and Baofeng UV-5R-family codec. Hardware serial backend is optional; the shipped binary does not yet connect live radios. |
 | **Mesh Networking** | kerykeion | ✓ | ✓ | Clean-room Meshtastic stack: protobuf framing, serial/TCP transports, handshake, encryption, node database, topology, discovery, routing, delivery tracking, store-and-forward, gateway bridge, and signal conversion. |
 | **Signal Processing** | semaino | ✓ |  -  | Signal aggregation, per-kind anomaly baselines, convergence detection, and deduplicated severity-classified alert pipeline. |
@@ -84,7 +84,7 @@ Every collection crate is expected to produce typed `GeoSignal` objects into koi
 - **Standalone.** Runs without internet, without an LLM, without anything but the hardware in front of you. Grid-down capable.
 - **Sovereignty.** Every protocol owned. No cloud dependencies, no subscriptions, no external trust.
 - **Security default.** Encrypted by default. Unencrypted is the opt-in.
-- **Auditable.** Tamper-evident logging with hash chains. Every action recorded. Evidence packaging with chain of custody.
+- **Auditable.** Credential vault mutations are recorded in a tamper-evident BLAKE3 hash-chain log beside the vault store. Broader action logging and evidence packaging are planned follow-ons.
 - **Reproducible deployment (planned).** NixOS flake + systemd unit hardening + declarative deployment is the intended target shape; no deployment artifacts ship today. Tracked in #125.
 
 ---
