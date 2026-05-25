@@ -60,3 +60,5 @@ Foundation:     koinon (shared types), kryphos (encryption), lethe (privacy)
 - Planning docs (scope, roadmap, vision, research): live in the kanon repo
 - Naming: `../standards/GNOMON.md`, `lexicon.md`
 - Reference store layout: `reference-store.md`
+- Fjall column encryption boundary: `fjall-column-encryption.md`
+- Hybrid PQ content-key wrapping boundary: `hybrid-pq-content-key-wrapping.md`
