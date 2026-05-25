@@ -17,6 +17,7 @@
 use tokio::sync::Mutex;
 use tokio::time::MissedTickBehavior;
 use tokio_util::sync::CancellationToken;
+use tracing::instrument;
 
 use crate::Error;
 use crate::config::HeartbeatConfig;
@@ -33,6 +34,7 @@ use crate::proto::ToRadio;
 ///
 /// Returns the first send error encountered.  The caller should cancel the
 /// token and reconnect the underlying connection.
+#[instrument(level = "debug", skip(conn, token))]
 pub async fn run_heartbeat<C>(conn: &Mutex<C>, token: CancellationToken) -> Result<(), Error>
 where
     C: MeshConnection,
@@ -50,6 +52,11 @@ where
 ///
 /// Returns the first send error encountered.  The caller should cancel the
 /// token and reconnect the underlying connection.
+#[instrument(
+    level = "debug",
+    skip(conn, config, token),
+    fields(interval_secs = config.interval_secs)
+)]
 pub async fn run_heartbeat_with_config<C>(
     conn: &Mutex<C>,
     config: &HeartbeatConfig,

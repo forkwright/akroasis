@@ -16,6 +16,7 @@
 
 use rand_core::{OsRng, RngCore as _};
 use tokio::time::timeout;
+use tracing::instrument;
 
 use crate::Error;
 use crate::config::HandshakeConfig;
@@ -46,6 +47,7 @@ pub struct HandshakeResult {
 ///
 /// Returns [`Error::HandshakeFailed`] if the handshake times out or if the
 /// radio does not complete the config dump with a matching ID.
+#[instrument(level = "debug", skip(conn, node_db))]
 pub async fn handshake(
     conn: &mut impl MeshConnection,
     node_db: &mut NodeDb,
@@ -64,6 +66,11 @@ pub async fn handshake(
 ///
 /// Returns [`Error::HandshakeFailed`] if the handshake times out or if the
 /// radio does not complete the config dump with a matching ID.
+#[instrument(
+    level = "debug",
+    skip(conn, node_db, config),
+    fields(timeout_secs = config.timeout_secs)
+)]
 pub async fn handshake_with_config(
     conn: &mut impl MeshConnection,
     node_db: &mut NodeDb,

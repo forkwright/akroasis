@@ -41,7 +41,7 @@ snafu = "0.8"
 tokio = { version = "1", features = ["full"] }
 
 # Logging
-tracing = "0.1"
+tracing = { version = "0.1", features = ["attributes"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 # Time
