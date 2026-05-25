@@ -52,6 +52,10 @@ pub enum RadioCommand {
         #[arg(long)]
         port: Option<String>,
 
+        /// Emit a machine-readable JSON completion report instead of human text.
+        #[arg(long, requires = "output")]
+        json: bool,
+
         /// Output format
         #[arg(long, value_enum)]
         format: ExportFormat,
@@ -79,6 +83,17 @@ pub enum ExportFormat {
     Json,
     Csv,
     ChirpCsv,
+}
+
+impl ExportFormat {
+    pub(crate) const fn as_str(&self) -> &'static str {
+        match self {
+            Self::Toml => "toml",
+            Self::Json => "json",
+            Self::Csv => "csv",
+            Self::ChirpCsv => "chirp-csv",
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -247,9 +262,10 @@ pub fn dispatch_with(
         RadioCommand::Program { port, plan } => program::run(port.as_deref(), plan, hw, out),
         RadioCommand::Export {
             port,
+            json,
             format,
             output,
-        } => export::run(port.as_deref(), format, output.as_deref(), hw, out),
+        } => export::run(port.as_deref(), *json, format, output.as_deref(), hw, out),
         RadioCommand::Import { json, file } => import::run(file, *json, out),
     }
 }
@@ -328,15 +344,42 @@ mod tests {
         match cmd {
             RadioCommand::Export {
                 port,
+                json,
                 format,
                 output,
             } => {
                 assert!(port.is_none());
+                assert!(!json);
                 assert!(matches!(format, ExportFormat::Json));
                 assert_eq!(output, Some(PathBuf::from("out.json")));
             }
             _ => panic!("expected Export"),
         }
+    }
+
+    #[test]
+    fn parse_export_json_flag() {
+        let cmd = parse(&["export", "--json", "--format", "csv", "--output", "out.csv"]);
+        match cmd {
+            RadioCommand::Export {
+                port,
+                json,
+                format,
+                output,
+            } => {
+                assert!(port.is_none());
+                assert!(json);
+                assert!(matches!(format, ExportFormat::Csv));
+                assert_eq!(output, Some(PathBuf::from("out.csv")));
+            }
+            _ => panic!("expected Export"),
+        }
+    }
+
+    #[test]
+    fn parse_export_json_requires_output() {
+        let result = TestCli::try_parse_from(["test", "export", "--json", "--format", "csv"]);
+        assert!(result.is_err());
     }
 
     #[test]
