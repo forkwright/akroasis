@@ -22,7 +22,11 @@ use self::errors::RadioError;
 #[derive(Subcommand)]
 pub enum RadioCommand {
     /// Detect connected radios
-    Detect,
+    Detect {
+        /// Emit a machine-readable JSON report instead of human text.
+        #[arg(long)]
+        json: bool,
+    },
 
     /// Read channels from radio
     Read {
@@ -238,7 +242,7 @@ pub fn dispatch_with(
     out: &mut dyn std::io::Write,
 ) -> Result<(), RadioError> {
     match cmd {
-        RadioCommand::Detect => detect::run(hw, out),
+        RadioCommand::Detect { json } => detect::run(hw, *json, out),
         RadioCommand::Read { port } => read::run(port.as_deref(), hw, out),
         RadioCommand::Program { port, plan } => program::run(port.as_deref(), plan, hw, out),
         RadioCommand::Export {
@@ -274,7 +278,19 @@ mod tests {
     #[test]
     fn parse_detect() {
         let cmd = parse(&["detect"]);
-        assert!(matches!(cmd, RadioCommand::Detect));
+        match cmd {
+            RadioCommand::Detect { json } => assert!(!json),
+            _ => panic!("expected Detect"),
+        }
+    }
+
+    #[test]
+    fn parse_detect_json_flag() {
+        let cmd = parse(&["detect", "--json"]);
+        match cmd {
+            RadioCommand::Detect { json } => assert!(json),
+            _ => panic!("expected Detect"),
+        }
     }
 
     #[test]
