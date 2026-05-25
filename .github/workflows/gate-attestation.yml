@@ -16,12 +16,18 @@ jobs:
     name: gate-attestation
     runs-on: ubuntu-latest
     steps:
+      - name: Pass trusted automation PRs
+        if: ${{ github.actor == 'dependabot[bot]' || github.actor == 'release-please[bot]' }}
+        run: echo "Gate attestation waived for trusted automation actor."
+
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        if: ${{ github.actor != 'dependabot[bot]' && github.actor != 'release-please[bot]' }}
         with:
           fetch-depth: 0
           persist-credentials: false
 
       - name: Verify Gate-Passed trailer
+        if: ${{ github.actor != 'dependabot[bot]' && github.actor != 'release-please[bot]' }}
         run: |
           commits=$(git log --format="%H" "origin/${{ github.base_ref }}..HEAD")
           if [ -z "$commits" ]; then
