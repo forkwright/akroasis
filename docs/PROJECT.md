@@ -26,6 +26,7 @@ Phase index lives in the kanon repo roadmap. Wave status is reflected in merged 
 | Document | Purpose |
 |----------|---------|
 | `ARCHITECTURE.md` | Crate map, layer structure, key decisions |
+| `reference-store.md` | Target `/instance/reference/` layout for the planned pinax knowledge store |
 | `../standards/GNOMON.md` | Greek naming methodology |
 | `lexicon.md` | Domain terms and name registry |
 | `../standards/STANDARDS.md` | Universal coding standards |
