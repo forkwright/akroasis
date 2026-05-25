@@ -89,6 +89,13 @@ pub enum VaultError {
         /// Name of the revoked entry.
         name: String,
     },
+
+    /// Writing the tamper-evident vault audit log failed.
+    #[snafu(display("tamper log error: {source}"))]
+    TamperLog {
+        /// Underlying tamper-log failure.
+        source: koinon::TamperLogError,
+    },
 }
 
 /// Errors from key generation, derivation, or loading.

@@ -154,6 +154,13 @@ pub enum LogEntryKind {
         /// Target of the action, if applicable.
         target: Option<CompactString>,
     },
+    /// A credential vault entry lifecycle mutation was committed.
+    VaultMutation {
+        /// Human-readable credential name affected by the mutation.
+        credential_name: CompactString,
+        /// Mutation operation, e.g. `"add"`, `"rotate"`, `"revoke"`, or `"remove"`.
+        operation: CompactString,
+    },
 }
 
 /// A single record in the tamper-evident log.
