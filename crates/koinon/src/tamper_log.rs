@@ -360,8 +360,7 @@ pub fn verify_chain(path: impl AsRef<Path>) -> Result<VerificationResult, Tamper
 
         if expected_hash != stored_hash {
             let sequence = ciborium::from_reader::<LogEntry, _>(cbor_bytes.as_slice())
-                .map(|e| e.sequence)
-                .unwrap_or(entries_verified);
+                .map_or(entries_verified, |e| e.sequence);
 
             return Ok(VerificationResult {
                 entries_verified,

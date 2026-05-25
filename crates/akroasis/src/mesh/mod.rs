@@ -34,23 +34,6 @@ pub enum MeshCommand {
     /// List all known mesh nodes
     Nodes,
 
-    /// Send a text message to a mesh node
-    Send {
-        /// Destination node number (hex, e.g. `0xdeadbeef`) or name
-        dest: String,
-
-        /// Message text
-        message: String,
-
-        /// Channel index to send on (default: primary channel 0)
-        #[arg(long, default_value = "0")]
-        channel: u8,
-
-        /// Fire-and-forget — do not wait for ACK
-        #[arg(long)]
-        no_ack: bool,
-    },
-
     /// Display mesh network topology
     Topology,
 }
@@ -70,12 +53,6 @@ pub fn dispatch(command: &MeshCommand, out: &mut dyn Write) -> Result<(), MeshEr
             print_nodes(out)?;
             Ok(())
         }
-        MeshCommand::Send {
-            dest,
-            message,
-            channel,
-            no_ack,
-        } => print_send(dest, message, *channel, *no_ack, out),
         MeshCommand::Topology => {
             print_topology(out)?;
             Ok(())
@@ -100,11 +77,7 @@ fn print_status(out: &mut dyn Write) -> Result<(), MeshError> {
 
     writeln!(out, "{table}").context(IoSnafu)?;
     writeln!(out).context(IoSnafu)?;
-    writeln!(
-        out,
-        "Start the daemon with `akroasis serve` for live mesh data."
-    )
-    .context(IoSnafu)?;
+    writeln!(out, "Live mesh transport is not wired in this CLI build.").context(IoSnafu)?;
     Ok(())
 }
 
@@ -125,36 +98,11 @@ fn print_nodes(out: &mut dyn Write) -> Result<(), MeshError> {
 
     writeln!(out, "{table}").context(IoSnafu)?;
     writeln!(out).context(IoSnafu)?;
-    writeln!(out, "No live connection. Start the daemon for node data.").context(IoSnafu)?;
-    Ok(())
-}
-
-/// Format and print a send command.
-fn print_send(
-    dest: &str,
-    message: &str,
-    channel: u8,
-    no_ack: bool,
-    out: &mut dyn Write,
-) -> Result<(), MeshError> {
-    let dest_num = parse_node_identifier(dest).ok_or_else(|| MeshError::NodeNotFound {
-        identifier: dest.to_string(),
-    })?;
-
-    writeln!(out, "Sending to {dest_num} on channel {channel}:").context(IoSnafu)?;
-    writeln!(out, "  \"{message}\"").context(IoSnafu)?;
-    if no_ack {
-        writeln!(out, "  (fire-and-forget — no ACK requested)").context(IoSnafu)?;
-    } else {
-        writeln!(out, "  (awaiting ACK...)").context(IoSnafu)?;
-    }
-    writeln!(out).context(IoSnafu)?;
     writeln!(
         out,
-        "Send requires a running daemon. Use `akroasis serve` first."
+        "No live connection. Live node collection is not wired yet."
     )
     .context(IoSnafu)?;
-
     Ok(())
 }
 
@@ -164,7 +112,7 @@ fn print_topology(out: &mut dyn Write) -> Result<(), MeshError> {
     writeln!(out, "─────────────").context(IoSnafu)?;
     writeln!(
         out,
-        "No live connection. Start the daemon for topology data."
+        "No live connection. Live topology collection is not wired yet."
     )
     .context(IoSnafu)?;
     writeln!(out).context(IoSnafu)?;
@@ -444,7 +392,7 @@ mod tests {
         dispatch(&MeshCommand::Status, &mut out).unwrap();
         let s = String::from_utf8(out).unwrap();
         assert!(s.contains("kerykeion"));
-        assert!(s.contains("Start the daemon"));
+        assert!(s.contains("Live mesh transport is not wired"));
     }
 
     #[test]
@@ -462,40 +410,5 @@ mod tests {
         dispatch(&MeshCommand::Topology, &mut out).unwrap();
         let s = String::from_utf8(out).unwrap();
         assert!(s.contains("Mesh Topology"));
-    }
-
-    #[test]
-    fn dispatch_send_valid_dest() {
-        let mut out = Vec::new();
-        assert!(
-            dispatch(
-                &MeshCommand::Send {
-                    dest: "0x1234".into(),
-                    message: "hello".into(),
-                    channel: 0,
-                    no_ack: false,
-                },
-                &mut out,
-            )
-            .is_ok()
-        );
-        let s = String::from_utf8(out).unwrap();
-        assert!(s.contains("Sending to"));
-        assert!(s.contains("hello"));
-    }
-
-    #[test]
-    fn dispatch_send_invalid_dest() {
-        let mut out = Vec::new();
-        let result = dispatch(
-            &MeshCommand::Send {
-                dest: "not_a_node".into(),
-                message: "hello".into(),
-                channel: 0,
-                no_ack: false,
-            },
-            &mut out,
-        );
-        assert!(result.is_err());
     }
 }

@@ -121,7 +121,6 @@ fn dispatch(command: &Command, out: &mut dyn std::io::Write) -> Result<(), Error
         Command::Privacy => {
             writeln!(out, "lethe — privacy (not yet implemented)").context(IoSnafu)?;
         }
-        Command::Serve => writeln!(out, "daemon mode (not yet implemented)").context(IoSnafu)?,
     }
     Ok(())
 }
