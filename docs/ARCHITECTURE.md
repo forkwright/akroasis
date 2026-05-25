@@ -7,7 +7,7 @@ Run `cargo metadata --format-version 1 | jq '.workspace_members | length'` for c
 ## Layer structure
 
 ```
-Interface:      opsis (TUI/web/native)
+Interface:      opsis (operator surfaces; stack/order pending API boundary)
 Orchestration:  praxis (automation, playbooks, PACE)
 Analysis:       semaino (aggregation), ichneutes (correlation)
 Collection:     syntonia, kerykeion, dektis, engys, aspis, skopos, peira
@@ -33,7 +33,7 @@ Foundation:     koinon (shared types), kryphos (encryption), lethe (privacy)
 | **praxis** | Orchestration | Automation engine, playbooks, event triggers, state machines |
 | **chorografia** | Model | Geographic model, RF propagation, navigation, terrain |
 | **pinax** | Knowledge | Offline knowledge repository, frequency databases, maps; see `reference-store.md` for target instance layout |
-| **opsis** | Interface | TUI, Dioxus native app, web UI |
+| **opsis** | Interface | Operator surfaces after a typed programmatic/API boundary exists; stack/order pending #118 and #126 |
 | **akroasis** | Binary | CLI entrypoint, subcommand routing |
 
 ## Key decisions
