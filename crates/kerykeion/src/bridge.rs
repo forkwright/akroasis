@@ -15,6 +15,7 @@
 use std::time::Instant;
 
 use serde::{Deserialize, Serialize};
+use tokio::sync::watch;
 use tokio_util::sync::CancellationToken;
 use tracing::instrument;
 
@@ -121,6 +122,7 @@ pub struct GatewayBridge {
     last_failover: Option<Instant>,
     events: Vec<GatewayEvent>,
     config: BridgeConfig,
+    config_tx: watch::Sender<BridgeConfig>,
 }
 
 impl GatewayBridge {
@@ -132,13 +134,15 @@ impl GatewayBridge {
 
     /// Creates a new bridge with the supplied tuning configuration.
     #[must_use]
-    pub const fn with_config(config: BridgeConfig) -> Self {
+    pub fn with_config(config: BridgeConfig) -> Self {
+        let (config_tx, _config_rx) = watch::channel(config.clone());
         Self {
             gateways: Vec::new(),
             active_gateway: None,
             last_failover: None,
             events: Vec::new(),
             config,
+            config_tx,
         }
     }
 
@@ -146,6 +150,16 @@ impl GatewayBridge {
     #[must_use]
     pub const fn config(&self) -> &BridgeConfig {
         &self.config
+    }
+
+    /// Replaces the active bridge tuning configuration and notifies monitors.
+    pub fn update_config(&mut self, config: BridgeConfig) {
+        self.config = config.clone();
+        self.config_tx.send_replace(config);
+    }
+
+    fn subscribe_config(&self) -> watch::Receiver<BridgeConfig> {
+        self.config_tx.subscribe()
     }
 
     /// Registers a gateway node with the given priority.
@@ -361,10 +375,8 @@ pub async fn run_health_monitor(
     bridge: &tokio::sync::Mutex<GatewayBridge>,
     token: CancellationToken,
 ) -> Result<(), Error> {
-    // WHY: lock once up front to capture the configured tick cadence. The
-    // config is copied by value so we release the lock before entering the
-    // long-running loop; live reconfig is a future concern tracked at TODO(#142).
-    let tick_interval = bridge.lock().await.config.health_check_interval();
+    let mut config_rx = bridge.lock().await.subscribe_config();
+    let mut tick_interval = config_rx.borrow().health_check_interval();
     let mut interval = tokio::time::interval(tick_interval);
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
@@ -374,6 +386,23 @@ pub async fn run_health_monitor(
             () = token.cancelled() => {
                 tracing::debug!("gateway health monitor cancelled");
                 return Ok(());
+            }
+            changed = config_rx.changed() => {
+                if changed.is_err() {
+                    tracing::debug!("gateway health monitor config channel closed");
+                    return Ok(());
+                }
+
+                let next_interval = config_rx.borrow_and_update().health_check_interval();
+                if next_interval != tick_interval {
+                    tick_interval = next_interval;
+                    interval = tokio::time::interval(tick_interval);
+                    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+                    tracing::debug!(
+                        interval_secs = tick_interval.as_secs(),
+                        "gateway health monitor interval updated"
+                    );
+                }
             }
             _ = interval.tick() => {
                 let nodes: Vec<NodeNum> = {
@@ -404,6 +433,9 @@ const fn health_rank(health: &GatewayHealth) -> u8 {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+    use std::time::Duration;
+
     use tracing::Instrument as _;
 
     use super::*;
@@ -568,6 +600,47 @@ mod tests {
             async move { run_health_monitor(&bridge, task_token).await }
                 .instrument(tracing::info_span!("spawned_task")),
         );
+
+        token.cancel();
+        #[expect(clippy::unwrap_used, reason = "test-only")]
+        let result = handle.await.unwrap();
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn health_monitor_uses_updated_tick_interval() {
+        let initial_cfg = BridgeConfig {
+            health_check_interval_secs: 60,
+            ..BridgeConfig::default()
+        };
+        let bridge = Arc::new(tokio::sync::Mutex::new(GatewayBridge::with_config(
+            initial_cfg,
+        )));
+        let token = CancellationToken::new();
+        let task_bridge = Arc::clone(&bridge);
+        let task_token = token.clone();
+
+        let handle = tokio::spawn(
+            async move { run_health_monitor(task_bridge.as_ref(), task_token).await }
+                .instrument(tracing::info_span!("spawned_task")),
+        );
+
+        tokio::task::yield_now().await;
+
+        {
+            let mut bridge = bridge.lock().await;
+            bridge.add_gateway(NodeNum(1), 1);
+            assert_eq!(bridge.active(), None);
+            bridge.update_config(BridgeConfig {
+                health_check_interval_secs: 1,
+                ..BridgeConfig::default()
+            });
+        }
+
+        tokio::time::advance(Duration::from_secs(1)).await;
+        tokio::task::yield_now().await;
+
+        assert_eq!(bridge.lock().await.active(), Some(NodeNum(1)));
 
         token.cancel();
         #[expect(clippy::unwrap_used, reason = "test-only")]
