@@ -85,7 +85,7 @@ Every collection crate produces typed `GeoSignal` objects into koinon. Semaino a
 - **Sovereignty.** Every protocol owned. No cloud dependencies, no subscriptions, no external trust.
 - **Security default.** Encrypted by default. Unencrypted is the opt-in.
 - **Auditable.** Tamper-evident logging with hash chains. Every action recorded. Evidence packaging with chain of custody.
-- **NixOS.** Reproducible builds, systemd hardening, declarative deployment from day one.
+- **Reproducible deployment (planned).** NixOS flake + systemd unit hardening + declarative deployment is the intended target shape; no deployment artifacts ship today. Tracked in #125.
 
 ---
 
