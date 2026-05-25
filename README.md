@@ -34,7 +34,7 @@ Capability domains span radio, mesh, SDR, proximity, network defense, OSINT, off
 | **Navigation** | chorografia | ◻ | ◻ | Future RF propagation modeling, infrastructure graphs, offline OSM navigation, and space weather HF prediction. |
 | **Knowledge** | pinax | ◻ |  -  | Future offline repository for frequency databases, protocol specs, equipment manuals, topo maps, and indexed references. Target instance layout is documented in [docs/reference-store.md](docs/reference-store.md). |
 | **Privacy** | lethe | ◻ | ◻ | Future VPN/proxy management, anonymization, IMSI catcher detection, and OPSEC scoring. The etymological complement to [Aletheia](https://github.com/forkwright/aletheia). |
-| **Interface** | opsis | ◻ |  -  | Future TUI, native app, and web UI for spectrum waterfall, mesh topology, and intelligence dashboard views. |
+| **Interface** | opsis | ◻ |  -  | Future operator surfaces for spectrum waterfall, mesh topology, and intelligence dashboard views. Surface stack and order are pending the backend/programmatic API boundary tracked in #118 and #126. |
 
 **Legend:** ✓ = shipped in `crates/`, ◻ = planned/not shipped,  -  = not applicable.
 
@@ -61,8 +61,8 @@ Capability domains span radio, mesh, SDR, proximity, network defense, OSINT, off
                    │                   │  focal points,    │           │
           ┌────────▼─────────┐         │  threat scoring)  │    ┌──────▼──────┐
           │ koinon           │         └──────────────────┘    │ opsis       │
-          │ (signal model,   │                                  │ (TUI, app,  │
-          │  entity index,   │         ┌──────────────────┐    │  web UI)    │
+          │ (signal model,   │                                  │ (operator   │
+          │  entity index,   │         ┌──────────────────┐    │  surfaces)  │
           │  temporal engine)│         │ chorografia      │    └─────────────┘
           │                  │         │ (geo, nav, RF    │
           │ kryphos          │         │  propagation)    │
@@ -104,7 +104,7 @@ Every collection crate is expected to produce typed `GeoSignal` objects into koi
 | IDS/IPS | Planned: Suricata and Zeek orchestration will land with `aspis` |
 | Maps | Planned: OSM vector tiles and SRTM elevation will land with `chorografia` |
 | Search | Planned: full-text indexing will land with `pinax` |
-| Interfaces | Planned: ratatui, Dioxus, and Axum surfaces will land with `opsis` |
+| Interfaces | Planned: operator surfaces will land with `opsis` after the typed programmatic/API boundary is defined; TUI, native, web, and desktop-first order remain open planning decisions |
 | License | AGPL-3.0-only |
 
 ---
