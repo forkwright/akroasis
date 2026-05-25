@@ -5,6 +5,7 @@ use std::time::Duration;
 use koinon::GeoSignal;
 use tokio::sync::broadcast;
 use tokio_util::sync::CancellationToken;
+use tracing::instrument;
 
 use crate::config::TopologyConfig;
 use crate::connection::MeshConnection;
@@ -86,6 +87,14 @@ pub const fn build_traceroute_request(dest_node: NodeNum) -> crate::proto::ToRad
 ///
 /// Exits cleanly when `token` is cancelled. Cancel-safe: all state mutations
 /// are completed before the next `.await`.
+#[instrument(
+    level = "debug",
+    skip(conn, processor, config, tx, token),
+    fields(
+        traceroute_interval_secs = config.traceroute_interval_secs,
+        stale_node_timeout_secs = config.stale_node_timeout_secs
+    )
+)]
 pub async fn run_discovery<C>(
     conn: &tokio::sync::Mutex<C>,
     processor: &tokio::sync::Mutex<PacketProcessor>,

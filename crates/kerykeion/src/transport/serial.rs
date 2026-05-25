@@ -6,6 +6,7 @@
 use futures::{SinkExt as _, StreamExt as _};
 use tokio_serial::{SerialPort as _, SerialPortBuilderExt as _, SerialStream};
 use tokio_util::codec::Framed;
+use tracing::instrument;
 
 use crate::Error;
 use crate::codec::MeshCodec;
@@ -37,6 +38,7 @@ impl SerialTransport {
     /// # Errors
     ///
     /// Returns [`Error::SerialConnect`] if the port cannot be opened.
+    #[instrument(level = "debug", skip(port), fields(port = %port, baud))]
     pub async fn open(port: &str, baud: u32) -> Result<Self, Error> {
         Self::open_with_config(port, baud, &TransportConfig::default()).await
     }
@@ -46,10 +48,7 @@ impl SerialTransport {
     /// # Errors
     ///
     /// Returns [`Error::SerialConnect`] if the port cannot be opened.
-    #[expect(
-        clippy::unused_async,
-        reason = "API symmetry with TcpTransport::connect; future USB enumeration may be async"
-    )]
+    #[instrument(level = "debug", skip(port, config), fields(port = %port, baud))]
     pub async fn open_with_config(
         port: &str,
         baud: u32,

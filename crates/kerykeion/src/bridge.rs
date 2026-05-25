@@ -16,6 +16,7 @@ use std::time::Instant;
 
 use serde::{Deserialize, Serialize};
 use tokio_util::sync::CancellationToken;
+use tracing::instrument;
 
 use crate::config::BridgeConfig;
 use crate::error::Error;
@@ -355,6 +356,7 @@ impl Default for GatewayBridge {
 /// # Errors
 ///
 /// Returns [`Error::SendFailed`] if the bridge encounters an unrecoverable error.
+#[instrument(level = "debug", skip(bridge, token))]
 pub async fn run_health_monitor(
     bridge: &tokio::sync::Mutex<GatewayBridge>,
     token: CancellationToken,

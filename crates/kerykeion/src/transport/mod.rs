@@ -14,6 +14,7 @@ use crate::config::{ConnectionConfig, TransportConfig};
 use crate::connection::MeshConnection;
 use crate::error::BleConnectSnafu;
 use crate::proto::{FromRadio, ToRadio};
+use tracing::instrument;
 
 /// A concrete, enum-dispatched connection to a Meshtastic radio.
 ///
@@ -64,6 +65,7 @@ impl MeshConnection for ConnectionHandle {
 /// # Errors
 ///
 /// Returns a transport-specific connection error if the initial connect fails.
+#[instrument(level = "debug", skip(config), fields(connection = ?config))]
 pub async fn connect(config: &ConnectionConfig) -> Result<ConnectionHandle, Error> {
     connect_with_config(config, &TransportConfig::default()).await
 }
@@ -74,6 +76,11 @@ pub async fn connect(config: &ConnectionConfig) -> Result<ConnectionHandle, Erro
 /// # Errors
 ///
 /// Returns a transport-specific connection error if the initial connect fails.
+#[instrument(
+    level = "debug",
+    skip(config, transport_config),
+    fields(connection = ?config)
+)]
 pub async fn connect_with_config(
     config: &ConnectionConfig,
     transport_config: &TransportConfig,

@@ -9,6 +9,7 @@ use futures::{SinkExt as _, StreamExt as _};
 use snafu::ResultExt as _;
 use tokio::net::TcpStream;
 use tokio_util::codec::Framed;
+use tracing::instrument;
 
 use crate::Error;
 use crate::codec::MeshCodec;
@@ -44,6 +45,7 @@ impl TcpTransport {
     ///
     /// Returns [`Error::TcpConnect`] if the connection cannot be established
     /// within the timeout.
+    #[instrument(level = "debug", skip(addr), fields(addr = %addr, port))]
     pub async fn connect(addr: &str, port: u16) -> Result<Self, Error> {
         Self::connect_with_config(addr, port, &TransportConfig::default()).await
     }
@@ -54,6 +56,7 @@ impl TcpTransport {
     ///
     /// Returns [`Error::TcpConnect`] if the connection cannot be established
     /// within [`TransportConfig::tcp_connect_timeout_secs`].
+    #[instrument(level = "debug", skip(addr, config), fields(addr = %addr, port))]
     pub async fn connect_with_config(
         addr: &str,
         port: u16,

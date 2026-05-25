@@ -12,6 +12,7 @@ use koinon::GeoSignal;
 use tokio::sync::{Mutex, broadcast};
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
+use tracing::{Instrument as _, instrument};
 
 use crate::bridge::{self, GatewayBridge};
 use crate::config::MeshConfig;
@@ -245,15 +246,21 @@ impl MeshCollector {
             let conn = Arc::clone(conn);
             let token = cancel.child_token();
             let heartbeat_cfg = self.config.heartbeat.clone();
-            tasks.spawn(async move {
-                heartbeat::run_heartbeat_with_config(&*conn, &heartbeat_cfg, token).await
-            });
+            tasks.spawn(
+                async move {
+                    heartbeat::run_heartbeat_with_config(&*conn, &heartbeat_cfg, token).await
+                }
+                .instrument(tracing::info_span!("kerykeion.heartbeat")),
+            );
         }
 
         // Gateway health monitor.
         let bridge = Arc::clone(&self.bridge);
         let token = cancel.child_token();
-        tasks.spawn(async move { bridge::run_health_monitor(&bridge, token).await });
+        tasks.spawn(
+            async move { bridge::run_health_monitor(&bridge, token).await }
+                .instrument(tracing::info_span!("kerykeion.gateway_health")),
+        );
 
         // Discovery manager: periodic traceroutes + stale node detection.
         if let Some(primary) = connections.first() {
@@ -262,10 +269,13 @@ impl MeshCollector {
             let topo_cfg = self.config.topology.clone();
             let tx_clone = tx.clone();
             let token = cancel.child_token();
-            tasks.spawn(async move {
-                run_discovery(&*conn, &proc, &topo_cfg, &tx_clone, token).await;
-                Ok(())
-            });
+            tasks.spawn(
+                async move {
+                    run_discovery(&*conn, &proc, &topo_cfg, &tx_clone, token).await;
+                    Ok(())
+                }
+                .instrument(tracing::info_span!("kerykeion.discovery")),
+            );
         }
 
         // Router flush: drain outbound queue and process timeouts.
@@ -274,7 +284,10 @@ impl MeshCollector {
             let conn = Arc::clone(primary);
             let token = cancel.child_token();
             let flush_interval = self.config.collector.router_flush_interval();
-            tasks.spawn(async move { run_router_flush(router, conn, flush_interval, token).await });
+            tasks.spawn(
+                async move { run_router_flush(router, conn, flush_interval, token).await }
+                    .instrument(tracing::info_span!("kerykeion.router_flush")),
+            );
         }
     }
 }
@@ -285,6 +298,11 @@ impl Collector for MeshCollector { // kanon:ignore ARCHITECTURE/trait-impl-coloc
         "kerykeion"
     }
 
+    #[instrument(
+        level = "debug",
+        skip(self),
+        fields(connections = self.config.connections.len())
+    )]
     async fn probe(&self) -> bool {
         if self.config.connections.is_empty() {
             return false;
@@ -316,6 +334,11 @@ impl Collector for MeshCollector { // kanon:ignore ARCHITECTURE/trait-impl-coloc
         false
     }
 
+    #[instrument(
+        level = "debug",
+        skip(self, tx, cancel),
+        fields(connections = self.config.connections.len())
+    )]
     async fn run(
         &mut self,
         tx: broadcast::Sender<GeoSignal>,
@@ -425,6 +448,11 @@ impl Collector for MeshCollector { // kanon:ignore ARCHITECTURE/trait-impl-coloc
 /// # Cancellation Safety
 ///
 /// Exits cleanly when `token` is cancelled at the next iteration boundary.
+#[instrument(
+    level = "debug",
+    skip(router, conn, token),
+    fields(tick_interval_ms = tick_interval.as_millis())
+)]
 async fn run_router_flush<C>(
     router: Arc<Mutex<MeshRouter>>,
     conn: Arc<Mutex<C>>,
