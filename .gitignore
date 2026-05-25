@@ -1,7 +1,9 @@
 # Cargo build output
 /target/
 **/*.rs.bk
-.cargo/
+.cargo/*
+# WHY: track checked-in cargo-audit suppressions (mirrors deny.toml).
+!.cargo/audit.toml
 
 # Secrets
 *.env
