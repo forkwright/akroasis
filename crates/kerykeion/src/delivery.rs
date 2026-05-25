@@ -69,11 +69,7 @@ impl DestStats {
     /// Average delivery latency in milliseconds, or `None` if no messages acknowledged.
     #[must_use]
     pub const fn average_latency_ms(&self) -> Option<u64> {
-        if self.acknowledged > 0 {
-            Some(self.latency_sum_ms / self.acknowledged)
-        } else {
-            None
-        }
+        self.latency_sum_ms.checked_div(self.acknowledged)
     }
 
     /// Success rate as a fraction (0.0–1.0), or `None` if no messages attempted.

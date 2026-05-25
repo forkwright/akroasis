@@ -85,10 +85,10 @@ Where the dependency does not yet exist, the contributor has two acceptable shap
 - Omit the surface entirely until the subsystem lands.
 - Stub the handler with a typed loud-error return (e.g., `NotImplementedYet`) whose message names the tracking issue. Never ship a silent fake success path (a print-only stub, an `awaiting ACK` message with no network work, an `Ok(())` short-circuit).
 
-Anti-pattern examples already tracked in this repo:
+Anti-pattern examples tracked in this repo:
 
-- #121 - `akroasis serve` daemon subcommand exists with no transport implementation; other subcommands funnel users toward it.
+- #121 - `akroasis serve` daemon subcommand existed with no transport implementation; other subcommands funneled users toward it.
 - #122 - radio hardware adapters are `StubHardware`-only; the Baofeng protocol is unwired but advertised.
-- #123 - `mesh send` prints `awaiting ACK` while doing no network work because no daemon receives the packet.
+- #123 - `mesh send` printed `awaiting ACK` while doing no network work because no daemon received the packet.
 
 Reviewers should block PRs that add a new surface ahead of its subsystem until either the subsystem lands in the same PR or the surface is downgraded to a loud-error stub per above.

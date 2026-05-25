@@ -245,9 +245,7 @@ fn parse_chirp_tone(tone_mode: &str, r_tone: &str, dtcs_code: &str, dtcs_pol: &s
     match tone_mode {
         "Tone" | "TSQL" => {
             let freq: f32 = r_tone.parse().unwrap_or(88.5);
-            syntonia::CtcssTone::new(freq)
-                .map(ToneMode::Ctcss)
-                .unwrap_or(ToneMode::None)
+            syntonia::CtcssTone::new(freq).map_or(ToneMode::None, ToneMode::Ctcss)
         }
         "DTCS" => {
             let code: u16 = dtcs_code.parse().unwrap_or(23);
@@ -255,9 +253,7 @@ fn parse_chirp_tone(tone_mode: &str, r_tone: &str, dtcs_code: &str, dtcs_pol: &s
                 "RR" | "RN" => syntonia::DcsPolarity::Inverted,
                 _ => syntonia::DcsPolarity::Normal,
             };
-            syntonia::DcsCode::new(code)
-                .map(|c| ToneMode::Dcs(c, polarity))
-                .unwrap_or(ToneMode::None)
+            syntonia::DcsCode::new(code).map_or(ToneMode::None, |c| ToneMode::Dcs(c, polarity))
         }
         _ => ToneMode::None,
     }

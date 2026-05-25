@@ -42,8 +42,6 @@ pub(crate) enum Command {
     Vault(VaultArgs),
     /// Privacy — VPN, anonymization, OPSEC assessment
     Privacy,
-    /// Serve the Akroasis daemon
-    Serve,
 }
 
 /// Radio subcommand arguments.
