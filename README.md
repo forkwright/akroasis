@@ -32,7 +32,7 @@ Capability domains span radio, mesh, SDR, proximity, network defense, OSINT, off
 | **Signal Intelligence** | ichneutes | ◻ |  -  | Future entity correlation, focal point synthesis, threat scoring, and forensic timeline reconstruction across all domains. |
 | **Automation** | praxis | ◻ |  -  | Future event-driven triggers, named playbooks, PACE communications, and operational state machines. |
 | **Navigation** | chorografia | ◻ | ◻ | Future RF propagation modeling, infrastructure graphs, offline OSM navigation, and space weather HF prediction. |
-| **Knowledge** | pinax | ◻ |  -  | Future offline repository for frequency databases, protocol specs, equipment manuals, topo maps, and indexed references. |
+| **Knowledge** | pinax | ◻ |  -  | Future offline repository for frequency databases, protocol specs, equipment manuals, topo maps, and indexed references. Target instance layout is documented in [docs/reference-store.md](docs/reference-store.md). |
 | **Privacy** | lethe | ◻ | ◻ | Future VPN/proxy management, anonymization, IMSI catcher detection, and OPSEC scoring. The etymological complement to [Aletheia](https://github.com/forkwright/aletheia). |
 | **Interface** | opsis | ◻ |  -  | Future TUI, native app, and web UI for spectrum waterfall, mesh topology, and intelligence dashboard views. |
 
@@ -113,6 +113,7 @@ Every collection crate is expected to produce typed `GeoSignal` objects into koi
 
 - [standards/](standards/): Pointer to canonical kanon standards (STANDARDS.md, GNOMON.md, etc.)
 - [docs/lexicon.md](docs/lexicon.md): Project name registry
+- [docs/reference-store.md](docs/reference-store.md): Target `/instance/reference/` layout for the planned pinax knowledge store
 
 ## Status
 

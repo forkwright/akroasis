@@ -32,7 +32,7 @@ Foundation:     koinon (shared types), kryphos (encryption), lethe (privacy)
 | **ichneutes** | Analysis | Entity correlation, focal points, threat scoring, intelligence synthesis |
 | **praxis** | Orchestration | Automation engine, playbooks, event triggers, state machines |
 | **chorografia** | Model | Geographic model, RF propagation, navigation, terrain |
-| **pinax** | Knowledge | Offline knowledge repository, frequency databases, maps |
+| **pinax** | Knowledge | Offline knowledge repository, frequency databases, maps; see `reference-store.md` for target instance layout |
 | **opsis** | Interface | TUI, Dioxus native app, web UI |
 | **akroasis** | Binary | CLI entrypoint, subcommand routing |
 
@@ -59,3 +59,4 @@ Foundation:     koinon (shared types), kryphos (encryption), lethe (privacy)
 
 - Planning docs (scope, roadmap, vision, research): live in the kanon repo
 - Naming: `../standards/GNOMON.md`, `lexicon.md`
+- Reference store layout: `reference-store.md`
