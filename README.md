@@ -8,7 +8,7 @@ Every tool for radio, mesh networking, spectrum monitoring, network security, or
 
 Akroasis is the attempt to fix that.
 
-One system. One signal model. Every domain produces typed signals into the same pipeline. Radio anomalies correlate with network threats correlate with proximity intelligence correlate with OSINT. The convergence is where the intelligence lives - not in any single domain but in the relationships between them.
+One system. One signal model. The shared pipeline is designed for every domain to produce typed signals; today the live production `GeoSignal` producer is kerykeion mesh, while the remaining domains are planned or covered with synthetic pipeline tests. Radio anomalies correlate with network threats correlate with proximity intelligence correlate with OSINT. The convergence is where the intelligence lives - not in any single domain but in the relationships between them.
 
 Capability domains span radio, mesh, SDR, proximity, network defense, OSINT, offensive security, signal intelligence, and geospatial modeling. Rust from the ground up. See the domain table below for shipped crates (✓) vs planned crates (◻).
 
@@ -75,7 +75,7 @@ Capability domains span radio, mesh, SDR, proximity, network defense, OSINT, off
           └──────────────────┘
 ```
 
-Every collection crate produces typed `GeoSignal` objects into koinon. Semaino aggregates domain-agnostically. Ichneutes analyzes domain-agnostically. Praxis acts. Opsis displays. Add a domain, add a crate - signals flow automatically.
+Every collection crate is expected to produce typed `GeoSignal` objects into koinon; the current live producer is kerykeion mesh. Semaino aggregates domain-agnostically, and its tests cover the full seven-domain signal model synthetically. Ichneutes analyzes domain-agnostically. Praxis acts. Opsis displays. Add a domain, add a crate - signals flow automatically once the collector exists.
 
 ---
 
@@ -116,7 +116,7 @@ Every collection crate produces typed `GeoSignal` objects into koinon. Semaino a
 
 ## Status
 
-**Phase 02 complete** (project state 2026-04-22). Kerykeion mesh networking fully landed.
+**Phase 02 complete** (project state 2026-04-22). Kerykeion mesh networking fully landed and is the current live `GeoSignal` collector.
 For current planning and phase status, see
 [CLAUDE.md](CLAUDE.md) and the kanon planning substrate at `kanon:projects/akroasis/STATE.md`.
 
