@@ -34,7 +34,7 @@ dependencies = [
 
 [[package]]
 name = "akroasis"
-version = "0.1.11"
+version = "0.1.12"
 dependencies = [
  "clap",
  "comfy-table",
@@ -1176,7 +1176,7 @@ dependencies = [
 
 [[package]]
 name = "koinon"
-version = "0.1.11"
+version = "0.1.12"
 dependencies = [
  "blake3",
  "ciborium",
@@ -1194,7 +1194,7 @@ dependencies = [
 
 [[package]]
 name = "kryphos"
-version = "0.1.11"
+version = "0.1.12"
 dependencies = [
  "argon2",
  "blake3",
@@ -1879,7 +1879,7 @@ checksum = "b12e76d157a900eb52e81bc6e9f3069344290341720e9178cde2407113ac8d89"
 
 [[package]]
 name = "semaino"
-version = "0.1.11"
+version = "0.1.12"
 dependencies = [
  "jiff",
  "koinon",
@@ -2132,7 +2132,7 @@ dependencies = [
 
 [[package]]
 name = "syntonia"
-version = "0.1.11"
+version = "0.1.12"
 dependencies = [
  "compact_str",
  "csv",
