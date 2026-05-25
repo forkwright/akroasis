@@ -4,6 +4,7 @@ use std::io::Write;
 
 use clap::Subcommand;
 use comfy_table::{Attribute, Cell, ContentArrangement, Table};
+use serde::Serialize;
 use snafu::{ResultExt, Snafu};
 
 use kerykeion::bridge::{GatewayBridge, GatewayHealth};
@@ -21,21 +22,96 @@ pub enum MeshError {
         identifier: String,
     },
 
+    #[snafu(display("failed to write JSON report: {source}"))]
+    JsonReport { source: serde_json::Error },
+
     #[snafu(display("I/O error: {source}"))]
     Io { source: std::io::Error },
+}
+
+const MESH_JSON_SCHEMA: u8 = 1;
+const CLI_STATUS: &str = "not_connected_cli_mode";
+const LIVE_TRANSPORT_MESSAGE: &str = "Live mesh transport is not wired in this CLI build.";
+const LIVE_NODES_MESSAGE: &str = "No live connection. Live node collection is not wired yet.";
+const LIVE_TOPOLOGY_MESSAGE: &str =
+    "No live connection. Live topology collection is not wired yet.";
+
+#[derive(Serialize)]
+struct StatusReport {
+    schema_version: u8,
+    command: &'static str,
+    collector: &'static str,
+    status: &'static str,
+    active_connections: u32,
+    gateway: Option<&'static str>,
+    known_nodes: u32,
+    message: &'static str,
+}
+
+#[derive(Serialize)]
+struct NodesReport {
+    schema_version: u8,
+    command: &'static str,
+    status: &'static str,
+    node_count: usize,
+    nodes: Vec<NodeReport>,
+    message: &'static str,
+}
+
+#[derive(Serialize)]
+struct NodeReport {
+    node: String,
+    long_name: Option<String>,
+    short_name: Option<String>,
+    hardware_model: Option<String>,
+    battery_percent: Option<u8>,
+    snr_db: Option<f32>,
+    hop_count: Option<u8>,
+    last_heard: Option<String>,
+}
+
+#[derive(Serialize)]
+struct TopologyReport {
+    schema_version: u8,
+    command: &'static str,
+    status: &'static str,
+    node_count: usize,
+    edge_count: usize,
+    edges: Vec<TopologyEdgeReport>,
+    message: &'static str,
+}
+
+#[derive(Serialize)]
+struct TopologyEdgeReport {
+    from: String,
+    to: String,
+    snr_db: Option<f32>,
+    hops: Option<u8>,
 }
 
 /// Mesh subcommands.
 #[derive(Subcommand)]
 pub enum MeshCommand {
     /// Show mesh network status summary
-    Status,
+    Status {
+        /// Emit a machine-readable JSON report instead of human text.
+        #[arg(long)]
+        json: bool,
+    },
 
     /// List all known mesh nodes
-    Nodes,
+    Nodes {
+        /// Emit a machine-readable JSON report instead of human text.
+        #[arg(long)]
+        json: bool,
+    },
 
     /// Display mesh network topology
-    Topology,
+    Topology {
+        /// Emit a machine-readable JSON report instead of human text.
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 /// Dispatch a mesh subcommand.
@@ -45,23 +121,40 @@ pub enum MeshCommand {
 /// Returns `MeshError` if the command fails.
 pub fn dispatch(command: &MeshCommand, out: &mut dyn Write) -> Result<(), MeshError> {
     match command {
-        MeshCommand::Status => {
-            print_status(out)?;
+        MeshCommand::Status { json } => {
+            print_status(*json, out)?;
             Ok(())
         }
-        MeshCommand::Nodes => {
-            print_nodes(out)?;
+        MeshCommand::Nodes { json } => {
+            print_nodes(*json, out)?;
             Ok(())
         }
-        MeshCommand::Topology => {
-            print_topology(out)?;
+        MeshCommand::Topology { json } => {
+            print_topology(*json, out)?;
             Ok(())
         }
     }
 }
 
 /// Print mesh network status summary.
-fn print_status(out: &mut dyn Write) -> Result<(), MeshError> {
+fn print_status(json: bool, out: &mut dyn Write) -> Result<(), MeshError> {
+    if json {
+        write_json_report(
+            out,
+            &StatusReport {
+                schema_version: MESH_JSON_SCHEMA,
+                command: "mesh status",
+                collector: "kerykeion",
+                status: CLI_STATUS,
+                active_connections: 0,
+                gateway: None,
+                known_nodes: 0,
+                message: LIVE_TRANSPORT_MESSAGE,
+            },
+        )?;
+        return Ok(());
+    }
+
     let mut table = Table::new();
     table.set_content_arrangement(ContentArrangement::Dynamic);
     table.set_header(vec![
@@ -77,12 +170,27 @@ fn print_status(out: &mut dyn Write) -> Result<(), MeshError> {
 
     writeln!(out, "{table}").context(IoSnafu)?;
     writeln!(out).context(IoSnafu)?;
-    writeln!(out, "Live mesh transport is not wired in this CLI build.").context(IoSnafu)?;
+    writeln!(out, "{LIVE_TRANSPORT_MESSAGE}").context(IoSnafu)?;
     Ok(())
 }
 
 /// Print detailed node table.
-fn print_nodes(out: &mut dyn Write) -> Result<(), MeshError> {
+fn print_nodes(json: bool, out: &mut dyn Write) -> Result<(), MeshError> {
+    if json {
+        write_json_report(
+            out,
+            &NodesReport {
+                schema_version: MESH_JSON_SCHEMA,
+                command: "mesh nodes",
+                status: CLI_STATUS,
+                node_count: 0,
+                nodes: Vec::new(),
+                message: LIVE_NODES_MESSAGE,
+            },
+        )?;
+        return Ok(());
+    }
+
     let mut table = Table::new();
     table.set_content_arrangement(ContentArrangement::Dynamic);
     table.set_header(vec![
@@ -98,27 +206,41 @@ fn print_nodes(out: &mut dyn Write) -> Result<(), MeshError> {
 
     writeln!(out, "{table}").context(IoSnafu)?;
     writeln!(out).context(IoSnafu)?;
-    writeln!(
-        out,
-        "No live connection. Live node collection is not wired yet."
-    )
-    .context(IoSnafu)?;
+    writeln!(out, "{LIVE_NODES_MESSAGE}").context(IoSnafu)?;
     Ok(())
 }
 
 /// Print mesh topology as adjacency list.
-fn print_topology(out: &mut dyn Write) -> Result<(), MeshError> {
+fn print_topology(json: bool, out: &mut dyn Write) -> Result<(), MeshError> {
+    if json {
+        write_json_report(
+            out,
+            &TopologyReport {
+                schema_version: MESH_JSON_SCHEMA,
+                command: "mesh topology",
+                status: CLI_STATUS,
+                node_count: 0,
+                edge_count: 0,
+                edges: Vec::new(),
+                message: LIVE_TOPOLOGY_MESSAGE,
+            },
+        )?;
+        return Ok(());
+    }
+
     writeln!(out, "Mesh Topology").context(IoSnafu)?;
     writeln!(out, "─────────────").context(IoSnafu)?;
-    writeln!(
-        out,
-        "No live connection. Live topology collection is not wired yet."
-    )
-    .context(IoSnafu)?;
+    writeln!(out, "{LIVE_TOPOLOGY_MESSAGE}").context(IoSnafu)?;
     writeln!(out).context(IoSnafu)?;
     writeln!(out, "When running, topology shows:").context(IoSnafu)?;
     writeln!(out, "  NodeA -> NodeB (SNR: -5.2 dB, hops: 1)").context(IoSnafu)?;
     writeln!(out, "  NodeB -> NodeC (SNR: -8.1 dB, hops: 1)").context(IoSnafu)?;
+    Ok(())
+}
+
+fn write_json_report<T: Serialize>(out: &mut dyn Write, report: &T) -> Result<(), MeshError> {
+    serde_json::to_writer_pretty(&mut *out, report).context(JsonReportSnafu)?;
+    writeln!(out).context(IoSnafu)?;
     Ok(())
 }
 
@@ -248,11 +370,54 @@ pub fn build_nodes_table(db: &NodeDb) -> String {
 }
 
 #[cfg(test)]
-#[expect(clippy::unwrap_used, reason = "test assertions use unwrap for clarity")]
+#[expect(
+    clippy::indexing_slicing,
+    clippy::panic,
+    clippy::unwrap_used,
+    reason = "test assertions use unwrap, indexing, and panic for clarity"
+)]
 mod tests {
     use kerykeion::node_db::{DeviceMetrics, UserInfo};
 
     use super::*;
+    use clap::Parser;
+
+    #[derive(Parser)]
+    struct TestCli {
+        #[command(subcommand)]
+        command: MeshCommand,
+    }
+
+    fn parse(args: &[&str]) -> MeshCommand {
+        TestCli::parse_from(std::iter::once("test").chain(args.iter().copied())).command
+    }
+
+    #[test]
+    fn parse_status_json_flag() {
+        let cmd = parse(&["status", "--json"]);
+        match cmd {
+            MeshCommand::Status { json } => assert!(json),
+            _ => panic!("expected status command"),
+        }
+    }
+
+    #[test]
+    fn parse_nodes_json_flag() {
+        let cmd = parse(&["nodes", "--json"]);
+        match cmd {
+            MeshCommand::Nodes { json } => assert!(json),
+            _ => panic!("expected nodes command"),
+        }
+    }
+
+    #[test]
+    fn parse_topology_json_flag() {
+        let cmd = parse(&["topology", "--json"]);
+        match cmd {
+            MeshCommand::Topology { json } => assert!(json),
+            _ => panic!("expected topology command"),
+        }
+    }
 
     #[test]
     fn parse_hex_node_id() {
@@ -389,26 +554,65 @@ mod tests {
     #[test]
     fn dispatch_status_captures_output() {
         let mut out = Vec::new();
-        dispatch(&MeshCommand::Status, &mut out).unwrap();
+        dispatch(&MeshCommand::Status { json: false }, &mut out).unwrap();
         let s = String::from_utf8(out).unwrap();
         assert!(s.contains("kerykeion"));
         assert!(s.contains("Live mesh transport is not wired"));
     }
 
     #[test]
+    fn dispatch_status_json_outputs_machine_readable_report() {
+        let mut out = Vec::new();
+        dispatch(&MeshCommand::Status { json: true }, &mut out).unwrap();
+
+        let report: serde_json::Value = serde_json::from_slice(&out).unwrap();
+        assert_eq!(report["schema_version"], 1);
+        assert_eq!(report["command"], "mesh status");
+        assert_eq!(report["collector"], "kerykeion");
+        assert_eq!(report["status"], "not_connected_cli_mode");
+        assert_eq!(report["known_nodes"], 0);
+    }
+
+    #[test]
     fn dispatch_nodes_captures_output() {
         let mut out = Vec::new();
-        dispatch(&MeshCommand::Nodes, &mut out).unwrap();
+        dispatch(&MeshCommand::Nodes { json: false }, &mut out).unwrap();
         let s = String::from_utf8(out).unwrap();
         assert!(s.contains("Node"));
         assert!(s.contains("No live connection"));
     }
 
     #[test]
+    fn dispatch_nodes_json_outputs_machine_readable_report() {
+        let mut out = Vec::new();
+        dispatch(&MeshCommand::Nodes { json: true }, &mut out).unwrap();
+
+        let report: serde_json::Value = serde_json::from_slice(&out).unwrap();
+        assert_eq!(report["schema_version"], 1);
+        assert_eq!(report["command"], "mesh nodes");
+        assert_eq!(report["status"], "not_connected_cli_mode");
+        assert_eq!(report["node_count"], 0);
+        assert!(report["nodes"].as_array().unwrap().is_empty());
+    }
+
+    #[test]
     fn dispatch_topology_captures_output() {
         let mut out = Vec::new();
-        dispatch(&MeshCommand::Topology, &mut out).unwrap();
+        dispatch(&MeshCommand::Topology { json: false }, &mut out).unwrap();
         let s = String::from_utf8(out).unwrap();
         assert!(s.contains("Mesh Topology"));
+    }
+
+    #[test]
+    fn dispatch_topology_json_outputs_machine_readable_report() {
+        let mut out = Vec::new();
+        dispatch(&MeshCommand::Topology { json: true }, &mut out).unwrap();
+
+        let report: serde_json::Value = serde_json::from_slice(&out).unwrap();
+        assert_eq!(report["schema_version"], 1);
+        assert_eq!(report["command"], "mesh topology");
+        assert_eq!(report["status"], "not_connected_cli_mode");
+        assert_eq!(report["edge_count"], 0);
+        assert!(report["edges"].as_array().unwrap().is_empty());
     }
 }
