@@ -56,6 +56,10 @@ pub enum RadioCommand {
 
     /// Import and display a frequency plan from file
     Import {
+        /// Emit a machine-readable JSON report instead of the human channel table.
+        #[arg(long)]
+        json: bool,
+
         /// Input file (.toml, .json, .csv, or .img)
         file: PathBuf,
     },
@@ -222,7 +226,7 @@ pub fn dispatch_with(
             format,
             output,
         } => export::run(port.as_deref(), format, output.as_deref(), hw, out),
-        RadioCommand::Import { file } => import::run(file, out),
+        RadioCommand::Import { json, file } => import::run(file, *json, out),
     }
 }
 
@@ -303,7 +307,20 @@ mod tests {
     fn parse_import_file() {
         let cmd = parse(&["import", "channels.csv"]);
         match cmd {
-            RadioCommand::Import { file } => {
+            RadioCommand::Import { json, file } => {
+                assert!(!json);
+                assert_eq!(file, PathBuf::from("channels.csv"));
+            }
+            _ => panic!("expected Import"),
+        }
+    }
+
+    #[test]
+    fn parse_import_json_flag() {
+        let cmd = parse(&["import", "--json", "channels.csv"]);
+        match cmd {
+            RadioCommand::Import { json, file } => {
+                assert!(json);
                 assert_eq!(file, PathBuf::from("channels.csv"));
             }
             _ => panic!("expected Import"),

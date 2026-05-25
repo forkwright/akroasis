@@ -104,7 +104,7 @@ Every collection crate is expected to produce typed `GeoSignal` objects into koi
 | IDS/IPS | Planned: Suricata and Zeek orchestration will land with `aspis` |
 | Maps | Planned: OSM vector tiles and SRTM elevation will land with `chorografia` |
 | Search | Planned: full-text indexing will land with `pinax` |
-| Interfaces | Planned: operator surfaces will land with `opsis` after the typed programmatic/API boundary is defined; TUI, native, web, and desktop-first order remain open planning decisions |
+| Interfaces | Current: `akroasis radio import --json` emits a schema-versioned JSON report for parsed frequency plans. Planned: broader JSON CLI/MCP/API coverage before `opsis`; TUI, native, web, and desktop-first order remain open planning decisions |
 | License | AGPL-3.0-only |
 
 ---
