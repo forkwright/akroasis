@@ -17,7 +17,7 @@
 //! - [`import`] — CHIRP `.img` and `.csv` import
 //! - [`export`] — CHIRP `.csv` export
 //! - [`baofeng`] — Baofeng UV-5R EEPROM codec
-//! - [`hardware`] — optional serial cable and radio detection APIs
+//! - `hardware` — optional serial cable and radio detection APIs behind `hardware-serial`
 
 #![deny(missing_docs)]
 
