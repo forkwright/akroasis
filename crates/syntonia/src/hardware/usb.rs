@@ -110,7 +110,7 @@ fn is_pl2303_clone(devices: &rusb::DeviceList<rusb::GlobalContext>, vid: u16, pi
 }
 
 #[cfg(test)]
-#[expect(
+#[allow(
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::indexing_slicing,

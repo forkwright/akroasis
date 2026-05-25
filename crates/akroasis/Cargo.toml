@@ -11,6 +11,11 @@ repository.workspace = true
 name = "akroasis"
 path = "src/main.rs"
 
+[features]
+# Opt-in live serial radio detection. Kept off by default so default builds do
+# not require native serial dependencies.
+hardware-serial = ["syntonia/hardware-serial"]
+
 [dependencies]
 clap = { workspace = true }
 comfy-table = "7"

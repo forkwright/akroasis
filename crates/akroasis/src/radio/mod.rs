@@ -7,6 +7,9 @@ pub mod import;
 pub mod program;
 pub mod progress;
 pub mod read;
+#[cfg(feature = "hardware-serial")]
+// kanon:ignore RUST/feature-gate-check -- declared in akroasis/Cargo.toml [features]
+mod serial_hardware;
 
 use std::path::PathBuf;
 
@@ -80,9 +83,12 @@ pub enum ExportFormat {
 
 /// Known radio variants.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[expect(
-    dead_code,
-    reason = "radio variants used in test mocks; not all exercised in binary"
+#[cfg_attr(
+    not(feature = "hardware-serial"),
+    expect(
+        dead_code,
+        reason = "radio variants used in test mocks; not all exercised in binary"
+    )
 )]
 pub enum RadioVariant {
     Uv5r,
@@ -156,6 +162,13 @@ pub trait Session {
 // Stub hardware (returns errors until P1-02..P1-06 are implemented)
 // ---------------------------------------------------------------------------
 
+#[cfg_attr(
+    all(feature = "hardware-serial", not(test)),
+    expect(
+        dead_code,
+        reason = "stub backend remains available for tests and no-hardware builds"
+    )
+)]
 pub struct StubHardware;
 
 impl Hardware for StubHardware {
@@ -207,8 +220,15 @@ pub fn resolve_target(port: Option<&str>, hw: &dyn Hardware) -> Result<DetectedR
 // ---------------------------------------------------------------------------
 
 /// Dispatches a radio subcommand.
+#[cfg(not(feature = "hardware-serial"))] // kanon:ignore RUST/feature-gate-check -- declared in akroasis/Cargo.toml [features]
 pub fn dispatch(cmd: &RadioCommand, out: &mut dyn std::io::Write) -> Result<(), RadioError> {
     dispatch_with(cmd, &StubHardware, out)
+}
+
+/// Dispatches a radio subcommand with live serial detection enabled.
+#[cfg(feature = "hardware-serial")] // kanon:ignore RUST/feature-gate-check -- declared in akroasis/Cargo.toml [features]
+pub fn dispatch(cmd: &RadioCommand, out: &mut dyn std::io::Write) -> Result<(), RadioError> {
+    dispatch_with(cmd, &serial_hardware::SerialHardware, out)
 }
 
 /// Dispatches with a specific hardware backend (for testing).
