@@ -1,0 +1,75 @@
+# WHY: Block merges on known vulnerabilities and license/source/ban
+# violations. Runs `cargo audit` (RustSec DB) and `cargo deny check`
+# (licenses, sources, bans, advisories) on every PR and daily against main
+# so newly-published CVEs against existing deps are caught even when no PR
+# is open. See standards/CI.md § Vulnerability scanning.
+name: Security
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  schedule:
+    # NOTE: Daily at 05:23 CST (11:23 UTC). Off-peak minute per global
+    # rule about avoiding :00/:30 cron schedules. Non-overlapping with
+    # stale (Sun 06:00 CST).
+    - cron: "23 11 * * *"
+  workflow_dispatch:
+
+# PROJECT: explicit top-level default deny; job-level permissions grant only what's needed
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  cargo-deny:
+    # WHY: checks licenses, banned crates, source registries, and the
+    # RustSec advisory DB using deny.toml's ignore list. Any finding fails
+    # the job — suppressions require a deny.toml entry with a WHY comment,
+    # not silent --ignore flags.
+    name: cargo deny
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false # PROJECT: security hardening — never expose token to steps
+      - uses: EmbarkStudios/cargo-deny-action@6c8f9facfa5047ec02d8485b6bf52b587b7777d1 # v2.0.18
+        with:
+          # WHY: run every check explicitly so a schema regression in one
+          # section can't silently disable the others. cargo-deny expects
+          # the check subcommand followed by space-separated check names;
+          # `arguments:` passes post-subcommand flags only.
+          command: check advisories licenses bans sources
+          arguments: --all-features
+
+  cargo-audit:
+    # WHY: cargo-deny's advisories check overlaps but uses a different code
+    # path; running cargo-audit independently protects against bugs or
+    # config drift disabling one of the two. See standards/CI.md.
+    name: cargo audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
+      - uses: actions-rust-lang/setup-rust-toolchain@46268bd060767258de96ed93c1251119784f2ab6 # v1.16.1
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          key: cargo-audit
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked --version ^0.22
+      - name: cargo audit
+        # WHY: -D unmaintained,unsound,yanked escalates those categories
+        # to errors (default is warning only). Suppressions go through
+        # .cargo/audit.toml, which mirrors deny.toml's [[advisories.ignore]]
+        # entries — no silent --ignore flags here.
+        run: cargo audit --deny unmaintained --deny unsound --deny yanked
