@@ -1,6 +1,6 @@
 # Architecture: Akroasis
 
-Single Rust binary. Five layers. All domains produce typed `GeoSignal` into a shared pipeline.
+Single Rust binary. Five layers. The shared model supports all domains producing typed `GeoSignal` values into one pipeline; current live collection is kerykeion mesh, with the other domain collectors planned.
 
 Run `cargo metadata --format-version 1 | jq '.workspace_members | length'` for current crate count.
 

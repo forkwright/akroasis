@@ -244,7 +244,8 @@ mod tests {
     use koinon::{
         Frequency, Power, Timestamp,
         signal::{
-            EnvironmentalDetail, GpsDetail, MeshDetail, NetworkDetail, ProximityDetail, RfDetail,
+            EnvironmentalDetail, GpsDetail, MeshDetail, NetworkDetail, OsintDetail,
+            ProximityDetail, RfDetail,
         },
     };
 
@@ -304,6 +305,13 @@ mod tests {
 
     fn env_kind() -> SignalKind {
         SignalKind::Environmental(EnvironmentalDetail::Temperature { celsius: 22.5 })
+    }
+
+    fn osint_kind() -> SignalKind {
+        SignalKind::Osint(OsintDetail::FeedItem {
+            source: "test-feed".into(),
+            title: "synthetic indicator".into(),
+        })
     }
 
     // ── quantize ─────────────────────────────────────────────────────────────
@@ -434,7 +442,7 @@ mod tests {
     // ── full domain set ───────────────────────────────────────────────────────
 
     #[test]
-    fn six_distinct_domains_all_detected() {
+    fn seven_distinct_domains_all_detected() {
         let mut grid = ConvergenceGrid::new(10_000);
         let loc = coords(40.0, -74.0);
         for kind in [
@@ -444,12 +452,13 @@ mod tests {
             proximity_kind(),
             gps_kind(),
             env_kind(),
+            osint_kind(),
         ] {
             grid.ingest(&signal_at(kind, loc));
         }
         let now = Timestamp::now();
-        let found = grid.detect(6, std::time::Duration::from_secs(30), now);
+        let found = grid.detect(7, std::time::Duration::from_secs(30), now);
         assert_eq!(found.len(), 1);
-        assert_eq!(found.first().expect("checked len above").domain_count, 6);
+        assert_eq!(found.first().expect("checked len above").domain_count, 7);
     }
 }

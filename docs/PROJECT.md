@@ -4,7 +4,7 @@ Communications sovereignty, RF intelligence, and operational awareness platform.
 
 ## Current state
 
-See the status markers in [../README.md](../README.md) for shipped vs planned crates. Phase and wave status lives in the kanon repo roadmap  -  single source of truth.
+See the status markers in [../README.md](../README.md) for shipped vs planned crates. Current live signal collection is kerykeion mesh; the shared model and semaino tests cover the planned domains synthetically. Phase and wave status lives in the kanon repo roadmap  -  single source of truth.
 
 ## Architecture
 
