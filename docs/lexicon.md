@@ -66,7 +66,7 @@
 
 | Crate | Greek | Over | L3 Essential Nature |
 |-------|-------|------|---------------------|
-| **opsis** | ὄψις | "frontend" | The faculty of seeing - making the invisible visible. Future operator surfaces for spectrum waterfall, mesh topology, intelligence dashboard, map/navigation, and after-action replay. The surface stack and order wait on a typed backend/programmatic API boundary. |
+| **opsis** | ὄψις | "frontend" | The faculty of seeing - making the invisible visible. Operator surfaces: desktop-first via theatron (akroasis-desktop). Stack and order locked #118: desktop first, `akroasis-server` axum backend provides the typed API. TUI/web follow if use-cases arise. |
 
 ---
 

@@ -1,3 +1,26 @@
+# NOTE: akroasis-server axum routes are declared below; MCP surface is planned for a future issue.
+mcp_tools = []
+
+[[http_routes]]
+method = "GET"
+path = "/api/v1/radio/detect"
+purpose = "Detect connected radio hardware on an optional serial port."
+
+[[http_routes]]
+method = "GET"
+path = "/api/v1/mesh/status"
+purpose = "Return runtime mesh service status."
+
+[[http_routes]]
+method = "GET"
+path = "/api/v1/mesh/nodes"
+purpose = "List known mesh nodes."
+
+[[http_routes]]
+method = "GET"
+path = "/api/v1/mesh/topology"
+purpose = "Return mesh topology graph."
+
 [meta]
 name = "akroasis"
 repo = "forkwright/akroasis"
@@ -8,7 +31,7 @@ source_docs = [
 ]
 
 [apis]
-summary = "Akroasis exposes a single CLI shell today; future TUI, desktop, and web surfaces are planned under opsis."
+summary = "Akroasis exposes a single CLI binary today, with akroasis-server adding an axum HTTP backend for desktop and MCP consumers."
 
 [[cli_commands]]
 name = "akroasis"

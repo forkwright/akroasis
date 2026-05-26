@@ -9,6 +9,7 @@ use snafu::{ResultExt, Snafu};
 
 use kerykeion::bridge::{GatewayBridge, GatewayHealth};
 use kerykeion::node_db::{MeshNode, NodeDb};
+#[cfg(test)]
 use kerykeion::types::NodeNum;
 
 /// Mesh CLI errors.
@@ -291,6 +292,7 @@ pub const fn format_gateway_health(health: &GatewayHealth) -> &'static str {
     }
 }
 
+#[cfg(test)]
 /// Parse a node identifier: hex `0xDEADBEEF`, decimal, or `!deadbeef` format.
 #[must_use]
 fn parse_node_identifier(id: &str) -> Option<NodeNum> {

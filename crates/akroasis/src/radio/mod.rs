@@ -108,7 +108,7 @@ impl ExportFormat {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(
     not(feature = "hardware-serial"),
-    expect(
+    allow(
         dead_code,
         reason = "radio variants used in test mocks; not all exercised in binary"
     )
@@ -168,7 +168,15 @@ pub struct DetectedRadio {
 
 /// Abstraction over radio hardware detection and connection.
 pub trait Hardware {
+    /// Enumerate all connected radio hardware.
+    ///
+    /// # Errors
+    /// Returns [] on detection failure.
     fn detect_radios(&self) -> Result<Vec<DetectedRadio>, RadioError>;
+    /// Return the radio on a specific port, if present.
+    ///
+    /// # Errors
+    /// Returns [] if detection fails on the given port.
     fn detect_radio_on_port(&self, port: &str) -> Result<Option<DetectedRadio>, RadioError> {
         let mut radios = self.detect_radios()?;
         Ok(radios
@@ -177,15 +185,35 @@ pub trait Hardware {
             .map(|idx| radios.swap_remove(idx)))
     }
 
+    /// Open a programming session on the given serial port.
+    ///
+    /// # Errors
+    /// Returns [] if the port cannot be opened.
     fn open(&self, port: &str) -> Result<Box<dyn Session>, RadioError>;
 }
 
 /// An open connection to a radio.
 pub trait Session {
     fn variant(&self) -> RadioVariant;
+    /// Download the full EEPROM image from the radio.
+    ///
+    /// # Errors
+    /// Returns [] on serial I/O or protocol errors.
     fn download_image(&mut self, on_block: &dyn Fn(u16, u16)) -> Result<Vec<u8>, RadioError>;
+    /// Upload an EEPROM image to the radio.
+    ///
+    /// # Errors
+    /// Returns [] on serial I/O or protocol errors.
     fn upload_image(&mut self, data: &[u8], on_block: &dyn Fn(u16, u16)) -> Result<(), RadioError>;
+    /// Decode channel records from an EEPROM image.
+    ///
+    /// # Errors
+    /// Returns [] if the image is malformed.
     fn decode_channels(&self, image: &[u8]) -> Result<Vec<Channel>, RadioError>;
+    /// Encode channel records into an EEPROM image.
+    ///
+    /// # Errors
+    /// Returns [] if encoding fails.
     fn encode_channels(&self, channels: &[Channel]) -> Result<Vec<u8>, RadioError>;
 }
 
@@ -195,7 +223,7 @@ pub trait Session {
 
 #[cfg_attr(
     all(feature = "hardware-serial", not(test)),
-    expect(
+    allow(
         dead_code,
         reason = "stub backend remains available for tests and no-hardware builds"
     )
@@ -217,6 +245,11 @@ impl Hardware for StubHardware {
 // ---------------------------------------------------------------------------
 
 /// Resolves the target radio from an explicit port or auto-detection.
+///
+/// # Errors
+/// Returns [] when no radios are found,
+/// [] when more than one is found,
+/// or a hardware error on detection failure.
 pub fn resolve_target(port: Option<&str>, hw: &dyn Hardware) -> Result<DetectedRadio, RadioError> {
     if let Some(port) = port {
         hw.detect_radio_on_port(port)?.map_or_else(
@@ -250,18 +283,27 @@ pub fn resolve_target(port: Option<&str>, hw: &dyn Hardware) -> Result<DetectedR
 // ---------------------------------------------------------------------------
 
 /// Dispatches a radio subcommand.
+///
+/// # Errors
+/// Returns [] if the command fails.
 #[cfg(not(feature = "hardware-serial"))] // kanon:ignore RUST/feature-gate-check -- declared in akroasis/Cargo.toml [features]
 pub fn dispatch(cmd: &RadioCommand, out: &mut dyn std::io::Write) -> Result<(), RadioError> {
     dispatch_with(cmd, &StubHardware, out)
 }
 
 /// Dispatches a radio subcommand with live serial detection enabled.
+///
+/// # Errors
+/// Returns [] if the command fails.
 #[cfg(feature = "hardware-serial")] // kanon:ignore RUST/feature-gate-check -- declared in akroasis/Cargo.toml [features]
 pub fn dispatch(cmd: &RadioCommand, out: &mut dyn std::io::Write) -> Result<(), RadioError> {
     dispatch_with(cmd, &serial_hardware::SerialHardware, out)
 }
 
 /// Dispatches with a specific hardware backend (for testing).
+///
+/// # Errors
+/// Returns [] if the command fails.
 pub fn dispatch_with(
     cmd: &RadioCommand,
     hw: &dyn Hardware,

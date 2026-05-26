@@ -18,7 +18,7 @@ Capability domains span radio, mesh, SDR, proximity, network defense, OSINT, off
 
 | Domain | Crate | Crate Shipped | Hardware Backend | What |
 |--------|-------|:-------------:|:----------------:|------|
-| **Application shell** | akroasis | ✓ | ◻ | Single binary with CLI dispatch for radio, mesh, vault, and future domain stubs. Radio uses `StubHardware`; mesh CLI shows static/no-live-connection status until daemon mode is implemented. |
+| **Application shell** | akroasis, akroasis-server | ✓ | ◻ | CLI binary + typed axum HTTP backend. Radio uses `StubHardware` by default; opt-in `hardware-serial` enables live detect. Mesh CLI is static/no-live-connection until daemon mode is implemented. |
 | **Foundation** | koinon | ✓ |  -  | Shared IDs, coordinates, frequency and power types, 7-domain `GeoSignal` model, hardware asset registry, temporal baselines, and tamper-evident logging. |
 | **Foundation** | kryphos | ✓ |  -  | Credential vault and installation identity: fjall-backed encrypted storage, Argon2id derivation, ChaCha20-Poly1305 encryption, Ed25519 signing keys, rotation/revocation metadata, and mutation audit logging at `tamper.log` beside the vault store. |
 | **Radio Management** | syntonia | ✓ | ◻ | Frequency plans, CHIRP CSV/IMG import, CHIRP CSV export, validation, USB detection metadata, and Baofeng UV-5R-family codec. With `akroasis/hardware-serial`, `radio detect` uses live serial probing; read/program/export still require the future protocol session backend. |
@@ -34,7 +34,7 @@ Capability domains span radio, mesh, SDR, proximity, network defense, OSINT, off
 | **Navigation** | chorografia | ◻ | ◻ | Future RF propagation modeling, infrastructure graphs, offline OSM navigation, and space weather HF prediction. |
 | **Knowledge** | pinax | ◻ |  -  | Future offline repository for frequency databases, protocol specs, equipment manuals, topo maps, and indexed references. Target instance layout is documented in [docs/reference-store.md](docs/reference-store.md). |
 | **Privacy** | lethe | ◻ | ◻ | Future VPN/proxy management, anonymization, IMSI catcher detection, and OPSEC scoring. The etymological complement to [Aletheia](https://github.com/forkwright/aletheia). |
-| **Interface** | opsis | ◻ |  -  | Future operator surfaces for spectrum waterfall, mesh topology, and intelligence dashboard views. Surface stack and order are pending the backend/programmatic API boundary tracked in #118 and #126. |
+| **Interface** | opsis | ◻ |  -  | Operator surfaces: desktop-first via theatron (akroasis-desktop). `akroasis-server` (shipped) provides the typed HTTP API (`/api/v1/*`) that the desktop and agent clients call. #118 resolved. |
 
 **Legend:** ✓ = shipped in `crates/`, ◻ = planned/not shipped,  -  = not applicable.
 
@@ -104,7 +104,7 @@ Every collection crate is expected to produce typed `GeoSignal` objects into koi
 | IDS/IPS | Planned: Suricata and Zeek orchestration will land with `aspis` |
 | Maps | Planned: OSM vector tiles and SRTM elevation will land with `chorografia` |
 | Search | Planned: full-text indexing will land with `pinax` |
-| Interfaces | Current: `akroasis radio import --json`, `akroasis radio detect --json`, `akroasis radio export --json`, `akroasis mesh {status,nodes,topology} --json`, and `akroasis vault identity --json` emit schema-versioned JSON reports. Planned: broader JSON CLI/MCP/API coverage before `opsis`; TUI, native, web, and desktop-first order remain open planning decisions |
+| Interfaces | CLI: `akroasis radio import --json`, `radio detect --json`, `radio export --json`, `mesh {status,nodes,topology} --json`, `vault identity --json`. HTTP: `akroasis-server` exposes `/api/v1/radio/detect`, `/api/v1/mesh/{status,nodes,topology}` with the same JSON schemas. Desktop: desktop-first via theatron + akroasis-server (chalkeion Phase 6). |
 | License | AGPL-3.0-only |
 
 ---
