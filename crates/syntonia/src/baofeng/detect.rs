@@ -90,7 +90,9 @@ pub enum DetectError {
 /// - [`DetectError::VariantIdentification`] if the radio responds but has
 ///   an unrecognized firmware ident
 /// - [`DetectError::SerialIo`] on I/O errors
-pub(crate) fn auto_detect(port: &mut dyn SerialPort) -> Result<(RadioIdent, VariantConfig), DetectError> {
+pub(crate) fn auto_detect(
+    port: &mut dyn SerialPort,
+) -> Result<(RadioIdent, VariantConfig), DetectError> {
     for &magic in MAGIC_SETS {
         match try_magic(port, magic) {
             Ok((ident, config)) => return Ok((ident, config)),

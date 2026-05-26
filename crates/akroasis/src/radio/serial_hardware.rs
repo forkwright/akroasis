@@ -94,10 +94,11 @@ impl BaofengProtocolSession {
     fn open(port_path: &str) -> Result<Self, RadioError> {
         // WHY: UV-5R programming sessions run at 9600 baud 8N1 regardless of variant.
         const BAUD_RATE: u32 = 9600;
-        let hw_port =
-            HardwareSerialPort::open(port_path, BAUD_RATE).map_err(|e| RadioError::PermissionDenied {
+        let hw_port = HardwareSerialPort::open(port_path, BAUD_RATE).map_err(|e| {
+            RadioError::PermissionDenied {
                 port: format!("{port_path}: {e}"),
-            })?;
+            }
+        })?;
 
         let mut protocol = Uv5rProtocol::new(hw_port);
 
@@ -161,12 +162,12 @@ impl Session for BaofengProtocolSession {
         // WHY: UV-5R main memory is 0x0000–0x1800 in 64-byte blocks = 96 blocks.
         // With aux block (BF-F8HP) adds ~32 more blocks. We emit progress in 64-byte
         // increments; the caller's progress bar expects (done, total) block counts.
-        let mem_image =
-            self.protocol
-                .download_image()
-                .map_err(|e| RadioError::SerialTimeout {
-                    port: format!("download failed: {e}"),
-                })?;
+        let mem_image = self
+            .protocol
+            .download_image()
+            .map_err(|e| RadioError::SerialTimeout {
+                port: format!("download failed: {e}"),
+            })?;
 
         // Signal completion to progress bar.
         on_block(128, 128);
