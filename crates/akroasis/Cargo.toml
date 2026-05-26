@@ -7,6 +7,10 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 
+[lib]
+name = "akroasis_lib"
+path = "src/lib.rs"
+
 [[bin]]
 name = "akroasis"
 path = "src/main.rs"

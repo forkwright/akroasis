@@ -1,0 +1,27 @@
+[package]
+name = "akroasis-server"
+description = "Typed axum HTTP backend for akroasis — the callable API surface consumed by akroasis-desktop and --json/MCP clients."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+name = "akroasis_server"
+path = "src/lib.rs"
+
+[dependencies]
+akroasis-lib = { path = "../akroasis", package = "akroasis" }
+axum = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+snafu = { workspace = true }
+tokio = { workspace = true }
+tower = { workspace = true }
+tower-http = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+[lints]
+workspace = true

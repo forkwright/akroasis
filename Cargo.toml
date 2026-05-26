@@ -122,6 +122,11 @@ petgraph = { version = "0.8.3", features = ["serde-1"] }
 mdns-sd = "0.18.2"
 rusb = "0.9.4"
 
+# HTTP server
+axum = { version = "0.8", features = ["macros"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["cors", "trace"] }
+
 # Testing
 proptest = "1"
 nix = { version = "0.31.2", features = ["pty"] }
