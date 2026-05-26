@@ -31,6 +31,11 @@ pub mod export;
 pub mod hardware;
 pub mod import;
 pub mod plan;
+#[cfg(feature = "hardware-serial")]
+// kanon:ignore RUST/feature-gate-check -- declared in syntonia/Cargo.toml [features]
+pub mod serial;
+#[cfg(not(feature = "hardware-serial"))]
+// kanon:ignore RUST/feature-gate-check -- declared in syntonia/Cargo.toml [features]
 pub(crate) mod serial;
 pub mod tone;
 pub mod types;

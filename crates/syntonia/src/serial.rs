@@ -47,7 +47,7 @@ pub trait SerialPort: Send {
 /// Only available with the `hardware-serial` feature (requires `libudev-dev`
 /// on Linux).
 #[cfg(feature = "hardware-serial")] // kanon:ignore RUST/feature-gate-check -- declared in syntonia/Cargo.toml [features]
-pub(crate) struct HardwareSerialPort {
+pub struct HardwareSerialPort {
     inner: Box<dyn serialport::SerialPort>,
 }
 
@@ -59,11 +59,7 @@ impl HardwareSerialPort {
     ///
     /// Returns `io::Error` if the port cannot be opened at the requested baud
     /// rate (e.g. device missing, busy, or permission denied).
-    #[expect(
-        dead_code,
-        reason = "public hardware adapter; consumers live outside this crate (baofeng::protocol module not yet re-wired, see #80-follow-up)"
-    )]
-    pub(crate) fn open(path: &str, baud_rate: u32) -> io::Result<Self> {
+    pub fn open(path: &str, baud_rate: u32) -> io::Result<Self> {
         let port = serialport::new(path, baud_rate)
             .data_bits(serialport::DataBits::Eight)
             .parity(serialport::Parity::None)
@@ -134,19 +130,11 @@ pub mod mock {
         }
 
         /// Queue response bytes that will be returned by subsequent reads.
-        #[expect(
-            dead_code,
-            reason = "public test API consumed by baofeng::protocol tests; module not yet re-wired (see #80-follow-up)"
-        )]
         pub fn enqueue_response(&mut self, data: &[u8]) {
             self.rx_queue.extend(data);
         }
 
         /// Make the next read return an error of the given kind.
-        #[expect(
-            dead_code,
-            reason = "public test API consumed by baofeng::protocol tests; module not yet re-wired (see #80-follow-up)"
-        )]
         pub fn inject_error(&mut self, kind: io::ErrorKind) {
             self.pending_error = Some(kind);
         }
