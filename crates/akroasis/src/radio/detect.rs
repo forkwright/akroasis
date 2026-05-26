@@ -27,8 +27,18 @@ struct DetectedRadioReport<'a> {
 }
 
 /// Runs the detect subcommand.
-pub(crate) fn run(hw: &dyn Hardware, json: bool, out: &mut dyn Write) -> Result<(), RadioError> {
-    let radios = hw.detect_radios()?;
+pub(crate) fn run(
+    port: Option<&str>,
+    hw: &dyn Hardware,
+    json: bool,
+    out: &mut dyn Write,
+) -> Result<(), RadioError> {
+    let radios = match port {
+        Some(port) => hw
+            .detect_radio_on_port(port)?
+            .map_or_else(Vec::new, |radio| vec![radio]),
+        None => hw.detect_radios()?,
+    };
 
     if json {
         write_json_report(&radios, out)?;
@@ -176,7 +186,7 @@ mod tests {
     fn run_no_radios_writes_message() {
         let mut out = Vec::new();
         // StubHardware returns HardwareNotAvailable, which means no radios.
-        let result = run(&super::super::StubHardware, false, &mut out);
+        let result = run(None, &super::super::StubHardware, false, &mut out);
         assert!(result.is_err());
     }
 
@@ -192,7 +202,7 @@ mod tests {
         };
 
         let mut out = Vec::new();
-        run(&hw, true, &mut out).unwrap();
+        run(None, &hw, true, &mut out).unwrap();
 
         let report: serde_json::Value = serde_json::from_slice(&out).unwrap();
         assert_eq!(report["schema_version"], 1);
@@ -205,5 +215,45 @@ mod tests {
             report["radios"][0]["warnings"][0],
             "low-cost cable detected"
         );
+    }
+
+    #[test]
+    fn run_port_probe_outputs_matching_radio_only() {
+        let hw = FakeHardware {
+            radios: vec![
+                DetectedRadio {
+                    variant: RadioVariant::BfF8hp,
+                    port: "/dev/ttyUSB0".to_string(),
+                    firmware: "BFP3V3".to_string(),
+                    warnings: vec![],
+                },
+                DetectedRadio {
+                    variant: RadioVariant::Uv5r,
+                    port: "/dev/ttyUSB1".to_string(),
+                    firmware: "BFB297".to_string(),
+                    warnings: vec![],
+                },
+            ],
+        };
+
+        let mut out = Vec::new();
+        run(Some("/dev/ttyUSB1"), &hw, false, &mut out).unwrap();
+
+        let s = String::from_utf8(out).unwrap();
+        assert!(s.contains("Baofeng UV-5R"));
+        assert!(s.contains("/dev/ttyUSB1"));
+        assert!(!s.contains("BF-F8HP"));
+        assert!(!s.contains("/dev/ttyUSB0"));
+    }
+
+    #[test]
+    fn run_port_probe_no_match_writes_no_radios() {
+        let hw = FakeHardware { radios: vec![] };
+
+        let mut out = Vec::new();
+        run(Some("/dev/ttyUSB2"), &hw, false, &mut out).unwrap();
+
+        let s = String::from_utf8(out).unwrap();
+        assert!(s.contains("No radios detected"));
     }
 }
