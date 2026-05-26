@@ -8,7 +8,7 @@ source_docs = [
 ]
 
 [apis]
-summary = "Akroasis exposes a single CLI shell today; future TUI, desktop, and web surfaces are planned under opsis."
+summary = "Akroasis exposes a single CLI shell today; future operator surfaces are planned under opsis, with desktop via theatron as the primary surface after a backend/programmatic API boundary exists."
 
 [[cli_commands]]
 name = "akroasis"

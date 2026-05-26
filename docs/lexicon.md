@@ -66,7 +66,7 @@
 
 | Crate | Greek | Over | L3 Essential Nature |
 |-------|-------|------|---------------------|
-| **opsis** | ὄψις | "frontend" | The faculty of seeing - making the invisible visible. Future operator surfaces for spectrum waterfall, mesh topology, intelligence dashboard, map/navigation, and after-action replay. The surface stack and order wait on a typed backend/programmatic API boundary. |
+| **opsis** | ὄψις | "frontend" | The faculty of seeing - making the invisible visible. Future operator surfaces for spectrum waterfall, mesh topology, intelligence dashboard, map/navigation, and after-action replay. The surface stack waits on a typed backend/programmatic API boundary; desktop via theatron is the primary planned surface, with TUI and web as possible alternatives. |
 
 ---
 

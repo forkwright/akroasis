@@ -7,7 +7,7 @@ Run `cargo metadata --format-version 1 | jq '.workspace_members | length'` for c
 ## Layer structure
 
 ```
-Interface:      opsis (operator surfaces; stack/order pending API boundary)
+Interface:      opsis (operator surfaces; desktop via theatron primary, API boundary prerequisite)
 Orchestration:  praxis (automation, playbooks, PACE)
 Analysis:       semaino (aggregation), ichneutes (correlation)
 Collection:     syntonia, kerykeion, dektis, engys, aspis, skopos, peira
@@ -33,7 +33,7 @@ Foundation:     koinon (shared types), kryphos (encryption), lethe (privacy)
 | **praxis** | Orchestration | Automation engine, playbooks, event triggers, state machines |
 | **chorografia** | Model | Geographic model, RF propagation, navigation, terrain |
 | **pinax** | Knowledge | Offline knowledge repository, frequency databases, maps; see `reference-store.md` for target instance layout |
-| **opsis** | Interface | Operator surfaces after a typed programmatic/API boundary exists; stack/order pending #118 and #126 |
+| **opsis** | Interface | Operator surfaces after a typed programmatic/API boundary exists; desktop via theatron is the primary planned surface, TUI and web are alternatives. Tracked in #118 and #126 |
 | **akroasis** | Binary | CLI entrypoint, subcommand routing |
 
 ## Key decisions

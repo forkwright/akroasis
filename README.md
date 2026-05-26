@@ -34,7 +34,7 @@ Capability domains span radio, mesh, SDR, proximity, network defense, OSINT, off
 | **Navigation** | chorografia | ◻ | ◻ | Future RF propagation modeling, infrastructure graphs, offline OSM navigation, and space weather HF prediction. |
 | **Knowledge** | pinax | ◻ |  -  | Future offline repository for frequency databases, protocol specs, equipment manuals, topo maps, and indexed references. Target instance layout is documented in [docs/reference-store.md](docs/reference-store.md). |
 | **Privacy** | lethe | ◻ | ◻ | Future VPN/proxy management, anonymization, IMSI catcher detection, and OPSEC scoring. The etymological complement to [Aletheia](https://github.com/forkwright/aletheia). |
-| **Interface** | opsis | ◻ |  -  | Future operator surfaces for spectrum waterfall, mesh topology, and intelligence dashboard views. Surface stack and order are pending the backend/programmatic API boundary tracked in #118 and #126. |
+| **Interface** | opsis | ◻ |  -  | Future operator surfaces for spectrum waterfall, mesh topology, and intelligence dashboard views. Desktop via theatron is the primary planned surface; backend/programmatic API boundary is prerequisite. TUI and web remain possible alternatives. Tracked in #118 and #126. |
 
 **Legend:** ✓ = shipped in `crates/`, ◻ = planned/not shipped,  -  = not applicable.
 
@@ -104,7 +104,7 @@ Every collection crate is expected to produce typed `GeoSignal` objects into koi
 | IDS/IPS | Planned: Suricata and Zeek orchestration will land with `aspis` |
 | Maps | Planned: OSM vector tiles and SRTM elevation will land with `chorografia` |
 | Search | Planned: full-text indexing will land with `pinax` |
-| Interfaces | Current: `akroasis radio import --json`, `akroasis radio detect --json`, `akroasis radio export --json`, and `akroasis mesh {status,nodes,topology} --json` emit schema-versioned JSON reports. Planned: broader JSON CLI/MCP/API coverage before `opsis`; TUI, native, web, and desktop-first order remain open planning decisions |
+| Interfaces | Current: `akroasis radio import --json`, `akroasis radio detect --json`, `akroasis radio export --json`, and `akroasis mesh {status,nodes,topology} --json` emit schema-versioned JSON reports. Planned: broader JSON CLI/MCP/API coverage before `opsis`; desktop via theatron is the primary planned surface, with backend/programmatic API boundary as prerequisite. TUI and web remain possible alternatives. |
 | License | AGPL-3.0-only |
 
 ---
