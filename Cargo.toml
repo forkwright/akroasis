@@ -67,6 +67,11 @@ zeroize = { version = "1", features = ["derive"] }
 rand_core = { version = "0.6", features = ["getrandom"] }
 subtle = "2"
 
+# Post-quantum hybrid KEM — standalone fleet crate.
+# WHY: extracted from akroasis crates/sphragis to forkwright/sphragis for
+# cross-repo access. preview-pq gated; unaudited until cryptographic review.
+sphragis = { git = "https://github.com/forkwright/sphragis", features = ["preview-pq"] }
+
 # Hashing
 blake3 = "1"
 
