@@ -27,7 +27,7 @@ Phase index lives in the kanon repo roadmap. Wave status is reflected in merged 
 |----------|---------|
 | `ARCHITECTURE.md` | Crate map, layer structure, key decisions |
 | `fjall-column-encryption.md` | Future declarative encrypted-field boundary for fjall-backed stores |
-| `hybrid-pq-content-key-wrapping.md` | Future hybrid PQ content-key wrapping boundary and implementation gates |
+| `pq-content-key-wrapping.md` | Future PQ content-key wrapping boundary and implementation gates |
 | `reference-store.md` | Target `/instance/reference/` layout for the planned pinax knowledge store |
 | `../standards/GNOMON.md` | Greek naming methodology |
 | `lexicon.md` | Domain terms and name registry |

@@ -61,4 +61,4 @@ Foundation:     koinon (shared types), kryphos (encryption), lethe (privacy)
 - Naming: `../standards/GNOMON.md`, `lexicon.md`
 - Reference store layout: `reference-store.md`
 - Fjall column encryption boundary: `fjall-column-encryption.md`
-- Hybrid PQ content-key wrapping boundary: `hybrid-pq-content-key-wrapping.md`
+- PQ content-key wrapping boundary: `pq-content-key-wrapping.md`
