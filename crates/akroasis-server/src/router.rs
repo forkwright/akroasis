@@ -10,7 +10,7 @@ use crate::{mesh, radio};
 /// Build the complete akroasis API router.
 ///
 /// Attach this to an axum `serve()` call or embed in a larger router.
-#[must_use]
+#[must_use = "the router must be passed to axum::serve"]
 pub fn build() -> Router {
     let api = Router::new()
         .route("/radio/detect", get(radio::detect))

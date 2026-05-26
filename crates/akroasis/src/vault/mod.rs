@@ -141,6 +141,9 @@ fn read_secret(prompt: &str) -> Result<String, VaultCliError> {
 }
 
 /// Dispatches a vault subcommand.
+///
+/// # Errors
+/// Returns [] if the command fails.
 pub fn dispatch(cmd: &VaultCommand, out: &mut dyn Write) -> Result<(), VaultCliError> {
     match cmd {
         VaultCommand::Init => run_init(out),

@@ -20,6 +20,9 @@ pub struct DetectQuery {
 /// `GET /api/v1/radio/detect` — detect connected radios.
 ///
 /// Returns the same JSON schema as `akroasis radio detect --json`.
+///
+/// # Errors
+/// Returns an HTTP 500 [`ApiError`] if detection fails or JSON parse fails.
 pub async fn detect(Query(params): Query<DetectQuery>) -> ApiResult<Json<serde_json::Value>> {
     let mut out = Vec::new();
     let cmd = akroasis_lib::radio::RadioCommand::Detect {
