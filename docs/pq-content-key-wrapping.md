@@ -1,81 +1,71 @@
-# PQ Content-Key Wrapping Boundary
+# PQ Content-Key Wrapping (sphragis)
 
-Issue #131 is design input for future multi-device content-key distribution.
-Current main does not implement content-key wrapping, ML-KEM, or a versioned
-wrapped-key envelope. The shipped vault path derives a symmetric key from the
-operator passphrase and encrypts credential entries directly.
+Issue #131 — multi-device content-key distribution for the offline reference
+store. The `sphragis` crate implements a versioned, per-recipient hybrid
+post-quantum content-key wrap behind the `preview-pq` feature.
 
-This note records the minimum design boundary before akroasis adds new
-cryptographic dependencies. It is not an implementation of #131.
+WARNING: `sphragis` is unaudited preview cryptography. The known-answer tests
+prove the construction matches the published standards; they are not a
+substitute for cryptographic review. It is never on the default binary path.
 
-## Operator Decision
-
-akroasis crypto direction is **PQ-only ML-KEM**. The hybrid P-256/ECDH + ML-KEM
-approach described in the original issue is **not** the target. Do not add
-P-256, ECDH classical half, or a hybrid HKDF combiner to the workspace.
-
-Rationale: the project does not need Web Crypto compatibility for this boundary,
-and keeping the primitive set small reduces audit surface. ML-KEM-768 alone
-provides the required post-quantum protection for offline content-key
-distribution.
-
-## Current State
-
-- `kryphos` encrypts vault secrets with ChaCha20-Poly1305 using an Argon2id
-  passphrase-derived `VaultKey`.
-- Workspace dependencies include `chacha20poly1305`, `ed25519-dalek`, and
-  `x25519-dalek`.
-- There is no `ml-kem`, `hkdf`, or `WrappedContentKey` model in the workspace.
-- The offline reference store is still a planned `pinax` instance layout, not a
-  checked-in runtime store or sharing workflow.
-
-Adding a content-key wrapper now would force protocol choices before the shared
-content model exists.
-
-## Target Envelope
-
-The future wrapper should be versioned and per-recipient:
+## Construction (v1)
 
 ```text
-WrappedContentKey {
-    version,
-    recipient_id,
-    kem_ciphertext,
-    nonce_or_aead_metadata,
-    encrypted_content_key,
-}
+# Encapsulate to a recipient's X-Wing public key:
+(ct, ss)  = XWing.Encaps(recipient_ek)           # ss is 32 bytes
+wrap_key  = HKDF-SHA256(salt = 0x00 * 32,
+                        ikm  = ss,
+                        info = "akroasis-sphragis-ck-wrap-v1")   # 32 bytes
+nonce     = random(12)
+sealed    = ChaCha20-Poly1305(key   = wrap_key,
+                              nonce = nonce,
+                              aad   = version(1) || recipient_id(32),
+                              pt    = content_key(32))            # 48 bytes
 ```
 
-Each recipient gets a separate wrapped copy of the same content key. Revoking a
-device means generating a new content key or re-wrapping the current content key
-only for the remaining recipients, depending on the store's forward-secrecy
-requirement.
+- KEM: **X-Wing** (`draft-connolly-cfrg-xwing-kem`, IACR 2024/039) — X25519 +
+  ML-KEM-768, combined as `SHA3-256(ss_M || ss_X || ct_X || pk_X || "\.//^\")`.
+  ML-KEM shared secret first (FIPS SP 800-56C ordering); binds the X25519
+  ciphertext and recipient public key.
+- Envelope: HKDF-SHA256 (null salt) under a versioned domain tag, then
+  ChaCha20-Poly1305 (the existing akroasis AEAD).
 
-The domain tag for version 1 should be fixed before implementation, for example
-`akroasis-pq-ck-wrap-v1`. Later protocol changes get new versions instead of
-silent reinterpretation.
+## WrappedContentKey (CBOR)
 
-## Required Decisions
+| Field | Type | Notes |
+|---|---|---|
+| `version` | `u8` | 1 |
+| `recipient_id` | `[u8; 32]` | BLAKE3 of the recipient X-Wing encapsulation key |
+| `kem_ciphertext` | `bytes` | X-Wing ct: ML-KEM ct (1088) \|\| X25519 ct (32) |
+| `aead_nonce` | `[u8; 12]` | random per wrap |
+| `sealed_key` | `bytes` | ChaCha20-Poly1305(content_key) = 48 bytes |
 
-1. PQ KEM: select an ML-KEM-768 crate and require upstream/FIPS test vectors in
-   the implementation PR.
-2. Key derivation: define HKDF extract/expand inputs, salt policy, and domain
-   separation tags for the ML-KEM shared secret.
-3. Envelope encryption: reuse the existing ChaCha20-Poly1305 stack or select a
-   different AEAD for the wrapped content key.
-4. Feature gate: decide whether the first implementation is behind a preview
-   feature until cryptographic review is complete.
-5. Store integration: decide whether this belongs in `kryphos` alone or in the
-   first multi-device `pinax`/reference-store workflow.
+## Multi-device + revocation
 
-## Implementation Gates
+`seal_for(content_key, recipients)` produces one `WrappedContentKey` per device;
+all unseal to the same content key. Revoke a device by re-running `seal_for` over
+the remaining recipients — with a freshly generated content key (forward-secret)
+or the same one (cheap revoke); the consuming store chooses the policy.
 
-- No new cryptographic dependencies without an explicit design review.
-- No unaudited preview code in the default binary path.
-- Include ML-KEM test vectors and envelope round-trip vectors.
-- Include negative tests for wrong recipient, wrong domain tag, corrupted KEM
-  ciphertext, corrupted encrypted content key, and unsupported version.
-- Document revocation semantics in the store that consumes the wrapper.
+## Crypto-agility
 
-Until those decisions are made, #131 should remain design-input rather than a
-code task.
+`version` and the domain tag both carry `v1`. A new primitive set is a new
+`version` + a new tag (`...-v2`); decoders reject unknown versions rather than
+reinterpreting bytes (enforced by a negative test).
+
+## Why hybrid, not PQ-only
+
+ML-KEM-768 alone places all trust in a 2024-vintage primitive and its pre-1.0
+Rust implementations. The hybrid forces an adversary to break both ML-KEM **and**
+X25519. This matches TLS 1.3 (`X25519MLKEM768`), Signal (PQXDH), SSH
+(`mlkem768x25519`), and the CFRG general-purpose answer (X-Wing). See the crate
+`DECISION.md` for the full rationale and alternatives considered.
+
+## Status / gates
+
+- `preview-pq` feature, off by default.
+- Acceptance gate: X-Wing draft KAT + RFC 5869 (HKDF) + RFC 7748 (X25519) +
+  round-trip + negative tests (wrong recipient, wrong version, tampered KEM ct,
+  tampered sealed key). ML-KEM-768 (FIPS-203 ACVP) and ChaCha20-Poly1305
+  (RFC 8439) primitive vectors are covered upstream.
+- Promotion to the default path requires cryptographic review.

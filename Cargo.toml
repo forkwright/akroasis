@@ -67,6 +67,14 @@ zeroize = { version = "1", features = ["derive"] }
 rand_core = { version = "0.6", features = ["getrandom"] }
 subtle = "2"
 
+# Crypto — post-quantum hybrid KEM (sphragis, preview-pq)
+# WHY: released RustCrypto primitives. hkdf pinned 0.12 (digest 0.10 generation,
+# coherent with sha2/sha3 0.10; hkdf 0.13 requires sha2 0.11).
+ml-kem = { version = "0.3.2", features = ["hazmat", "zeroize"] }
+sha3 = "0.10"
+sha2 = "0.10"
+hkdf = "0.12"
+
 # Hashing
 blake3 = "1"
 

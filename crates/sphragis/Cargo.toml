@@ -1,0 +1,46 @@
+[package]
+name = "sphragis"
+description = "σφραγίς — post-quantum hybrid sealing (X-Wing KEM + ChaCha20-Poly1305 envelope)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+snafu.workspace = true
+zeroize.workspace = true
+subtle.workspace = true
+blake3.workspace = true
+serde.workspace = true
+ciborium.workspace = true
+
+# Post-quantum hybrid KEM stack (preview-pq only).
+# WHY: released RustCrypto primitives, not the rc-pinned `x-wing` aggregate crate.
+ml-kem = { workspace = true, optional = true }
+x25519-dalek = { workspace = true, optional = true, features = ["zeroize"] }
+sha3 = { workspace = true, optional = true }
+sha2 = { workspace = true, optional = true }
+hkdf = { workspace = true, optional = true }
+chacha20poly1305 = { workspace = true, optional = true }
+rand_core = { workspace = true, optional = true }
+
+[dev-dependencies]
+hex-literal = "0.4"
+
+[features]
+default = []
+# WHY: unaudited hybrid post-quantum cryptography. Never in the default binary
+# path. Gated until cryptographic review per akroasis#131 done-criterion 6.
+preview-pq = [
+    "dep:ml-kem",
+    "dep:x25519-dalek",
+    "dep:sha3",
+    "dep:sha2",
+    "dep:hkdf",
+    "dep:chacha20poly1305",
+    "dep:rand_core",
+]
+
+[lints]
+workspace = true
