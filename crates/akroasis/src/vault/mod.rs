@@ -59,7 +59,11 @@ pub enum VaultCommand {
     },
 
     /// Show installation public key fingerprint
-    Identity,
+    Identity {
+        /// Emit a machine-readable JSON report instead of the raw hex string.
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 /// Errors from vault CLI operations.
@@ -80,6 +84,9 @@ pub enum VaultCliError {
     /// The user cancelled the operation.
     #[snafu(display("operation cancelled"))]
     Cancelled,
+
+    #[snafu(display("failed to write JSON report: {source}"))]
+    JsonReport { source: serde_json::Error },
 
     #[snafu(display("I/O error: {source}"))]
     Io { source: std::io::Error },
@@ -138,8 +145,8 @@ pub fn dispatch(cmd: &VaultCommand, out: &mut dyn Write) -> Result<(), VaultCliE
         VaultCommand::Get { name } => run_get(name, out),
         VaultCommand::Rotate { name } => run_rotate(name, out),
         VaultCommand::Revoke { name } => run_revoke(name, out),
-        VaultCommand::Identity => {
-            run_identity(out)?;
+        VaultCommand::Identity { json } => {
+            run_identity(*json, out)?;
             Ok(())
         }
     }
@@ -260,9 +267,30 @@ fn run_revoke(name: &str, out: &mut dyn Write) -> Result<(), VaultCliError> {
     Ok(())
 }
 
-fn run_identity(out: &mut dyn Write) -> Result<(), VaultCliError> {
+const VAULT_IDENTITY_JSON_SCHEMA: u8 = 1;
+
+#[derive(serde::Serialize)]
+struct IdentityReport {
+    schema_version: u8,
+    command: &'static str,
+    public_key: String,
+}
+
+fn run_identity(json: bool, out: &mut dyn Write) -> Result<(), VaultCliError> {
     let identity = InstallationIdentity::generate();
     let pubkey = identity.verifying_key();
+
+    if json {
+        let report = IdentityReport {
+            schema_version: VAULT_IDENTITY_JSON_SCHEMA,
+            command: "vault identity",
+            public_key: pubkey.to_string(),
+        };
+        serde_json::to_writer_pretty(&mut *out, &report).context(JsonReportSnafu)?;
+        writeln!(out).context(IoSnafu)?;
+        return Ok(());
+    }
+
     writeln!(out, "{pubkey}").context(IoSnafu)?;
     Ok(())
 }
@@ -273,7 +301,11 @@ fn format_timestamp(ts: &jiff::Timestamp) -> String {
 }
 
 #[cfg(test)]
-#[expect(clippy::unwrap_used, reason = "test assertions use unwrap for clarity")]
+#[expect(
+    clippy::unwrap_used,
+    clippy::indexing_slicing,
+    reason = "test assertions use unwrap and indexing for clarity"
+)]
 mod tests {
     use clap::Parser;
 
@@ -396,7 +428,19 @@ mod tests {
     #[test]
     fn parse_identity() {
         let cmd = parse(&["identity"]);
-        assert!(matches!(cmd, VaultCommand::Identity));
+        match cmd {
+            VaultCommand::Identity { json } => assert!(!json),
+            _ => unreachable!("expected Identity"),
+        }
+    }
+
+    #[test]
+    fn parse_identity_json_flag() {
+        let cmd = parse(&["identity", "--json"]);
+        match cmd {
+            VaultCommand::Identity { json } => assert!(json),
+            _ => unreachable!("expected Identity"),
+        }
     }
 
     #[test]
@@ -517,12 +561,28 @@ mod tests {
     #[test]
     fn run_identity_outputs_pubkey() {
         let mut out = Vec::new();
-        run_identity(&mut out).unwrap();
+        run_identity(false, &mut out).unwrap();
         let s = String::from_utf8(out).unwrap();
         let trimmed = s.trim();
         assert_eq!(trimmed.len(), 64, "hex fingerprint must be 64 characters");
         assert!(
             trimmed.chars().all(|c| c.is_ascii_hexdigit()),
+            "fingerprint must be hex"
+        );
+    }
+
+    #[test]
+    fn run_identity_json_outputs_machine_readable_report() {
+        let mut out = Vec::new();
+        run_identity(true, &mut out).unwrap();
+
+        let report: serde_json::Value = serde_json::from_slice(&out).unwrap();
+        assert_eq!(report["schema_version"], 1);
+        assert_eq!(report["command"], "vault identity");
+        let pk = report["public_key"].as_str().unwrap();
+        assert_eq!(pk.len(), 64, "hex fingerprint must be 64 characters");
+        assert!(
+            pk.chars().all(|c| c.is_ascii_hexdigit()),
             "fingerprint must be hex"
         );
     }

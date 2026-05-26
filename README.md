@@ -104,7 +104,7 @@ Every collection crate is expected to produce typed `GeoSignal` objects into koi
 | IDS/IPS | Planned: Suricata and Zeek orchestration will land with `aspis` |
 | Maps | Planned: OSM vector tiles and SRTM elevation will land with `chorografia` |
 | Search | Planned: full-text indexing will land with `pinax` |
-| Interfaces | Current: `akroasis radio import --json`, `akroasis radio detect --json`, `akroasis radio export --json`, and `akroasis mesh {status,nodes,topology} --json` emit schema-versioned JSON reports. Planned: broader JSON CLI/MCP/API coverage before `opsis`; TUI, native, web, and desktop-first order remain open planning decisions |
+| Interfaces | Current: `akroasis radio import --json`, `akroasis radio detect --json`, `akroasis radio export --json`, `akroasis mesh {status,nodes,topology} --json`, and `akroasis vault identity --json` emit schema-versioned JSON reports. Planned: broader JSON CLI/MCP/API coverage before `opsis`; TUI, native, web, and desktop-first order remain open planning decisions |
 | License | AGPL-3.0-only |
 
 ---
