@@ -3,7 +3,10 @@
 //! and future desktop/MCP surfaces.
 // WHY: command modules pre-date the lib target and have no public doc coverage;
 // suppress until the library API stabilises per #118/#126 follow-up scope.
-#![allow(missing_docs)]
+#![expect(
+    missing_docs,
+    reason = "command modules pre-date the lib target; doc coverage deferred to API stabilisation"
+)]
 
 pub mod mesh;
 pub mod radio;
