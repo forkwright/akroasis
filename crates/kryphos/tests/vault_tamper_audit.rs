@@ -1,6 +1,9 @@
 //! Integration test: vault mutations append to the tamper-evident audit log.
 
-#![allow(clippy::unwrap_used)]
+#![expect(
+    clippy::unwrap_used,
+    reason = "integration test — panics are the correct failure mode"
+)]
 
 use koinon::{ChainStatus, verify_chain};
 use kryphos::{CredentialType, Vault};
