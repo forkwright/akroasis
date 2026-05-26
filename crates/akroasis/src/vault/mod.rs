@@ -7,7 +7,7 @@ use clap::Subcommand;
 use comfy_table::{Cell, Table};
 use snafu::{ResultExt, Snafu};
 
-use kryphos::{CredentialType, InstallationIdentity, Vault, VaultError};
+use kryphos::{CredentialType, EntryInfo, InstallationIdentity, Vault, VaultError};
 
 /// Default vault path: `~/.local/share/akroasis/vault`.
 fn default_vault_path() -> PathBuf {
@@ -38,7 +38,11 @@ pub enum VaultCommand {
     },
 
     /// List all credentials (names and metadata only)
-    List,
+    List {
+        /// Emit a machine-readable JSON report instead of the human table.
+        #[arg(long)]
+        json: bool,
+    },
 
     /// Retrieve and decrypt a credential
     Get {
@@ -141,7 +145,7 @@ pub fn dispatch(cmd: &VaultCommand, out: &mut dyn Write) -> Result<(), VaultCliE
     match cmd {
         VaultCommand::Init => run_init(out),
         VaultCommand::Add { name, r#type } => run_add(name, r#type, out),
-        VaultCommand::List => run_list(out),
+        VaultCommand::List { json } => run_list(*json, out),
         VaultCommand::Get { name } => run_get(name, out),
         VaultCommand::Rotate { name } => run_rotate(name, out),
         VaultCommand::Revoke { name } => run_revoke(name, out),
@@ -182,12 +186,17 @@ fn run_add(
     Ok(())
 }
 
-fn run_list(out: &mut dyn Write) -> Result<(), VaultCliError> {
+fn run_list(json: bool, out: &mut dyn Write) -> Result<(), VaultCliError> {
     let path = default_vault_path();
     let passphrase = read_passphrase("Vault passphrase: ")?;
 
     let vault = Vault::open(&path, passphrase.as_bytes()).context(VaultSnafu)?;
     let entries = vault.list().context(VaultSnafu)?;
+
+    if json {
+        write_list_json_report(&entries, out)?;
+        return Ok(());
+    }
 
     if entries.is_empty() {
         writeln!(out, "Vault is empty.").context(IoSnafu)?;
@@ -251,7 +260,7 @@ fn run_revoke(name: &str, out: &mut dyn Write) -> Result<(), VaultCliError> {
     let vault = Vault::open(&path, passphrase.as_bytes()).context(VaultSnafu)?;
 
     eprint!("Revoke '{name}'? This cannot be undone. [y/N] ");
-    let _ = io::stderr().flush();
+    io::stderr().flush().context(IoSnafu)?;
 
     let mut answer = String::new();
     io::stdin()
@@ -268,12 +277,63 @@ fn run_revoke(name: &str, out: &mut dyn Write) -> Result<(), VaultCliError> {
 }
 
 const VAULT_IDENTITY_JSON_SCHEMA: u8 = 1;
+const VAULT_LIST_JSON_SCHEMA: u8 = 1;
+
+#[derive(serde::Serialize)]
+struct ListReport {
+    schema_version: u8,
+    command: &'static str,
+    entry_count: usize,
+    entries: Vec<ListEntryReport>,
+}
+
+#[derive(serde::Serialize)]
+struct ListEntryReport {
+    name: String,
+    credential_type: String,
+    status: String,
+    created_at: String,
+    rotated_at: Option<String>,
+    revoked_at: Option<String>,
+    rotation_count: u32,
+    tags: Vec<String>,
+}
 
 #[derive(serde::Serialize)]
 struct IdentityReport {
     schema_version: u8,
     command: &'static str,
     public_key: String,
+}
+
+fn write_list_json_report(entries: &[EntryInfo], out: &mut dyn Write) -> Result<(), VaultCliError> {
+    let report = ListReport {
+        schema_version: VAULT_LIST_JSON_SCHEMA,
+        command: "vault list",
+        entry_count: entries.len(),
+        entries: entries
+            .iter()
+            .map(|entry| ListEntryReport {
+                name: entry.name.to_string(),
+                credential_type: entry.credential_type.to_string(),
+                status: entry.status.to_string(),
+                created_at: entry.metadata.created_at.to_string(),
+                rotated_at: entry.metadata.rotated_at.map(|t| t.to_string()),
+                revoked_at: entry.metadata.revoked_at.map(|t| t.to_string()),
+                rotation_count: entry.metadata.rotation_count,
+                tags: entry
+                    .metadata
+                    .tags
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect(),
+            })
+            .collect(),
+    };
+
+    serde_json::to_writer_pretty(&mut *out, &report).context(JsonReportSnafu)?;
+    writeln!(out).context(IoSnafu)?;
+    Ok(())
 }
 
 fn run_identity(json: bool, out: &mut dyn Write) -> Result<(), VaultCliError> {
@@ -395,7 +455,19 @@ mod tests {
     #[test]
     fn parse_list() {
         let cmd = parse(&["list"]);
-        assert!(matches!(cmd, VaultCommand::List));
+        match cmd {
+            VaultCommand::List { json } => assert!(!json),
+            _ => unreachable!("expected List"),
+        }
+    }
+
+    #[test]
+    fn parse_list_json_flag() {
+        let cmd = parse(&["list", "--json"]);
+        match cmd {
+            VaultCommand::List { json } => assert!(json),
+            _ => unreachable!("expected List"),
+        }
     }
 
     #[test]
@@ -518,6 +590,38 @@ mod tests {
 
         let entries = vault.list().unwrap();
         assert_eq!(entries.len(), 2, "list must return both entries");
+    }
+
+    #[test]
+    fn write_list_json_report_outputs_metadata_without_secrets() {
+        let (_dir, vault) = create_temp_vault();
+
+        vault
+            .add("json-key", CredentialType::ApiKey, b"secret-not-in-report")
+            .unwrap();
+
+        let entries = vault.list().unwrap();
+        let mut out = Vec::new();
+        write_list_json_report(&entries, &mut out).unwrap();
+
+        let raw = String::from_utf8(out.clone()).unwrap();
+        assert!(
+            !raw.contains("secret-not-in-report"),
+            "list report must not contain secret material"
+        );
+
+        let report: serde_json::Value = serde_json::from_slice(&out).unwrap();
+        assert_eq!(report["schema_version"], 1);
+        assert_eq!(report["command"], "vault list");
+        assert_eq!(report["entry_count"], 1);
+
+        let entry = &report["entries"][0];
+        assert_eq!(entry["name"], "json-key");
+        assert_eq!(entry["credential_type"], "api-key");
+        assert_eq!(entry["status"], "active");
+        assert!(entry["created_at"].as_str().unwrap().ends_with('Z'));
+        assert!(entry["rotated_at"].is_null());
+        assert_eq!(entry["rotation_count"], 0);
     }
 
     #[test]
