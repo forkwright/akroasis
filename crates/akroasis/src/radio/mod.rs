@@ -23,6 +23,10 @@ use self::errors::RadioError;
 pub enum RadioCommand {
     /// Detect connected radios
     Detect {
+        /// Serial port to probe directly (e.g. /dev/ttyUSB0).
+        #[arg(long)]
+        port: Option<String>,
+
         /// Emit a machine-readable JSON report instead of human text.
         #[arg(long)]
         json: bool,
@@ -165,6 +169,14 @@ pub struct DetectedRadio {
 /// Abstraction over radio hardware detection and connection.
 pub trait Hardware {
     fn detect_radios(&self) -> Result<Vec<DetectedRadio>, RadioError>;
+    fn detect_radio_on_port(&self, port: &str) -> Result<Option<DetectedRadio>, RadioError> {
+        let mut radios = self.detect_radios()?;
+        Ok(radios
+            .iter()
+            .position(|radio| radio.port == port)
+            .map(|idx| radios.swap_remove(idx)))
+    }
+
     fn open(&self, port: &str) -> Result<Box<dyn Session>, RadioError>;
 }
 
@@ -207,11 +219,10 @@ impl Hardware for StubHardware {
 /// Resolves the target radio from an explicit port or auto-detection.
 pub fn resolve_target(port: Option<&str>, hw: &dyn Hardware) -> Result<DetectedRadio, RadioError> {
     if let Some(port) = port {
-        let mut radios = hw.detect_radios()?;
-        radios.iter().position(|r| r.port == port).map_or_else(
+        hw.detect_radio_on_port(port)?.map_or_else(
             || {
-                // WHY: Port was given explicitly but detection didn't find it.
-                // Fall back to opening directly — the user knows what they're doing.
+                // WHY: Port was given explicitly but detection didn't identify it.
+                // Fall back to opening directly; the user may know the target.
                 Ok(DetectedRadio {
                     variant: RadioVariant::Uv5r,
                     port: port.to_string(),
@@ -219,7 +230,7 @@ pub fn resolve_target(port: Option<&str>, hw: &dyn Hardware) -> Result<DetectedR
                     warnings: Vec::new(),
                 })
             },
-            |idx| Ok(radios.swap_remove(idx)),
+            Ok,
         )
     } else {
         let radios = hw.detect_radios()?;
@@ -257,7 +268,7 @@ pub fn dispatch_with(
     out: &mut dyn std::io::Write,
 ) -> Result<(), RadioError> {
     match cmd {
-        RadioCommand::Detect { json } => detect::run(hw, *json, out),
+        RadioCommand::Detect { port, json } => detect::run(port.as_deref(), hw, *json, out),
         RadioCommand::Read { port } => read::run(port.as_deref(), hw, out),
         RadioCommand::Program { port, plan } => program::run(port.as_deref(), plan, hw, out),
         RadioCommand::Export {
@@ -295,7 +306,10 @@ mod tests {
     fn parse_detect() {
         let cmd = parse(&["detect"]);
         match cmd {
-            RadioCommand::Detect { json } => assert!(!json),
+            RadioCommand::Detect { port, json } => {
+                assert!(port.is_none());
+                assert!(!json);
+            }
             _ => panic!("expected Detect"),
         }
     }
@@ -304,7 +318,22 @@ mod tests {
     fn parse_detect_json_flag() {
         let cmd = parse(&["detect", "--json"]);
         match cmd {
-            RadioCommand::Detect { json } => assert!(json),
+            RadioCommand::Detect { port, json } => {
+                assert!(port.is_none());
+                assert!(json);
+            }
+            _ => panic!("expected Detect"),
+        }
+    }
+
+    #[test]
+    fn parse_detect_with_port() {
+        let cmd = parse(&["detect", "--port", "/dev/ttyUSB0"]);
+        match cmd {
+            RadioCommand::Detect { port, json } => {
+                assert_eq!(port.as_deref(), Some("/dev/ttyUSB0"));
+                assert!(!json);
+            }
             _ => panic!("expected Detect"),
         }
     }

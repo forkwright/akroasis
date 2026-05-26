@@ -15,6 +15,12 @@ impl Hardware for SerialHardware {
         Ok(detected.into_iter().filter_map(to_cli_radio).collect())
     }
 
+    fn detect_radio_on_port(&self, port: &str) -> Result<Option<DetectedRadio>, RadioError> {
+        let detected = hardware::detect_radio_on_port(port)
+            .map_err(|source| RadioError::HardwareDetect { source })?;
+        Ok(detected.and_then(to_cli_radio))
+    }
+
     fn open(&self, _port: &str) -> Result<Box<dyn Session>, RadioError> {
         Err(RadioError::HardwareNotAvailable)
     }
@@ -62,8 +68,9 @@ fn cable_warnings(cable: &UsbCable) -> Vec<String> {
 #[cfg(test)]
 #[expect(clippy::unwrap_used, reason = "test assertions use unwrap for clarity")]
 mod tests {
-    use super::*;
     use syntonia::hardware::{RadioIdent, VariantConfig};
+
+    use super::*;
 
     fn cable(chip: CableChip) -> UsbCable {
         UsbCable {
