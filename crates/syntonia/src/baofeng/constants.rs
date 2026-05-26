@@ -3,6 +3,16 @@
 //! All timing values, opcodes, and memory layout constants for the EEPROM
 //! clone protocol at 9600 baud 8N1.
 
+// WHY: all constants are used exclusively by the protocol module, which is
+// hardware-serial gated. Without that feature they are compiled but unused.
+#![cfg_attr(
+    not(feature = "hardware-serial"),
+    expect(
+        dead_code,
+        reason = "protocol constants used only with hardware-serial feature"
+    )
+)]
+
 use std::time::Duration;
 
 /// Serial baud rate for UV-5R programming mode.
@@ -75,7 +85,7 @@ pub(crate) const INTER_BYTE_DELAY: Duration = Duration::from_millis(10);
 pub(crate) const POST_ACK_DELAY: Duration = Duration::from_millis(50);
 
 /// Delay before retrying identification after a failure.
-pub(crate) const IDENT_RETRY_DELAY: Duration = Duration::from_millis(2000);
+pub(crate) const IDENT_RETRY_DELAY: Duration = Duration::from_secs(2);
 
 /// Read timeout for serial responses.
 pub(crate) const READ_TIMEOUT: Duration = Duration::from_millis(1500);

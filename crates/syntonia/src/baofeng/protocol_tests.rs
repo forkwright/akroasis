@@ -28,7 +28,10 @@ fn uv5r_download_covers_full_main_region() {
     let config = uv5r_config();
     let plan = download_plan(&config);
     let expected_blocks = (MAIN_END - MAIN_START) / u16::try_from(BLOCK_SIZE).unwrap_or_default();
-    assert_eq!(plan.len(), usize::try_from(expected_blocks).unwrap_or_default());
+    assert_eq!(
+        plan.len(),
+        usize::try_from(expected_blocks).unwrap_or_default()
+    );
     assert_eq!(plan.get(0).copied().unwrap_or_default().addr, MAIN_START);
     let last = plan.last().unwrap();
     assert_eq!(last.addr + last.size, MAIN_END);
@@ -40,7 +43,10 @@ fn f8hp_download_includes_aux_warmup() {
     let plan = download_plan(&config);
     let warmup_ops: Vec<_> = plan.iter().filter(|op| op.is_warmup).collect();
     assert_eq!(warmup_ops.len(), 1);
-    assert_eq!(warmup_ops.get(0).copied().unwrap_or_default().addr, AUX_WARMUP_ADDR);
+    assert_eq!(
+        warmup_ops.get(0).copied().unwrap_or_default().addr,
+        AUX_WARMUP_ADDR
+    );
 }
 
 #[test]
@@ -57,7 +63,11 @@ fn f8hp_download_reads_aux_region() {
     let mut covered = vec![false; (AUX_END - AUX_START) as usize];
     for op in &aux_ops {
         let start = (op.addr - AUX_START) as usize;
-        for slot in covered.iter_mut().skip(start).take(op.usize::try_from(size).unwrap_or_default()) {
+        for slot in covered
+            .iter_mut()
+            .skip(start)
+            .take(usize::try_from(op.size).unwrap_or_default())
+        {
             *slot = true;
         }
     }
@@ -107,7 +117,10 @@ fn f8hp_upload_covers_aux_region() {
     let aux_ops: Vec<_> = plan.iter().filter(|op| op.addr >= AUX_START).collect();
     assert!(!aux_ops.is_empty());
     let expected_aux_blocks = (AUX_END - AUX_START) / u16::try_from(BLOCK_SIZE).unwrap_or_default();
-    assert_eq!(aux_ops.len(), usize::try_from(expected_aux_blocks).unwrap_or_default());
+    assert_eq!(
+        aux_ops.len(),
+        usize::try_from(expected_aux_blocks).unwrap_or_default()
+    );
 }
 
 #[test]
@@ -326,7 +339,10 @@ fn write_block_constructs_correct_packet() {
     proto.write_block(0x0100, &data).unwrap();
 
     // Packet: [0x58, 0x01, 0x00, 0x10, ...16 bytes data]
-    assert_eq!(proto.port.written.get(0).copied().unwrap_or_default(), CMD_WRITE);
+    assert_eq!(
+        proto.port.written.get(0).copied().unwrap_or_default(),
+        CMD_WRITE
+    );
     assert_eq!(proto.port.written.get(1).copied().unwrap_or_default(), 0x01);
     assert_eq!(proto.port.written.get(2).copied().unwrap_or_default(), 0x00);
     assert_eq!(proto.port.written.get(3).copied().unwrap_or_default(), 0x10);

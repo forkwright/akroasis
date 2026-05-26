@@ -32,7 +32,7 @@ impl RadioIdent {
             }
             // INVARIANT: we just checked raw.len() == 12, so all indices are in bounds.
             12 => [
-                raw.get(0).copied().unwrap_or_default(),
+                raw.first().copied().unwrap_or_default(),
                 raw.get(3).copied().unwrap_or_default(),
                 raw.get(5).copied().unwrap_or_default(),
                 raw.get(7).copied().unwrap_or_default(),

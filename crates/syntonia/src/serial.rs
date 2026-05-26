@@ -130,11 +130,19 @@ pub mod mock {
         }
 
         /// Queue response bytes that will be returned by subsequent reads.
+        #[cfg_attr(
+            not(feature = "hardware-serial"),
+            expect(dead_code, reason = "used only by hardware-serial protocol tests")
+        )]
         pub fn enqueue_response(&mut self, data: &[u8]) {
             self.rx_queue.extend(data);
         }
 
         /// Make the next read return an error of the given kind.
+        #[cfg_attr(
+            not(feature = "hardware-serial"),
+            expect(dead_code, reason = "used only by hardware-serial protocol tests")
+        )]
         pub fn inject_error(&mut self, kind: io::ErrorKind) {
             self.pending_error = Some(kind);
         }

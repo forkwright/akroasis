@@ -1,5 +1,15 @@
 //! Radio variant identification and configuration for the UV-5R family.
 
+// WHY: variant API (RadioVariant, VariantConfig, MAGIC_SETS, identify_variant) is
+// only consumed by the protocol module, which is hardware-serial gated.
+#![cfg_attr(
+    not(feature = "hardware-serial"),
+    expect(
+        dead_code,
+        reason = "variant API used only with hardware-serial feature"
+    )
+)]
+
 use std::fmt;
 
 use snafu::Snafu;
@@ -304,12 +314,10 @@ fn hex_encode(bytes: &[u8]) -> String {
 
 // ── Tests ────────────────────────────────────────────────────────────────────
 
-#[cfg(test)]
+#[cfg(all(test, feature = "hardware-serial"))] // kanon:ignore RUST/feature-gate-check -- declared in syntonia/Cargo.toml [features]
 #[expect(
     clippy::unwrap_used,
-    clippy::expect_used,
     clippy::indexing_slicing,
-    clippy::missing_docs_in_private_items,
     reason = "test code: panics and unwraps acceptable in assertions"
 )]
 mod tests {

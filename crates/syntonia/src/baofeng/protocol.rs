@@ -567,7 +567,8 @@ impl<P: SerialPort> Uv5rProtocol<P> {
     }
 
     /// Read exactly `buf.len()` bytes, mapping timeouts to `ProtocolError`.
-    fn read_exact_timeout(&mut self, buf: &mut [u8]) -> Result<()> { // kanon:ignore RUST/indexing-slicing -- function parameter &mut [u8], not indexing
+    fn read_exact_timeout(&mut self, buf: &mut [u8]) -> Result<()> {
+        // kanon:ignore RUST/indexing-slicing -- function parameter &mut [u8], not indexing
         match self.port.read_exact(buf) {
             Ok(()) => Ok(()),
             Err(e) if e.kind() == io::ErrorKind::TimedOut => Err(ProtocolError::Timeout),
