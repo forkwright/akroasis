@@ -1,6 +1,10 @@
 //! Integration test: load and validate the family plan TOML fixture.
 
-#![allow(clippy::unwrap_used, clippy::expect_used)]
+#![expect(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "integration test — panics are the correct failure mode"
+)]
 
 use syntonia::{FrequencyPlan, ValidationIssue, baofeng_uv5r_constraints, validate_plan};
 
