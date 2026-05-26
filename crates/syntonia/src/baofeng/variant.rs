@@ -1,5 +1,15 @@
 //! Radio variant identification and configuration for the UV-5R family.
 
+// WHY: variant API (RadioVariant, VariantConfig, MAGIC_SETS, identify_variant) is
+// only consumed by the protocol module, which is hardware-serial gated.
+#![cfg_attr(
+    not(feature = "hardware-serial"),
+    expect(
+        dead_code,
+        reason = "variant API used only with hardware-serial feature"
+    )
+)]
+
 use std::fmt;
 
 use snafu::Snafu;
@@ -9,16 +19,16 @@ use crate::types::PowerLevel;
 // ── Magic byte sequences ────────────────────────────────────────────────────
 
 /// Magic bytes for UV-5R firmware version 2.91+ and most clones.
-pub(crate) const MAGIC_UV5R_291: [u8; 7] = [0x50, 0xBB, 0xFF, 0x20, 0x12, 0x04, 0x11];
+pub const MAGIC_UV5R_291: [u8; 7] = [0x50, 0xBB, 0xFF, 0x20, 0x12, 0x04, 0x11];
 
 /// Magic bytes for the original UV-5R (pre-2.91 firmware).
-pub(crate) const MAGIC_UV5R_ORIG: [u8; 7] = [0x50, 0xBB, 0xFF, 0x20, 0x12, 0x01, 0x11];
+pub const MAGIC_UV5R_ORIG: [u8; 7] = [0x50, 0xBB, 0xFF, 0x20, 0x12, 0x01, 0x11];
 
 /// Magic bytes for BF-F8HP (shared with BF-A58).
-pub(crate) const MAGIC_BF_F8HP: [u8; 7] = [0x50, 0xBB, 0xFF, 0x20, 0x14, 0x04, 0x13];
+pub const MAGIC_BF_F8HP: [u8; 7] = [0x50, 0xBB, 0xFF, 0x20, 0x14, 0x04, 0x13];
 
 /// All magic byte sequences to try during auto-detection, in priority order.
-pub(crate) const MAGIC_SETS: &[[u8; 7]] = &[MAGIC_UV5R_291, MAGIC_BF_F8HP, MAGIC_UV5R_ORIG];
+pub const MAGIC_SETS: &[[u8; 7]] = &[MAGIC_UV5R_291, MAGIC_BF_F8HP, MAGIC_UV5R_ORIG];
 
 // ── RadioVariant ─────────────────────────────────────────────────────────────
 
@@ -114,7 +124,7 @@ impl VariantConfig {
 /// Two power levels. Bit value 2 (Mid) maps to High since this radio
 /// has no mid setting — CHIRP images from tri-power radios may contain it.
 #[must_use]
-pub(crate) fn uv5r_config() -> VariantConfig {
+pub fn uv5r_config() -> VariantConfig {
     VariantConfig {
         variant: RadioVariant::Uv5r,
         magic: MAGIC_UV5R_291,
@@ -147,7 +157,7 @@ pub(crate) fn uv5r_config() -> VariantConfig {
 
 /// Configuration for the original UV-5R (pre-2.91 firmware).
 #[must_use]
-pub(crate) fn uv5r_original_config() -> VariantConfig {
+pub fn uv5r_original_config() -> VariantConfig {
     VariantConfig {
         variant: RadioVariant::Uv5rOriginal,
         magic: MAGIC_UV5R_ORIG,
@@ -160,7 +170,7 @@ pub(crate) fn uv5r_original_config() -> VariantConfig {
 /// Three power levels (8W / 4W / 1W). Has auxiliary EEPROM block
 /// that requires a warm-up read before access.
 #[must_use]
-pub(crate) fn bf_f8hp_config() -> VariantConfig {
+pub fn bf_f8hp_config() -> VariantConfig {
     VariantConfig {
         variant: RadioVariant::BfF8hp,
         magic: MAGIC_BF_F8HP,
@@ -194,7 +204,7 @@ pub(crate) fn bf_f8hp_config() -> VariantConfig {
 /// Assumed to be a BF-F8HP variant with higher power output.
 /// Power values are unverified — needs hardware testing.
 #[must_use]
-pub(crate) fn uv5rm_plus_config() -> VariantConfig {
+pub fn uv5rm_plus_config() -> VariantConfig {
     VariantConfig {
         variant: RadioVariant::Uv5rmPlus,
         magic: MAGIC_BF_F8HP,
@@ -272,7 +282,7 @@ const BF_F8HP_PREFIXES: &[&str] = &["BFP3V3 F", "N5R-3", "N5R3", "F5R3", "BFT"];
 ///
 /// Returns [`VariantError::UnknownVariant`] if the ident does not match any
 /// known prefix, including the raw bytes as hex for debugging.
-pub(crate) fn identify_variant(ident: &RadioIdent) -> Result<VariantConfig, VariantError> {
+pub fn identify_variant(ident: &RadioIdent) -> Result<VariantConfig, VariantError> {
     let prefix = ident.firmware_prefix();
 
     for &pfx in BF_F8HP_PREFIXES {
@@ -304,12 +314,10 @@ fn hex_encode(bytes: &[u8]) -> String {
 
 // ── Tests ────────────────────────────────────────────────────────────────────
 
-#[cfg(test)]
+#[cfg(all(test, feature = "hardware-serial"))] // kanon:ignore RUST/feature-gate-check -- declared in syntonia/Cargo.toml [features]
 #[expect(
     clippy::unwrap_used,
-    clippy::expect_used,
     clippy::indexing_slicing,
-    clippy::missing_docs_in_private_items,
     reason = "test code: panics and unwraps acceptable in assertions"
 )]
 mod tests {

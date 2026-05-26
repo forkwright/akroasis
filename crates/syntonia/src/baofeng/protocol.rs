@@ -33,28 +33,28 @@ use super::variant::VariantConfig;
 // ── Block planning constants ────────────────────────────────────────────────
 
 /// Standard EEPROM block size for plan operations (16 bytes).
-pub(crate) const BLOCK_SIZE: usize = 16;
+pub const BLOCK_SIZE: usize = 16;
 
 /// Start of the main channel memory region.
-pub(crate) const MAIN_START: u16 = 0x0000;
+pub const MAIN_START: u16 = 0x0000;
 
 /// End of the main memory region (exclusive) for UV-5R (no aux).
-pub(crate) const MAIN_END: u16 = 0x1800;
+pub const MAIN_END: u16 = 0x1800;
 
 /// Start of the auxiliary EEPROM block (BF-F8HP and variants).
-pub(crate) const AUX_START: u16 = 0x1E80;
+pub const AUX_START: u16 = 0x1E80;
 
 /// End of the auxiliary EEPROM block (exclusive).
-pub(crate) const AUX_END: u16 = 0x2000;
+pub const AUX_END: u16 = 0x2000;
 
 /// Address of the warm-up read block (required before aux access on BF-F8HP).
-pub(crate) const AUX_WARMUP_ADDR: u16 = 0x1E80;
+pub const AUX_WARMUP_ADDR: u16 = 0x1E80;
 
 /// Address of the dropped-byte bug in BF-F8HP firmware.
 ///
 /// Reading a full 16-byte block at this address may lose bytes. The
 /// workaround is to read in smaller chunks around this address.
-pub(crate) const DROPPED_BYTE_ADDR: u16 = 0x1FCF;
+pub const DROPPED_BYTE_ADDR: u16 = 0x1FCF;
 
 // ── Block plan ──────────────────────────────────────────────────────────────
 
@@ -75,7 +75,7 @@ pub struct BlockOp {
 /// For BF-F8HP: same main region, plus aux warm-up at 0x1E80, then
 /// 0x1E80–0x2000 with dropped-byte workaround at 0x1FCF.
 #[must_use]
-pub(crate) fn download_plan(config: &VariantConfig) -> Vec<BlockOp> {
+pub fn download_plan(config: &VariantConfig) -> Vec<BlockOp> {
     let mut ops = Vec::new();
 
     // Main memory region
@@ -150,7 +150,7 @@ pub(crate) fn download_plan(config: &VariantConfig) -> Vec<BlockOp> {
 ///
 /// Same regions as download, but without the warm-up read.
 #[must_use]
-pub(crate) fn upload_plan(config: &VariantConfig) -> Vec<BlockOp> {
+pub fn upload_plan(config: &VariantConfig) -> Vec<BlockOp> {
     let mut ops = Vec::new();
 
     let mut addr = MAIN_START;
@@ -242,13 +242,13 @@ pub type Result<T> = std::result::Result<T, ProtocolError>;
 ///
 /// Generic over the serial port implementation so tests can substitute a mock.
 /// For real hardware use `Uv5rProtocol<HardwareSerialPort>`.
-pub(crate) struct Uv5rProtocol<P: SerialPort> {
+pub struct Uv5rProtocol<P: SerialPort> {
     port: P,
 }
 
 impl<P: SerialPort> Uv5rProtocol<P> {
     /// Create a new protocol driver wrapping the given serial port.
-    pub(crate) const fn new(port: P) -> Self {
+    pub const fn new(port: P) -> Self {
         Self { port }
     }
 
@@ -260,7 +260,7 @@ impl<P: SerialPort> Uv5rProtocol<P> {
     /// # Errors
     /// Returns [`ProtocolError::SerialIo`] on I/O failure, [`ProtocolError::Timeout`]
     /// if the radio does not respond, or [`ProtocolError::BadAck`] on unexpected reply.
-    pub(crate) fn enter_programming_mode(&mut self, magic: &[u8; 7]) -> Result<()> {
+    pub fn enter_programming_mode(&mut self, magic: &[u8; 7]) -> Result<()> {
         self.port
             .set_timeout(READ_TIMEOUT)
             .map_err(|source| ProtocolError::SerialIo { source })?;
@@ -289,7 +289,7 @@ impl<P: SerialPort> Uv5rProtocol<P> {
     /// # Errors
     /// Returns [`ProtocolError::IdentFailed`] if the response length is invalid,
     /// [`ProtocolError::Timeout`] if no response, or [`ProtocolError::BadAck`].
-    pub(crate) fn identify(&mut self) -> Result<RadioIdent> {
+    pub fn identify(&mut self) -> Result<RadioIdent> {
         self.port
             .write_all(&[CMD_IDENT])
             .map_err(|source| ProtocolError::SerialIo { source })?;
@@ -332,7 +332,7 @@ impl<P: SerialPort> Uv5rProtocol<P> {
     /// # Errors
     /// Returns [`ProtocolError::BadResponseHeader`] on header mismatch,
     /// [`ProtocolError::Timeout`], or [`ProtocolError::SerialIo`].
-    pub(crate) fn read_block(&mut self, addr: u16, len: u8) -> Result<Vec<u8>> {
+    pub fn read_block(&mut self, addr: u16, len: u8) -> Result<Vec<u8>> {
         let addr_h = (addr >> 8) as u8; // SAFETY: u16 >> 8 yields the high byte; fits u8 by construction
         let addr_l = (addr & 0xFF) as u8; // SAFETY: u16 & 0xFF yields the low byte; fits u8 by construction
         let cmd = [CMD_READ, addr_h, addr_l, len];
@@ -373,7 +373,7 @@ impl<P: SerialPort> Uv5rProtocol<P> {
     /// # Errors
     /// Returns [`ProtocolError::ForbiddenAddress`] if the address overlaps
     /// calibration data, [`ProtocolError::Timeout`], or [`ProtocolError::SerialIo`].
-    pub(crate) fn write_block(&mut self, addr: u16, data: &[u8]) -> Result<()> {
+    pub fn write_block(&mut self, addr: u16, data: &[u8]) -> Result<()> {
         // Reject writes to calibration data.
         if is_forbidden(addr, data.len()) {
             return Err(ProtocolError::ForbiddenAddress { addr });
@@ -409,7 +409,7 @@ impl<P: SerialPort> Uv5rProtocol<P> {
     /// # Errors
     /// Returns [`ProtocolError::RetryExhausted`] if a block fails after all
     /// retries, or any underlying serial/protocol error.
-    pub(crate) fn download_image(&mut self) -> Result<MemoryImage> {
+    pub fn download_image(&mut self) -> Result<MemoryImage> {
         let image_size = usize::from(AUX_BLOCK_END);
         let mut image = MemoryImage::new(image_size);
 
@@ -445,7 +445,7 @@ impl<P: SerialPort> Uv5rProtocol<P> {
     /// # Errors
     /// Returns [`ProtocolError::RetryExhausted`] if a block fails after all
     /// retries, or any underlying serial/protocol error.
-    pub(crate) fn upload_image(
+    pub fn upload_image(
         &mut self,
         image: &MemoryImage,
         progress: &mut dyn FnMut(usize, usize),
@@ -468,9 +468,7 @@ impl<P: SerialPort> Uv5rProtocol<P> {
             let mut addr = *start;
             while addr < *end {
                 let block_size = usize::from(WRITE_BLOCK_SIZE);
-                let data = image
-                    .read_bytes(addr, block_size)
-                    .ok_or(ProtocolError::BadResponseHeader { addr })?;
+                let data = image.read_bytes(addr, block_size);
 
                 self.write_block_with_retry(addr, data)?;
                 blocks_written += 1;
@@ -486,7 +484,7 @@ impl<P: SerialPort> Uv5rProtocol<P> {
     ///
     /// # Errors
     /// Returns [`ProtocolError::SerialIo`] on write failure.
-    pub(crate) fn exit_programming_mode(&mut self) -> Result<()> {
+    pub fn exit_programming_mode(&mut self) -> Result<()> {
         self.send_ack()
     }
 
@@ -569,7 +567,8 @@ impl<P: SerialPort> Uv5rProtocol<P> {
     }
 
     /// Read exactly `buf.len()` bytes, mapping timeouts to `ProtocolError`.
-    fn read_exact_timeout(&mut self, buf: &mut [u8]) -> Result<()> { // kanon:ignore RUST/indexing-slicing -- function parameter &mut [u8], not indexing
+    fn read_exact_timeout(&mut self, buf: &mut [u8]) -> Result<()> {
+        // kanon:ignore RUST/indexing-slicing -- function parameter &mut [u8], not indexing
         match self.port.read_exact(buf) {
             Ok(()) => Ok(()),
             Err(e) if e.kind() == io::ErrorKind::TimedOut => Err(ProtocolError::Timeout),
