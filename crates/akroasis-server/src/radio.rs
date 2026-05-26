@@ -26,9 +26,8 @@ pub async fn detect(Query(params): Query<DetectQuery>) -> ApiResult<Json<serde_j
         port: params.port,
         json: true,
     };
-    akroasis_lib::radio::dispatch(&cmd, &mut out)
-        .map_err(|e| ApiError::internal(e.to_string()))?;
-    let value: serde_json::Value = serde_json::from_slice(&out)
-        .map_err(|e| ApiError::internal(format!("json parse: {e}")))?;
+    akroasis_lib::radio::dispatch(&cmd, &mut out).map_err(|e| ApiError::internal(e.to_string()))?;
+    let value: serde_json::Value =
+        serde_json::from_slice(&out).map_err(|e| ApiError::internal(format!("json parse: {e}")))?;
     Ok(Json(value))
 }

@@ -17,8 +17,8 @@
 #![deny(missing_docs)]
 
 pub mod error;
-pub mod radio;
 pub mod mesh;
+pub mod radio;
 pub mod router;
 pub mod server;
 

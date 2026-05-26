@@ -10,10 +10,9 @@ use crate::error::{ApiError, ApiResult};
 pub async fn status() -> ApiResult<Json<serde_json::Value>> {
     let mut out = Vec::new();
     let cmd = akroasis_lib::mesh::MeshCommand::Status { json: true };
-    akroasis_lib::mesh::dispatch(&cmd, &mut out)
-        .map_err(|e| ApiError::internal(e.to_string()))?;
-    let value: serde_json::Value = serde_json::from_slice(&out)
-        .map_err(|e| ApiError::internal(format!("json parse: {e}")))?;
+    akroasis_lib::mesh::dispatch(&cmd, &mut out).map_err(|e| ApiError::internal(e.to_string()))?;
+    let value: serde_json::Value =
+        serde_json::from_slice(&out).map_err(|e| ApiError::internal(format!("json parse: {e}")))?;
     Ok(Json(value))
 }
 
@@ -21,10 +20,9 @@ pub async fn status() -> ApiResult<Json<serde_json::Value>> {
 pub async fn nodes() -> ApiResult<Json<serde_json::Value>> {
     let mut out = Vec::new();
     let cmd = akroasis_lib::mesh::MeshCommand::Nodes { json: true };
-    akroasis_lib::mesh::dispatch(&cmd, &mut out)
-        .map_err(|e| ApiError::internal(e.to_string()))?;
-    let value: serde_json::Value = serde_json::from_slice(&out)
-        .map_err(|e| ApiError::internal(format!("json parse: {e}")))?;
+    akroasis_lib::mesh::dispatch(&cmd, &mut out).map_err(|e| ApiError::internal(e.to_string()))?;
+    let value: serde_json::Value =
+        serde_json::from_slice(&out).map_err(|e| ApiError::internal(format!("json parse: {e}")))?;
     Ok(Json(value))
 }
 
@@ -32,9 +30,8 @@ pub async fn nodes() -> ApiResult<Json<serde_json::Value>> {
 pub async fn topology() -> ApiResult<Json<serde_json::Value>> {
     let mut out = Vec::new();
     let cmd = akroasis_lib::mesh::MeshCommand::Topology { json: true };
-    akroasis_lib::mesh::dispatch(&cmd, &mut out)
-        .map_err(|e| ApiError::internal(e.to_string()))?;
-    let value: serde_json::Value = serde_json::from_slice(&out)
-        .map_err(|e| ApiError::internal(format!("json parse: {e}")))?;
+    akroasis_lib::mesh::dispatch(&cmd, &mut out).map_err(|e| ApiError::internal(e.to_string()))?;
+    let value: serde_json::Value =
+        serde_json::from_slice(&out).map_err(|e| ApiError::internal(format!("json parse: {e}")))?;
     Ok(Json(value))
 }

@@ -48,12 +48,7 @@ impl IntoResponse for ApiError {
             error: &self.message,
         })
         .unwrap_or_else(|_| r#"{"error":"serialization failure"}"#.to_string());
-        (
-            self.status,
-            [("content-type", "application/json")],
-            body,
-        )
-            .into_response()
+        (self.status, [("content-type", "application/json")], body).into_response()
     }
 }
 
