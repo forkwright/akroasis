@@ -104,7 +104,7 @@ Every collection crate is expected to produce typed `GeoSignal` objects into koi
 | IDS/IPS | Planned: Suricata and Zeek orchestration will land with `aspis` |
 | Maps | Planned: OSM vector tiles and SRTM elevation will land with `chorografia` |
 | Search | Planned: full-text indexing will land with `pinax` |
-| Interfaces | CLI: `akroasis radio import --json`, `radio detect --json`, `radio export --json`, `mesh {status,nodes,topology} --json`, `vault identity --json`. HTTP: `akroasis-server` exposes `/api/v1/radio/detect`, `/api/v1/mesh/{status,nodes,topology}` with the same JSON schemas. Desktop: desktop-first via theatron + akroasis-server (chalkeion Phase 6). |
+| Interfaces | Schema-versioned JSON is the canonical programmatic contract. CLI: `akroasis radio import --json`, `radio detect --json`, `radio export --json`, `mesh {status,nodes,topology} --json`, `vault list --json`, `vault identity --json`. HTTP: `akroasis-server` exposes `/api/v1/radio/detect`, `/api/v1/mesh/{status,nodes,topology}` with the same JSON schemas for durable clients. Interactive secret vault commands and planned placeholder domains remain TTY-only until their service surfaces ship. Desktop: desktop-first via theatron + akroasis-server (chalkeion Phase 6). |
 | License | AGPL-3.0-only |
 
 ---

@@ -35,7 +35,7 @@ Foundation:     koinon (shared types), kryphos (encryption), lethe (privacy)
 | **pinax** | Knowledge | Offline knowledge repository, frequency databases, maps; see `reference-store.md` for target instance layout |
 | **opsis** | Interface | Operator surfaces: desktop-first via theatron (akroasis-desktop), consumed through the `akroasis-server` HTTP API. #118 resolved. |
 | **akroasis** | Binary | CLI entrypoint, subcommand routing, and library interface for akroasis-server |
-| **akroasis-server** | Interface | Typed axum HTTP backend (`/api/v1/*`); called by akroasis-desktop and `--json`/MCP clients. Mirrors CLI `--json` report schemas. |
+| **akroasis-server** | Interface | Canonical durable programmatic surface: typed axum HTTP backend (`/api/v1/*`) called by akroasis-desktop and agent clients. Mirrors schema-versioned CLI `--json` report contracts for shipped non-interactive surfaces. |
 
 ## Key decisions
 
