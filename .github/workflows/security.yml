@@ -73,3 +73,14 @@ jobs:
         # .cargo/audit.toml, which mirrors deny.toml's [[advisories.ignore]]
         # entries — no silent --ignore flags here.
         run: cargo audit --deny unmaintained --deny unsound --deny yanked
+
+  osv-scanner:
+    name: osv-scanner
+    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@9a498708959aeaef5ef730655706c5a1df1edbc2
+    with:
+      scan-args: |-
+        --lockfile=./Cargo.lock
+        --config=./osv-scanner.toml
+    permissions:
+      security-events: write
+      contents: read
