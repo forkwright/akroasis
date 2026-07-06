@@ -60,7 +60,7 @@ clap = { version = "4", features = ["derive"] }
 figment = { version = "0.10", features = ["toml", "env"] }
 
 # Crypto
-chacha20poly1305 = "0.10"
+chacha20poly1305 = "0.11"
 ed25519-dalek = { version = "2", features = ["serde", "rand_core"] }
 argon2 = { version = "0.5", features = ["zeroize"] }
 zeroize = { version = "1", features = ["derive"] }
