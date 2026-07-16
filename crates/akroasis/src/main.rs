@@ -8,7 +8,7 @@ mod cli;
     not(test),
     expect(
         dead_code,
-        reason = "mesh helpers used by daemon; unused in CLI binary build"
+        reason = "mesh table/status helpers await daemon integration, tracked in #264"
     )
 )]
 mod mesh;
@@ -57,7 +57,11 @@ enum Error {
 
 /// Application configuration loaded from TOML file and environment overrides.
 #[derive(Debug, Deserialize, Default)]
-#[expect(dead_code, reason = "config fields reserved for future CLI options")]
+#[serde(deny_unknown_fields)]
+#[expect(
+    dead_code,
+    reason = "config fields reserved for future CLI options, tracked in #264"
+)]
 struct Config {
     /// Path to the configuration file (default: `~/.config/akroasis/config.toml`).
     config_path: Option<PathBuf>,

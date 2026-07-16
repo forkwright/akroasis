@@ -43,7 +43,7 @@ pub struct StoreForward {
     /// Monotonic base time for TTL checks in-process.
     #[expect(
         dead_code,
-        reason = "used for TTL baseline in production; tests use stored_at_ms"
+        reason = "used for TTL baseline in production; tests use stored_at_ms, tracked in #244"
     )]
     base_instant: Instant,
 }
