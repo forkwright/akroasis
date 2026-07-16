@@ -144,6 +144,10 @@ fn variant_from_config(config: &VariantConfig) -> Option<RadioVariant> {
         SynVariant::Uv5r | SynVariant::Uv5rOriginal => Some(RadioVariant::Uv5r),
         SynVariant::BfF8hp => Some(RadioVariant::BfF8hp),
         SynVariant::Uv5rmPlus => Some(RadioVariant::Uv5rmPlus),
+        // WHY: RadioVariant is #[non_exhaustive] and matched cross-crate, so
+        // rustc requires a wildcard arm even though every current variant is
+        // handled above. Mirrors `to_cli_variant`'s unknown-kind handling.
+        _ => None,
     }
 }
 
