@@ -1,0 +1,9 @@
+[build.env]
+passthrough = []
+
+[target.aarch64-unknown-linux-gnu]
+pre-build = [
+  "apt-get update -q",
+  "apt-get install -y --no-install-recommends pkg-config libssl-dev",
+  "cargo install cargo-auditable --locked",
+]

@@ -5,7 +5,9 @@ on:
     tags: ["v*"]
 
 permissions:
+  attestations: write
   contents: write
+  id-token: write
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -15,7 +17,7 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -39,7 +41,7 @@ jobs:
             cross: true
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
@@ -51,21 +53,81 @@ jobs:
       - name: Install cross
         if: matrix.cross
         run: cargo install cross --locked
+      - name: Install cargo-auditable
+        if: ${{ !matrix.cross }}
+        run: cargo install cargo-auditable --locked --version 0.7.4
       - name: Build (native)
         if: ${{ !matrix.cross }}
-        run: cargo build --release --target ${{ matrix.target }}
+        run: cargo auditable build --release --target ${{ matrix.target }}
       - name: Build (cross)
         if: ${{ matrix.cross }}
-        run: cross build --release --target ${{ matrix.target }}
+        run: cross auditable build --release --target ${{ matrix.target }}
       - name: Rename binary
-        run: cp target/${{ matrix.target }}/release/akroasis ${{ matrix.artifact }}
+        id: artifact
+        run: |
+          cp target/${{ matrix.target }}/release/akroasis ${{ matrix.artifact }}
+          echo "bin=${{ matrix.artifact }}" >> "$GITHUB_OUTPUT"
+          echo "BIN=${{ matrix.artifact }}" >> "$GITHUB_ENV"
       - name: Generate checksum
-        run: sha256sum ${{ matrix.artifact }} > ${{ matrix.artifact }}.sha256
+        run: sha256sum "$BIN" > "$BIN.sha256"
       - name: Upload binary and checksum
         run: |
           gh release upload "${GITHUB_REF#refs/tags/}" \
-            ${{ matrix.artifact }} \
-            ${{ matrix.artifact }}.sha256 \
+            "$BIN" \
+            "$BIN.sha256" \
+            --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Generate CycloneDX SBOM
+        uses: anchore/sbom-action@57aae528053a48a3f6235f2d9461b05fbcb7366d # v0
+        with:
+          artifact-name: ${{ steps.artifact.outputs.bin }}.cdx.json
+          format: cyclonedx-json
+          output-file: ${{ steps.artifact.outputs.bin }}.cdx.json
+          upload-artifact: false
+          upload-release-assets: false
+      - name: Generate SPDX SBOM
+        uses: anchore/sbom-action@57aae528053a48a3f6235f2d9461b05fbcb7366d # v0
+        with:
+          artifact-name: ${{ steps.artifact.outputs.bin }}.spdx.json
+          format: spdx-json
+          output-file: ${{ steps.artifact.outputs.bin }}.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+      - name: Upload SBOMs
+        run: |
+          gh release upload "${GITHUB_REF#refs/tags/}" \
+            "$BIN.cdx.json" \
+            "$BIN.spdx.json" \
+            --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Attest binary provenance
+        id: attest-provenance
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
+        with:
+          subject-path: ${{ steps.artifact.outputs.bin }}
+      - name: Attest CycloneDX SBOM
+        id: attest-cyclonedx-sbom
+        uses: actions/attest-sbom@5026d3663739160db546203eeaffa6aa1c51a4d6 # v1
+        with:
+          subject-path: ${{ steps.artifact.outputs.bin }}
+          sbom-path: ${{ steps.artifact.outputs.bin }}.cdx.json
+      - name: Attest SPDX SBOM
+        id: attest-spdx-sbom
+        uses: actions/attest-sbom@5026d3663739160db546203eeaffa6aa1c51a4d6 # v1
+        with:
+          subject-path: ${{ steps.artifact.outputs.bin }}
+          sbom-path: ${{ steps.artifact.outputs.bin }}.spdx.json
+      - name: Upload attestation bundles
+        run: |
+          cp "${{ steps.attest-provenance.outputs.bundle-path }}" "$BIN.provenance.intoto.jsonl"
+          cp "${{ steps.attest-cyclonedx-sbom.outputs.bundle-path }}" "$BIN.cdx.intoto.jsonl"
+          cp "${{ steps.attest-spdx-sbom.outputs.bundle-path }}" "$BIN.spdx.intoto.jsonl"
+          gh release upload "${GITHUB_REF#refs/tags/}" \
+            "$BIN.provenance.intoto.jsonl" \
+            "$BIN.cdx.intoto.jsonl" \
+            "$BIN.spdx.intoto.jsonl" \
             --clobber
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -53,7 +53,7 @@ impl Baseline {
         let delta = value - self.mean;
         self.mean += delta / (self.count as f64); // SAFETY: u64→f64 precision loss only matters beyond 2^53 observations; statistical accumulation
         let delta2 = value - self.mean;
-        self.m2 += delta * delta2;
+        self.m2 = delta.mul_add(delta2, self.m2);
         if value < self.min {
             self.min = value;
         }
@@ -156,7 +156,7 @@ impl Baseline {
         let self_weight = self.count as f64; // SAFETY: u64→f64 precision loss only matters beyond 2^53 observations
         let other_weight = other.count as f64; // SAFETY: u64→f64 precision loss only matters beyond 2^53 observations
         let combined_weight = combined_count as f64; // SAFETY: u64→f64 precision loss only matters beyond 2^53 observations
-        self.mean += delta * (other_weight / combined_weight);
+        self.mean = delta.mul_add(other_weight / combined_weight, self.mean);
         self.m2 += (delta * delta).mul_add(self_weight * other_weight / combined_weight, other.m2);
         self.count = combined_count;
         if other.min < self.min {
