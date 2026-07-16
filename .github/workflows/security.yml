@@ -76,11 +76,23 @@ jobs:
 
   osv-scanner:
     name: osv-scanner
-    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@9a498708959aeaef5ef730655706c5a1df1edbc2
-    with:
-      scan-args: |-
-        --lockfile=./Cargo.lock
-        --config=./osv-scanner.toml
-    permissions:
-      security-events: write
-      contents: read
+    # WHY: google/osv-scanner-action's reusable workflow startup-fails when
+    # invoked from this repo (and hardcodes runner policy kanon rejects) —
+    # run the pinned scanner directly, per kanon's fleet-canonical pattern.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
+      - name: Install pinned osv-scanner
+        run: |
+          curl -fsSL --retry 3 \
+            "https://github.com/google/osv-scanner/releases/download/v2.3.8/osv-scanner_linux_amd64" \
+            -o /tmp/osv-scanner
+          chmod +x /tmp/osv-scanner
+          /tmp/osv-scanner --version | grep -q '^osv-scanner version: 2\.3\.8$' || {
+            echo "ERROR: downloaded binary version mismatch" >&2; exit 1; }
+          echo "/tmp" >> "$GITHUB_PATH"
+      - name: osv scanner
+        run: osv-scanner scan source --config=osv-scanner.toml --lockfile=Cargo.lock
