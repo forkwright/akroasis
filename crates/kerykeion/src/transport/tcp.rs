@@ -84,7 +84,7 @@ async fn tcp_connect(addr: &str, port: u16, timeout: Duration) -> Result<TcpStre
                 format!("connect to {target} timed out after {}s", timeout.as_secs()),
             ),
             addr: target.clone(),
-            location: snafu::Location::new(file!(), line!(), column!()),
+            location: snafu::location!(),
         })?
         .context(TcpConnectSnafu { addr: target })
 }

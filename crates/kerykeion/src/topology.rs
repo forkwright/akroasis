@@ -330,7 +330,7 @@ impl MeshTopology {
         let snapshot = TopologySnapshot { nodes, links };
         serde_json::to_vec(&snapshot).map_err(|source| crate::Error::TopologySnapshot {
             source,
-            location: snafu::Location::new(file!(), line!(), column!()),
+            location: snafu::location!(),
         })
     }
 
@@ -343,7 +343,7 @@ impl MeshTopology {
         let snapshot: TopologySnapshot =
             serde_json::from_slice(data).map_err(|source| crate::Error::TopologySnapshot {
                 source,
-                location: snafu::Location::new(file!(), line!(), column!()),
+                location: snafu::location!(),
             })?;
 
         let mut topo = Self::new();

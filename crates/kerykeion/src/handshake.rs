@@ -154,12 +154,12 @@ pub async fn handshake_with_config(
                 "config dump timed out after {}s (want_config_id={want_config_id})",
                 handshake_timeout.as_secs()
             ),
-            location: snafu::Location::new(file!(), line!(), column!()),
+            location: snafu::location!(),
         })??;
 
     let my_node_num = my_node_num.ok_or_else(|| Error::HandshakeFailed {
         detail: "radio did not send MyNodeInfo".to_owned(),
-        location: snafu::Location::new(file!(), line!(), column!()),
+        location: snafu::location!(),
     })?;
 
     Ok(HandshakeResult {

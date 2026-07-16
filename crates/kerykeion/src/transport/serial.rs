@@ -78,7 +78,7 @@ fn open_serial_stream(port: &str, baud: u32) -> Result<SerialStream, Error> {
         .map_err(|e| Error::SerialConnect {
             source: std::io::Error::other(e),
             port: port.to_owned(),
-            location: snafu::Location::new(file!(), line!(), column!()),
+            location: snafu::location!(),
         })?;
 
     // WHY: Meshtastic firmware does not use hardware handshake lines; asserting

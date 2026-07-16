@@ -1,0 +1,11 @@
+# osv-scanner ignore list — mirrors deny.toml's [[advisories.ignore]] set
+# (deny.toml is the single source of truth; kanon gate enforces three-way
+# parity across deny.toml, .cargo/audit.toml, and this file).
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2025-0119"
+reason = "number_prefix unmaintained, transitive via indicatif; no safe upgrade available upstream."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0097"
+reason = "rand 0.9.2 unsound only when a custom logger re-enters rand::rng(); unreachable in akroasis. Transitive via ulid + proptest (dev-only)."
