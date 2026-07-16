@@ -472,3 +472,92 @@ fn list_shows_entry_status() {
         }
     }
 }
+
+// -----------------------------------------------------------------
+// Filesystem permissions (akroasis#217)
+// -----------------------------------------------------------------
+
+#[cfg(unix)]
+#[test]
+fn create_restricts_vault_dir_to_owner_on_unix() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = tempfile::tempdir().unwrap();
+    let vault_path = dir.path().join("perms-vault");
+
+    let vault = Vault::create(&vault_path, TEST_PASSPHRASE).unwrap();
+
+    let vault_mode = std::fs::metadata(&vault_path).unwrap().permissions().mode() & 0o777;
+    assert_eq!(
+        vault_mode, 0o700,
+        "vault directory must be owner-only (0700)"
+    );
+
+    drop(vault);
+}
+
+#[cfg(unix)]
+#[test]
+fn create_restricts_header_file_to_owner_on_unix() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = tempfile::tempdir().unwrap();
+    let vault_path = dir.path().join("perms-header-vault");
+
+    let vault = Vault::create(&vault_path, TEST_PASSPHRASE).unwrap();
+
+    let header_mode = std::fs::metadata(vault_path.join(HEADER_FILE))
+        .unwrap()
+        .permissions()
+        .mode()
+        & 0o777;
+    assert_eq!(
+        header_mode, 0o600,
+        "header.json (the passphrase key-check oracle) must be owner-only (0600)"
+    );
+
+    drop(vault);
+}
+
+#[cfg(unix)]
+#[test]
+fn create_restricts_data_dir_to_owner_on_unix() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = tempfile::tempdir().unwrap();
+    let vault_path = dir.path().join("perms-data-vault");
+
+    let vault = Vault::create(&vault_path, TEST_PASSPHRASE).unwrap();
+
+    let data_mode = std::fs::metadata(vault_path.join(DATA_DIR))
+        .unwrap()
+        .permissions()
+        .mode()
+        & 0o777;
+    assert_eq!(
+        data_mode, 0o700,
+        "fjall data directory must be owner-only (0700)"
+    );
+
+    drop(vault);
+}
+
+#[cfg(unix)]
+#[test]
+fn create_restricts_lock_file_to_owner_on_unix() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = tempfile::tempdir().unwrap();
+    let vault_path = dir.path().join("perms-lock-vault");
+
+    let vault = Vault::create(&vault_path, TEST_PASSPHRASE).unwrap();
+
+    let lock_mode = std::fs::metadata(vault_path.join(LOCK_FILE))
+        .unwrap()
+        .permissions()
+        .mode()
+        & 0o777;
+    assert_eq!(lock_mode, 0o600, "vault.lock must be owner-only (0600)");
+
+    drop(vault);
+}
