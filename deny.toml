@@ -7,13 +7,17 @@ all-features = false
 # WHY: keep in sync with .cargo/audit.toml's [advisories.ignore] array.
 # cargo-audit does not read deny.toml, so any ignore lives in both files.
 
-[[advisories.ignore]]
-id = "RUSTSEC-2025-0119"
-reason = "number_prefix unmaintained, transitive via indicatif; no safe upgrade available upstream."
-
-[[advisories.ignore]]
-id = "RUSTSEC-2026-0097"
-reason = "rand 0.9.2 unsound only when a custom logger re-enters rand::rng(); akroasis uses tracing-subscriber with no custom logger that calls into rand, so the condition is unreachable. Pulled in transitively via ulid 1.2.1 (semaino/koinon/syntonia/kryphos/kerykeion) and proptest 1.11.0 (dev-only)."
+ignore = [
+    # number_prefix unmaintained, transitive via indicatif; no safe
+    # upgrade available upstream.
+    "RUSTSEC-2025-0119",
+    # rand 0.9.2 unsound only when a custom logger re-enters rand::rng();
+    # akroasis uses tracing-subscriber with no custom logger that calls
+    # into rand, so the condition is unreachable. Pulled in transitively
+    # via ulid 1.2.1 (semaino/koinon/syntonia/kryphos/kerykeion) and
+    # proptest 1.11.0 (dev-only).
+    "RUSTSEC-2026-0097",
+]
 
 [licenses]
 # WHY: AGPL-3.0-only is the workspace license itself (declared in
