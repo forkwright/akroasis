@@ -14,6 +14,7 @@ use std::fmt;
 
 use snafu::Snafu;
 
+use super::ident::RadioIdent;
 use crate::types::PowerLevel;
 
 // ── Magic byte sequences ────────────────────────────────────────────────────
@@ -233,23 +234,6 @@ pub fn uv5rm_plus_config() -> VariantConfig {
     }
 }
 
-// ── RadioIdent ───────────────────────────────────────────────────────────────
-
-/// Raw identification bytes received from the radio during handshake.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RadioIdent {
-    /// Raw ident bytes from the radio's response to the IDENTIFY command.
-    pub raw: Vec<u8>,
-}
-
-impl RadioIdent {
-    /// Extract the firmware prefix as a UTF-8 string (lossy).
-    #[must_use]
-    pub fn firmware_prefix(&self) -> String {
-        String::from_utf8_lossy(&self.raw).to_string()
-    }
-}
-
 // ── Errors ───────────────────────────────────────────────────────────────────
 
 /// Errors from variant identification.
@@ -275,30 +259,31 @@ const BF_F8HP_PREFIXES: &[&str] = &["BFP3V3 F", "N5R-3", "N5R3", "F5R3", "BFT"];
 
 /// Identify the radio variant from its firmware ident bytes.
 ///
-/// Matches known firmware prefixes against the ident string. Returns the
-/// appropriate [`VariantConfig`] for the identified variant.
+/// Matches known firmware prefixes against the full 8-byte normalized ident
+/// (not [`RadioIdent::firmware_prefix`], which is truncated to 6 chars for
+/// display — `BF_F8HP_PREFIXES` includes an 8-char prefix that needs all
+/// 8 bytes to match). Returns the appropriate [`VariantConfig`] for the
+/// identified variant.
 ///
 /// # Errors
 ///
 /// Returns [`VariantError::UnknownVariant`] if the ident does not match any
 /// known prefix, including the raw bytes as hex for debugging.
 pub fn identify_variant(ident: &RadioIdent) -> Result<VariantConfig, VariantError> {
-    let prefix = ident.firmware_prefix();
-
     for &pfx in BF_F8HP_PREFIXES {
-        if prefix.starts_with(pfx) {
+        if ident.normalized.as_slice().starts_with(pfx.as_bytes()) {
             return Ok(bf_f8hp_config());
         }
     }
 
     for &pfx in UV5R_PREFIXES {
-        if prefix.starts_with(pfx) {
+        if ident.normalized.as_slice().starts_with(pfx.as_bytes()) {
             return Ok(uv5r_config());
         }
     }
 
     UnknownVariantSnafu {
-        raw_hex: hex_encode(&ident.raw),
+        raw_hex: hex_encode(&ident.raw_bytes),
     }
     .fail()
 }
@@ -323,71 +308,73 @@ fn hex_encode(bytes: &[u8]) -> String {
 mod tests {
     use super::*;
 
+    // WHY: `RadioIdent::from_raw` only accepts 8- or 12-byte wire responses
+    // (the real UV-5R framing), so these firmware strings are padded to 8
+    // bytes with filler that never collides with a known prefix. `starts_with`
+    // matching means the trailing filler bytes never affect which variant wins.
     #[test]
-    fn identify_bfb_firmware_as_uv5r() {
-        let ident = RadioIdent {
-            raw: b"BFB297".to_vec(),
-        };
+    fn identify_bfb_firmware_as_uv5r() -> Result<(), &'static str> {
+        let ident = RadioIdent::from_raw(b"BFB297\x00\x00").ok_or("8-byte literal must parse")?;
         let config = identify_variant(&ident).unwrap();
         assert_eq!(config.variant, RadioVariant::Uv5r);
+        Ok(())
     }
 
     #[test]
-    fn identify_bfs_firmware_as_uv5r() {
-        let ident = RadioIdent {
-            raw: b"BFS300".to_vec(),
-        };
+    fn identify_bfs_firmware_as_uv5r() -> Result<(), &'static str> {
+        let ident = RadioIdent::from_raw(b"BFS300\x00\x00").ok_or("8-byte literal must parse")?;
         let config = identify_variant(&ident).unwrap();
         assert_eq!(config.variant, RadioVariant::Uv5r);
+        Ok(())
     }
 
     #[test]
-    fn identify_n5r2_firmware_as_uv5r() {
-        let ident = RadioIdent {
-            raw: b"N5R-2".to_vec(),
-        };
+    fn identify_n5r2_firmware_as_uv5r() -> Result<(), &'static str> {
+        let ident =
+            RadioIdent::from_raw(b"N5R-2\x00\x00\x00").ok_or("8-byte literal must parse")?;
         let config = identify_variant(&ident).unwrap();
         assert_eq!(config.variant, RadioVariant::Uv5r);
+        Ok(())
     }
 
     #[test]
-    fn identify_bfp3v3_firmware_as_f8hp() {
-        let ident = RadioIdent {
-            raw: b"BFP3V3 F".to_vec(),
-        };
+    fn identify_bfp3v3_firmware_as_f8hp() -> Result<(), &'static str> {
+        // WHY: "BFP3V3 F" is exactly 8 bytes — the one known prefix that needs
+        // the full normalized ident, not the 6-char firmware_prefix field.
+        let ident = RadioIdent::from_raw(b"BFP3V3 F").ok_or("8-byte literal must parse")?;
         let config = identify_variant(&ident).unwrap();
         assert_eq!(config.variant, RadioVariant::BfF8hp);
+        Ok(())
     }
 
     #[test]
-    fn identify_n5r3_firmware_as_f8hp() {
-        let ident = RadioIdent {
-            raw: b"N5R-3".to_vec(),
-        };
+    fn identify_n5r3_firmware_as_f8hp() -> Result<(), &'static str> {
+        let ident =
+            RadioIdent::from_raw(b"N5R-3\x00\x00\x00").ok_or("8-byte literal must parse")?;
         let config = identify_variant(&ident).unwrap();
         assert_eq!(config.variant, RadioVariant::BfF8hp);
+        Ok(())
     }
 
     #[test]
-    fn identify_bft_firmware_as_f8hp() {
-        let ident = RadioIdent {
-            raw: b"BFT123".to_vec(),
-        };
+    fn identify_bft_firmware_as_f8hp() -> Result<(), &'static str> {
+        let ident = RadioIdent::from_raw(b"BFT123\x00\x00").ok_or("8-byte literal must parse")?;
         let config = identify_variant(&ident).unwrap();
         assert_eq!(config.variant, RadioVariant::BfF8hp);
+        Ok(())
     }
 
     #[test]
-    fn unknown_firmware_returns_error_with_raw_bytes() {
-        let ident = RadioIdent {
-            raw: vec![0xDE, 0xAD, 0xBE, 0xEF],
-        };
+    fn unknown_firmware_returns_error_with_raw_bytes() -> Result<(), &'static str> {
+        let ident = RadioIdent::from_raw(&[0xDE, 0xAD, 0xBE, 0xEF, 0x00, 0x00, 0x00, 0x00])
+            .ok_or("8-byte literal must parse")?;
         let err = identify_variant(&ident).unwrap_err();
         let msg = err.to_string();
         assert!(
             msg.contains("DE AD BE EF"),
             "error should contain hex bytes, got: {msg}"
         );
+        Ok(())
     }
 
     #[test]
@@ -463,15 +450,6 @@ mod tests {
         );
         assert_eq!(RadioVariant::BfF8hp.to_string(), "Baofeng BF-F8HP");
         assert_eq!(RadioVariant::Uv5rmPlus.to_string(), "Baofeng UV-5RM Plus");
-    }
-
-    #[test]
-    fn radio_ident_firmware_prefix_handles_utf8() {
-        let ident = RadioIdent {
-            raw: b"BFB297\x00\xFF".to_vec(),
-        };
-        let prefix = ident.firmware_prefix();
-        assert!(prefix.starts_with("BFB297"));
     }
 
     #[test]
