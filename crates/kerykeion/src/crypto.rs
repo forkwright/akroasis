@@ -85,7 +85,7 @@ pub(crate) fn apply_aes_ctr(
             let mut cipher = Ctr128LE::<Aes128>::new_from_slices(key, &nonce).map_err(|e| {
                 Error::Encryption {
                     detail: format!("AES-128 init failed: {e}"),
-                    location: snafu::Location::new(file!(), line!(), column!()),
+                    location: snafu::location!(),
                 }
             })?;
             cipher.apply_keystream(data);
@@ -94,7 +94,7 @@ pub(crate) fn apply_aes_ctr(
             let mut cipher = Ctr128LE::<Aes256>::new_from_slices(key, &nonce).map_err(|e| {
                 Error::Encryption {
                     detail: format!("AES-256 init failed: {e}"),
-                    location: snafu::Location::new(file!(), line!(), column!()),
+                    location: snafu::location!(),
                 }
             })?;
             cipher.apply_keystream(data);

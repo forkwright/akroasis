@@ -138,7 +138,7 @@ impl StoreForward {
             .collect();
         serde_json::to_vec(&serializable).map_err(|source| Error::StoreForwardSerde {
             source,
-            location: snafu::Location::new(file!(), line!(), column!()),
+            location: snafu::location!(),
         })
     }
 
@@ -151,7 +151,7 @@ impl StoreForward {
         let raw: HashMap<u32, Vec<StoredMessage>> =
             serde_json::from_slice(data).map_err(|source| Error::StoreForwardSerde {
                 source,
-                location: snafu::Location::new(file!(), line!(), column!()),
+                location: snafu::location!(),
             })?;
         self.queues = raw
             .into_iter()

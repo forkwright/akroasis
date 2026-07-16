@@ -375,7 +375,7 @@ impl Collector for MeshCollector { // kanon:ignore ARCHITECTURE/trait-impl-coloc
                     .first()
                     .ok_or_else(|| Error::ConnectionLost {
                         detail: "no active connections".into(),
-                        location: snafu::Location::new(file!(), line!(), column!()),
+                        location: snafu::location!(),
                     })?,
             );
 

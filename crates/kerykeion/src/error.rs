@@ -242,7 +242,7 @@ impl From<std::io::Error> for Error {
     fn from(e: std::io::Error) -> Self {
         Self::ConnectionLost {
             detail: e.to_string(),
-            location: snafu::Location::new(file!(), line!(), column!()),
+            location: snafu::location!(),
         }
     }
 }
@@ -271,7 +271,7 @@ mod tests {
     fn invalid_channel_message() {
         let err = Error::InvalidChannel {
             index: 9,
-            location: snafu::Location::new(file!(), line!(), column!()),
+            location: snafu::location!(),
         };
         assert!(err.to_string().contains('9'));
     }
@@ -280,7 +280,7 @@ mod tests {
     fn node_not_found_message() {
         let err = Error::NodeNotFound {
             node_num: 0xDEAD_BEEF,
-            location: snafu::Location::new(file!(), line!(), column!()),
+            location: snafu::location!(),
         };
         assert!(err.to_string().contains("0xdeadbeef"));
     }

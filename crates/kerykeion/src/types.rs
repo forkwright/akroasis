@@ -53,13 +53,13 @@ impl ChannelIndex {
     /// # Errors
     ///
     /// Returns [`crate::error::Error::InvalidChannel`] if `index >= MAX_CHANNELS`.
-    pub fn new(index: u8) -> Result<Self, crate::error::Error> {
+    pub const fn new(index: u8) -> Result<Self, crate::error::Error> {
         if index < MAX_CHANNELS {
             Ok(Self(index))
         } else {
             Err(crate::error::Error::InvalidChannel {
                 index,
-                location: snafu::Location::new(file!(), line!(), column!()),
+                location: snafu::location!(),
             })
         }
     }
