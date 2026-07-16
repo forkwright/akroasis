@@ -9,16 +9,26 @@
 
 use std::time::Duration;
 
+use prost::Message as _;
+
 use crate::config::OutboundConfig;
 use crate::delivery::{DeliveryFailure, DeliveryTracker};
 use crate::outbound::{OutboundQueue, PendingMessage};
 use crate::proto::MeshPacket;
-use crate::proto::mesh_packet::Priority;
+use crate::proto::mesh_packet::{PayloadVariant, Priority};
 use crate::store_forward::{StoreForward, StoredMessage};
 use crate::types::{NodeNum, PacketId};
 
 // Historical defaults (ack_timeout = 30 s, sf_ttl = 3600 s) now live in
 // [`OutboundConfig::default`].
+
+/// Returns the current wall-clock time as epoch milliseconds.
+///
+/// WARNING: falls back to the epoch (0) on an out-of-range clock read, which
+/// only happens for a system clock set before 1970 — never in practice.
+fn now_ms() -> u64 {
+    u64::try_from(jiff::Timestamp::now().as_millisecond()).unwrap_or(0)
+}
 
 /// Orchestrates the full outbound send path.
 ///
@@ -144,15 +154,19 @@ impl MeshRouter {
                 retries: 0,
             });
         } else {
+            let portnum = match &packet.payload_variant {
+                Some(PayloadVariant::Decoded(data)) => data.portnum,
+                _ => 0,
+            };
             self.store_forward.store(
                 NodeNum(dest),
                 StoredMessage {
-                    packet_bytes: Vec::new(),
+                    packet_bytes: packet.encode_to_vec(),
                     packet_id: id.0,
                     dest,
-                    portnum: 0,
+                    portnum,
                     priority: i32::from(options.priority),
-                    stored_at_ms: 0,
+                    stored_at_ms: now_ms(),
                     ttl_secs: options.ttl_secs,
                     delivery_attempts: 0,
                 },
@@ -203,26 +217,19 @@ impl MeshRouter {
 
     /// Flush stored messages for a node that just came online.
     ///
-    /// Moves messages FROM store-and-forward INTO the outbound queue.
+    /// Moves messages FROM store-and-forward INTO the outbound queue, decoding
+    /// each `packet_bytes` back into the original [`MeshPacket`] so the
+    /// re-enqueued message carries its real payload and header fields
+    /// (`from`, `hop_limit`, `hop_start`, ...) rather than a synthetic shell.
     pub fn node_came_online(&mut self, dest: NodeNum) {
         let stored = self.store_forward.drain_for(dest);
         for msg in stored {
             let priority = Priority::try_from(msg.priority).unwrap_or(Priority::Default);
-            // WHY: re-enqueue stored messages as fresh pending messages.
-            let packet = MeshPacket {
-                from: 0,
-                to: msg.dest,
-                channel: 0,
-                id: msg.packet_id,
-                rx_time: 0,
-                rx_snr: 0.0,
-                hop_limit: 3,
-                want_ack: true,
-                priority: msg.priority,
-                rx_rssi: 0,
-                via_mqtt: false,
-                hop_start: 3,
-                payload_variant: None,
+            // WARNING: packet_bytes is only ever written by `send` on this
+            // same type, so decode failure here would indicate corruption;
+            // skip rather than deliver a garbage/partial packet.
+            let Ok(packet) = MeshPacket::decode(msg.packet_bytes.as_slice()) else {
+                continue;
             };
             self.outbound.enqueue(PendingMessage {
                 packet,
@@ -253,6 +260,7 @@ mod tests {
     use super::*;
     use crate::config::StoreForwardConfig;
     use crate::delivery::DeliveryStatus;
+    use crate::proto::Data;
 
     fn make_router() -> MeshRouter {
         MeshRouter::new(
@@ -393,6 +401,93 @@ mod tests {
         };
         let opts = SendOptions::with_config(&cfg);
         assert_eq!(opts.ttl_secs, 42);
+    }
+
+    #[test]
+    fn store_forward_round_trips_payload_and_header_on_flush() {
+        // WHY (akroasis#189): store-and-forward must not silently drop the
+        // packet content — the flushed message must carry the same payload
+        // bytes and original header fields the sender gave it, not a
+        // synthetic all-defaults shell.
+        let mut router = make_router();
+        let dest = NodeNum(0xBBBB);
+
+        let packet = MeshPacket {
+            payload_variant: Some(PayloadVariant::Decoded(Data {
+                portnum: 1,
+                payload: b"secret mesh payload".to_vec(),
+                want_response: false,
+                dest: 0,
+                source: 0,
+                request_id: 0,
+                reply_id: 0,
+                emoji: vec![],
+            })),
+            ..make_packet(42)
+        };
+
+        #[expect(clippy::unwrap_used, reason = "test-only")]
+        router.send(packet, false, &SendOptions::default()).unwrap();
+        assert_eq!(router.store_forward.total_stored(), 1);
+
+        router.node_came_online(dest);
+        assert_eq!(router.store_forward.total_stored(), 0);
+
+        #[expect(
+            clippy::unwrap_used,
+            reason = "test-only: flush must produce a pending message"
+        )]
+        let flushed = router.next_to_send().unwrap();
+        assert_eq!(
+            flushed.packet.from, 0xAAAA,
+            "original `from` must survive the round-trip"
+        );
+        assert_eq!(flushed.packet.hop_limit, 3);
+        assert_eq!(flushed.packet.hop_start, 3);
+        assert!(
+            matches!(
+                &flushed.packet.payload_variant,
+                Some(PayloadVariant::Decoded(data))
+                    if data.payload == b"secret mesh payload" && data.portnum == 1
+            ),
+            "decoded payload must round-trip byte-identical, got {:?}",
+            flushed.packet.payload_variant
+        );
+    }
+
+    #[test]
+    fn store_forward_records_real_wall_clock_and_prunes_after_ttl() {
+        // WHY (akroasis#236): stored_at_ms must be a real epoch timestamp —
+        // a hardcoded 0 makes prune_expired() drop every message
+        // immediately against any real now_ms.
+        let mut router = make_router();
+        let before_ms = now_ms();
+
+        let opts = SendOptions {
+            ttl_secs: 1,
+            ..SendOptions::default()
+        };
+        #[expect(clippy::unwrap_used, reason = "test-only")]
+        router.send(make_packet(30), false, &opts).unwrap();
+
+        let after_ms = now_ms();
+        assert_eq!(router.store_forward.total_stored(), 1);
+
+        // Still within its 1s TTL from a real stored_at_ms.
+        router.store_forward.prune_expired(before_ms + 200);
+        assert_eq!(
+            router.store_forward.total_stored(),
+            1,
+            "message stored with a real stored_at_ms must survive within its TTL"
+        );
+
+        // Comfortably past stored_at_ms + ttl_secs * 1000.
+        router.store_forward.prune_expired(after_ms + 2000);
+        assert_eq!(
+            router.store_forward.total_stored(),
+            0,
+            "message must expire once now_ms passes stored_at_ms + ttl"
+        );
     }
 
     #[test]
