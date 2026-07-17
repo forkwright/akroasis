@@ -228,49 +228,49 @@ hash = "6a06b74f070ed7106dd94ee3413828f8c7a171437a3338fa22527aa88886f164"
 [[baseline.entry]]
 rule = "RUST/no-arc-mutex-anti-pattern"
 file = "crates/kerykeion/src/collector.rs"
-line = 196
+line = 218
 hash = "6c4fbdc699709e234c39f0621e36131eabe6268dee8700e65bd8765a1c0b02a6"
 
 [[baseline.entry]]
 rule = "RUST/no-arc-mutex-anti-pattern"
 file = "crates/kerykeion/src/collector.rs"
-line = 210
+line = 232
 hash = "9e8262782b39ce943612317d40851d93d1040432f2479d2201dcd2b84c9db818"
 
 [[baseline.entry]]
 rule = "RUST/no-arc-mutex-anti-pattern"
 file = "crates/kerykeion/src/collector.rs"
-line = 223
+line = 245
 hash = "6126ff9755ca718aded3f0a24e05cadaf317d3edad98f9aedbd00c123b19319a"
 
 [[baseline.entry]]
 rule = "RUST/no-arc-mutex-anti-pattern"
 file = "crates/kerykeion/src/collector.rs"
-line = 239
+line = 261
 hash = "5e18bdda2077885c5995a7b1e486419e3c37a328e8ccf861cb234288e0420668"
 
 [[baseline.entry]]
 rule = "RUST/no-arc-mutex-anti-pattern"
 file = "crates/kerykeion/src/collector.rs"
-line = 240
+line = 262
 hash = "76da9249c02084d15c951639a9643e705682e786062e46b648768d514edeb97b"
 
 [[baseline.entry]]
 rule = "RUST/no-arc-mutex-anti-pattern"
 file = "crates/kerykeion/src/collector.rs"
-line = 361
+line = 383
 hash = "bf306ffa19e0898259628da1f361f4eb4ae5c88aad26958e332195a046bc5ce6"
 
 [[baseline.entry]]
 rule = "RUST/no-arc-mutex-anti-pattern"
 file = "crates/kerykeion/src/collector.rs"
-line = 457
+line = 481
 hash = "fe75cd33cc7a9ea08308572303acddc654b313d47a6c7969553439d2cd8339dd"
 
 [[baseline.entry]]
 rule = "RUST/no-arc-mutex-anti-pattern"
 file = "crates/kerykeion/src/collector.rs"
-line = 458
+line = 482
 hash = "016035fd0887be2ed9c1d41200342155076e945454ac95fbcd579ad42072e79d"
 
 [[baseline.entry]]
@@ -426,7 +426,7 @@ hash = "f28d8457ac1f397d47a7e1db846e1638b130dbf187cd2bb719a689b1110dd5cb"
 [[baseline.entry]]
 rule = "RUST/no-silent-result-swallow"
 file = "crates/kerykeion/src/processor.rs"
-line = 142
+line = 145
 hash = "12d8c877131f8e3d806c7b15851366aab2dcee5f079623731a8f08e9761ec603"
 
 [[baseline.entry]]
