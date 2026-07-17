@@ -24,7 +24,7 @@ use crate::handshake;
 use crate::heartbeat;
 use crate::node_db::NodeDb;
 use crate::outbound::OutboundQueue;
-use crate::processor::PacketProcessor;
+use crate::processor::{PacketProcessor, RoutingProcessor, RoutingResult};
 use crate::proto::{FromRadio, from_radio};
 use crate::router::MeshRouter;
 use crate::store_forward::StoreForward;
@@ -187,6 +187,28 @@ impl MeshCollector {
             id = mesh_packet.id,
             "mesh packet received"
         );
+    }
+
+    /// Applies inbound `ROUTING_APP` ACK/NAK results to the shared router state.
+    ///
+    /// A NAK either schedules a retry (message re-enqueued, still inflight
+    /// budget remaining) or, once retries are exhausted, marks the delivery
+    /// record failed  -  both are [`DeliveryTracker`]'s existing semantics via
+    /// [`RoutingProcessor::apply_routing_result`].
+    async fn dispatch_routing(&self, mesh_packet: &crate::proto::MeshPacket) {
+        let routing_result = RoutingProcessor::process_routing(mesh_packet);
+        if routing_result == RoutingResult::NotRouting {
+            return;
+        }
+
+        let mut guard = self.router.lock().await;
+        let router = &mut *guard;
+        RoutingProcessor::apply_routing_result(
+            &routing_result,
+            &mut router.delivery,
+            &mut router.outbound,
+        );
+        drop(guard);
     }
 
     /// Connects to all configured transports and performs handshakes.
@@ -399,6 +421,8 @@ impl Collector for MeshCollector { // kanon:ignore ARCHITECTURE/trait-impl-coloc
                                 &from_radio.payload_variant
                             {
                                 processor.lock().await.process_mesh_packet(pkt);
+                                // Inbound ACK/NAK: update the delivery tracker + outbound queue.
+                                self.dispatch_routing(pkt).await;
                             }
                         }
                         Err(e) => {
@@ -503,207 +527,5 @@ where
 }
 
 #[cfg(test)]
-mod tests {
-    use tracing::Instrument as _;
-
-    use super::*;
-    use crate::config::{ConnectionConfig, MeshConfig, StoreForwardConfig, TopologyConfig};
-
-    fn make_config(connections: Vec<ConnectionConfig>) -> MeshConfig {
-        MeshConfig {
-            connections,
-            store_forward: StoreForwardConfig::default(),
-            topology: TopologyConfig::default(),
-            ..MeshConfig::default()
-        }
-    }
-
-    fn make_tx() -> broadcast::Sender<GeoSignal> {
-        broadcast::channel(16).0
-    }
-
-    #[test]
-    fn name_is_kerykeion() {
-        let c = MeshCollector::new(make_config(vec![]));
-        assert_eq!(c.name(), "kerykeion");
-    }
-
-    #[tokio::test]
-    async fn probe_false_when_no_connections() {
-        let c = MeshCollector::new(make_config(vec![]));
-        assert!(!c.probe().await);
-    }
-
-    #[tokio::test]
-    async fn probe_false_when_serial_device_missing() {
-        let c = MeshCollector::new(make_config(vec![ConnectionConfig::Serial {
-            port: "/dev/nonexistent_device_xyz".into(),
-            baud: 115_200,
-        }]));
-        assert!(!c.probe().await, "should not probe true for missing device");
-    }
-
-    #[tokio::test]
-    async fn run_exits_with_no_connections() {
-        let mut c = MeshCollector::new(make_config(vec![]));
-        let token = CancellationToken::new();
-        let result = c.run(make_tx(), token).await;
-        assert!(result.is_ok(), "should exit cleanly with no connections");
-    }
-
-    #[tokio::test]
-    async fn node_db_starts_empty() {
-        let c = MeshCollector::new(make_config(vec![]));
-        assert!(c.node_db().lock().await.is_empty());
-    }
-
-    #[tokio::test]
-    async fn process_packet_adds_node_to_db() {
-        let c = MeshCollector::new(make_config(vec![]));
-        let pkt = FromRadio {
-            id: 1,
-            payload_variant: Some(from_radio::PayloadVariant::Packet(
-                crate::proto::MeshPacket {
-                    from: 0xDEAD,
-                    to: 0xFFFF_FFFF,
-                    rx_snr: 5.0,
-                    hop_start: 3,
-                    hop_limit: 1,
-                    ..Default::default()
-                },
-            )),
-        };
-
-        c.process_packet(&pkt).await;
-
-        let db = c.node_db().lock().await;
-        let node = db.get(crate::types::NodeNum(0xDEAD)).cloned();
-        drop(db);
-        assert!(node.is_some(), "node should be in database");
-        #[expect(clippy::unwrap_used, reason = "test-only: checked above")]
-        let node = node.unwrap();
-        assert_eq!(node.snr, Some(5.0));
-        assert_eq!(node.hop_count, Some(2));
-    }
-
-    #[tokio::test]
-    async fn process_packet_updates_existing_node() {
-        let c = MeshCollector::new(make_config(vec![]));
-
-        {
-            let mut db = c.node_db().lock().await;
-            db.insert(crate::node_db::MeshNode {
-                num: crate::types::NodeNum(0xBEEF),
-                user: None,
-                position: None,
-                metrics: None,
-                last_heard: None,
-                snr: Some(1.0),
-                hop_count: None,
-            });
-        }
-
-        let pkt = FromRadio {
-            id: 2,
-            payload_variant: Some(from_radio::PayloadVariant::Packet(
-                crate::proto::MeshPacket {
-                    from: 0xBEEF,
-                    to: 0xFFFF_FFFF,
-                    rx_snr: 8.5,
-                    hop_start: 3,
-                    hop_limit: 2,
-                    ..Default::default()
-                },
-            )),
-        };
-
-        c.process_packet(&pkt).await;
-
-        let db = c.node_db().lock().await;
-        let node = db.get(crate::types::NodeNum(0xBEEF)).cloned();
-        drop(db);
-        #[expect(clippy::unwrap_used, reason = "test-only: known present")]
-        let node = node.unwrap();
-        assert_eq!(node.snr, Some(8.5), "SNR should be updated");
-        assert_eq!(node.hop_count, Some(1), "hop count should be updated");
-    }
-
-    #[tokio::test]
-    async fn process_empty_payload_is_noop() {
-        let c = MeshCollector::new(make_config(vec![]));
-        let pkt = FromRadio {
-            id: 0,
-            payload_variant: None,
-        };
-        c.process_packet(&pkt).await;
-        assert!(
-            c.node_db().lock().await.is_empty(),
-            "empty payload should not modify db"
-        );
-    }
-
-    #[test]
-    fn compute_hop_count_valid() {
-        assert_eq!(MeshCollector::compute_hop_count(3, 1), Some(2));
-        assert_eq!(MeshCollector::compute_hop_count(7, 0), Some(7));
-    }
-
-    #[test]
-    fn compute_hop_count_zero_start() {
-        assert_eq!(MeshCollector::compute_hop_count(0, 0), None);
-    }
-
-    #[test]
-    fn compute_hop_count_limit_exceeds_start() {
-        assert_eq!(MeshCollector::compute_hop_count(2, 5), None);
-    }
-
-    #[tokio::test]
-    async fn router_starts_empty() {
-        let c = MeshCollector::new(make_config(vec![]));
-        let pending = c.router().lock().await.outbound.pending_count();
-        assert_eq!(pending, 0, "outbound queue should start empty");
-    }
-
-    #[tokio::test]
-    async fn router_flush_cancels_cleanly() {
-        use crate::proto::FromRadio;
-
-        // WHY: mock connection that never receives and accepts all sends.
-        struct NoopConn;
-        impl crate::connection::MeshConnection for NoopConn {
-            async fn send(&mut self, _: crate::proto::ToRadio) -> Result<(), Error> {
-                Ok(())
-            }
-            async fn recv(&mut self) -> Result<FromRadio, Error> {
-                std::future::pending().await
-            }
-            fn is_connected(&self) -> bool {
-                true
-            }
-            async fn reconnect(&mut self) -> Result<(), Error> {
-                Ok(())
-            }
-        }
-
-        let router = Arc::new(Mutex::new(MeshRouter::new(
-            OutboundQueue::new(),
-            StoreForward::new(StoreForwardConfig::default()),
-            DeliveryTracker::new(),
-        )));
-        let conn = Arc::new(Mutex::new(NoopConn));
-        let token = CancellationToken::new();
-        let task_token = token.clone();
-
-        let handle = tokio::spawn(
-            async move { run_router_flush(router, conn, Duration::from_secs(1), task_token).await }
-                .instrument(tracing::info_span!("spawned_task")),
-        );
-
-        // Cancel immediately  -  biased SELECT exits before first tick.
-        token.cancel();
-        #[expect(clippy::unwrap_used, reason = "test-only")]
-        let result = handle.await.unwrap();
-        assert!(result.is_ok(), "router flush should cancel cleanly");
-    }
-}
+#[path = "collector_tests.rs"]
+mod tests;

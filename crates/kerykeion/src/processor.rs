@@ -123,7 +123,10 @@ impl PacketProcessor {
                 self.handle_traceroute(from, packet, &decoded.payload, &mut events);
             }
             p if p == portnum::ROUTING_APP => {
-                handle_routing(&decoded.payload);
+                // WHY: ACK/NAK delivery confirmation needs `DeliveryTracker` +
+                // `OutboundQueue`, which `PacketProcessor` does not own; the
+                // collector receive loop runs `RoutingProcessor` against the
+                // shared router state instead (see `MeshCollector::run`).
             }
             _ => {
                 tracing::trace!(
@@ -430,31 +433,6 @@ impl PacketProcessor {
                 self.topology.update_link(hop_from, hop_to, snr);
             }
         }
-    }
-}
-
-/// Process a routing payload (ACK/NAK tracking).
-fn handle_routing(payload: &[u8]) {
-    let routing = match crate::proto::Routing::decode(payload) {
-        Ok(r) => r,
-        Err(e) => {
-            tracing::warn!(error = %e, "failed to decode ROUTING_APP payload");
-            return;
-        }
-    };
-
-    match &routing.variant {
-        Some(crate::proto::routing::Variant::ErrorReason(code)) => {
-            tracing::debug!(error_code = code, "routing error received");
-        }
-        Some(
-            crate::proto::routing::Variant::RouteRequest(_)
-            | crate::proto::routing::Variant::RouteReply(_),
-        ) => {
-            // WHY: route_request/route_reply are handled via TRACEROUTE_APP portnum.
-            tracing::trace!("routing route_request/route_reply (handled via traceroute)");
-        }
-        None => {}
     }
 }
 
