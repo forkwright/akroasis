@@ -14,11 +14,10 @@
 
 use bytes::{Buf as _, BufMut as _, BytesMut};
 use prost::Message as _;
-use snafu::ResultExt as _;
 use tokio_util::codec::{Decoder, Encoder};
 
 use crate::Error;
-use crate::error::{ProtobufDecodeSnafu, SendFailedSnafu};
+use crate::error::SendFailedSnafu;
 use crate::proto::{FromRadio, ToRadio};
 use crate::types::{FRAME_MAGIC, MAX_PACKET_SIZE};
 
@@ -108,8 +107,25 @@ impl Decoder for MeshCodec {
             // Extract exactly `payload_len` bytes.
             let payload = src.split_to(payload_len);
 
-            let msg = FromRadio::decode(payload.as_ref()).context(ProtobufDecodeSnafu)?;
-            return Ok(Some(msg));
+            // WHY: a malformed protobuf payload inside an otherwise well-framed packet
+            // is a per-packet corruption case, not a transport failure  -  treat it the
+            // same as the other recoverable corruption branches above (bad magic,
+            // oversized/zero length, partial payload).  Propagating `Err` here would
+            // surface as a `Decoder::Error`, and `Framed` tears down the whole receive
+            // stream on any decode error, so a single adversary-controlled frame would
+            // permanently kill mesh reception.
+            match FromRadio::decode(payload.as_ref()) {
+                Ok(msg) => return Ok(Some(msg)),
+                Err(error) => {
+                    // WHY: no explicit `continue`  -  falling off the end of the match
+                    // re-enters the `loop`, which is exactly the recovery behavior we want.
+                    tracing::warn!(
+                        error = %error,
+                        payload_len,
+                        "malformed FromRadio payload; discarding frame and continuing"
+                    );
+                }
+            }
         }
     }
 }
@@ -290,6 +306,46 @@ mod tests {
         assert_eq!(decoded.id, 3);
     }
 
+    /// A well-framed header wrapping a single `0x00` payload byte.
+    ///
+    /// WHY: a lone `0x00` decodes as protobuf tag 0 (field number 0), which prost
+    /// rejects unconditionally as `"invalid tag value: 0"` -- a malformed-protobuf
+    /// payload guaranteed to fail `FromRadio::decode` regardless of which oneof
+    /// variants exist, without needing to hand-craft a specific invalid encoding.
+    fn frame_malformed_payload() -> Vec<u8> {
+        vec![FRAME_MAGIC[0], FRAME_MAGIC[1], 0x00, 0x01, 0x00]
+    }
+
+    #[test]
+    fn decoder_malformed_payload_then_valid_frame_still_decodes() {
+        // akroasis#191: a malformed protobuf payload inside a well-framed packet must
+        // not tear down the stream -- the decoder should discard it and keep decoding
+        // the next valid frame from the same buffer.
+        let mut data = frame_malformed_payload();
+        let valid = make_from_radio(42);
+        data.extend_from_slice(&frame_from_radio(&valid));
+        let mut buf = BytesMut::from(data.as_slice());
+        let mut codec = MeshCodec;
+        #[expect(
+            clippy::unwrap_used,
+            reason = "test-only: must recover and decode the next frame"
+        )]
+        let decoded = codec.decode(&mut buf).unwrap().unwrap();
+        assert_eq!(decoded.id, 42);
+    }
+
+    #[test]
+    fn decoder_malformed_payload_alone_returns_none() {
+        // akroasis#191: with no subsequent frame in the buffer, discarding the
+        // malformed frame must yield `Ok(None)`, never `Err`.
+        let data = frame_malformed_payload();
+        let mut buf = BytesMut::from(data.as_slice());
+        let mut codec = MeshCodec;
+        #[expect(clippy::unwrap_used, reason = "test-only: must not error")]
+        let result = codec.decode(&mut buf).unwrap();
+        assert!(result.is_none());
+    }
+
     // ── Encoder tests ───────────────────────────────────────────────────────
 
     #[test]
@@ -400,20 +456,28 @@ mod tests {
             );
         }
 
-        /// Completely arbitrary byte sequences fed to the decoder never panic.
+        /// Completely arbitrary byte sequences fed to the decoder never panic and never
+        /// return `Err`.
         ///
-        /// WHY: the codec sits on the input side of a serial/TCP transport and must
-        /// be robust against any byte sequence a malfunctioning radio can produce.
-        /// A panic here would crash the entire Akroasis process.
+        /// WHY: the codec sits on the input side of a serial/TCP transport and must be
+        /// robust against any byte sequence a malfunctioning radio -- or an
+        /// adversary-controlled mesh node -- can produce.  A panic would crash the
+        /// entire Akroasis process; an `Err` would surface as a `Decoder::Error`, and
+        /// `Framed` treats any decode error as fatal, tearing down the whole receive
+        /// stream (akroasis#191).  Every corruption class this decoder can encounter
+        /// -- bad magic, oversized/zero length, partial payload, malformed protobuf --
+        /// is recovered in-loop, so `Ok` is the only reachable outcome.
         #[test]
         fn codec_handles_arbitrary_bytes_without_panic(
             bytes in proptest::collection::vec(0_u8..=255_u8, 0_usize..1024_usize),
         ) {
             let mut buf = BytesMut::from(bytes.as_slice());
             let mut codec = MeshCodec;
-            // The only hard requirement is no panic.  Ok(None) or Ok(Some(_)) or Err(_)
-            // are all acceptable outcomes for arbitrary input.
-            let _ = codec.decode(&mut buf);
+            let result = codec.decode(&mut buf);
+            proptest::prop_assert!(
+                result.is_ok(),
+                "arbitrary bytes triggered a Decoder::Error: {:?}", result
+            );
         }
 
         /// Truncating a valid frame at any byte offset returns `Ok(None)`, never an error.
