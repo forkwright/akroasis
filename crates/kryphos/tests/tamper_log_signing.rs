@@ -7,8 +7,12 @@
 
 use compact_str::CompactString;
 
-use koinon::tamper_log::{LogEntry, LogEntryKind, TamperLog, encode_entry};
+use koinon::tamper_log::{ChainKey, LogEntry, LogEntryKind, TamperLog, encode_entry};
 use kryphos::InstallationIdentity;
+
+const fn test_key() -> ChainKey {
+    ChainKey::from_bytes([0x4B; 32])
+}
 
 #[test]
 fn sign_tamper_log_entry_and_verify() {
@@ -16,7 +20,7 @@ fn sign_tamper_log_entry_and_verify() {
     let path = dir.path().join("signed.log");
 
     let identity = InstallationIdentity::generate();
-    let mut log = TamperLog::open(&path).unwrap();
+    let mut log = TamperLog::open(&path, test_key()).unwrap();
 
     let kind = LogEntryKind::ActionTaken {
         actor: CompactString::from("operator"),
@@ -58,7 +62,7 @@ fn sign_multiple_entries_each_verifiable() {
     let path = dir.path().join("multi_signed.log");
 
     let identity = InstallationIdentity::generate();
-    let mut log = TamperLog::open(&path).unwrap();
+    let mut log = TamperLog::open(&path, test_key()).unwrap();
 
     let mut signatures = Vec::new();
     let mut hashes = Vec::new();
@@ -100,7 +104,7 @@ fn encode_entry_hash_matches_sign_entry_input() {
         },
     };
 
-    let (_wire, entry_hash) = encode_entry(&entry, &prev_hash).unwrap();
+    let (_wire, entry_hash) = encode_entry(&entry, &prev_hash, &test_key()).unwrap();
     let signature = identity.sign_entry(&entry_hash);
 
     assert!(

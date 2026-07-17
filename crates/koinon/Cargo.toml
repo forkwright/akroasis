@@ -17,6 +17,8 @@ tracing.workspace = true
 compact_str.workspace = true
 blake3.workspace = true
 ciborium.workspace = true
+zeroize.workspace = true
+subtle.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use compact_str::CompactString;
 use fs2::FileExt;
 use jiff::Timestamp;
-use koinon::{LogEntryKind, TamperLog};
+use koinon::{ChainKey, LogEntryKind, TamperLog, VerificationResult};
 use serde::{Deserialize, Serialize};
 use snafu::ResultExt;
 
@@ -36,6 +36,14 @@ const DATA_DIR: &str = "data";
 
 /// Name of the tamper-evident vault audit log within the vault directory.
 const TAMPER_LOG_FILE: &str = "tamper.log";
+
+/// Domain-separation tag for deriving the tamper log's [`ChainKey`] from
+/// the vault's [`VaultKey`].
+///
+/// Reuses the vault's existing secret rather than requiring a second one
+/// to manage: the derivation is a one-way keyed hash, so recovering the
+/// vault key from a leaked chain key is infeasible.
+const CHAIN_KEY_DOMAIN: &[u8] = b"kryphos/tamper-log/chain-key/v1";
 
 /// On-disk vault header stored as JSON.
 #[derive(Debug, Serialize, Deserialize)]
@@ -467,8 +475,28 @@ impl Vault {
         self.path.join(TAMPER_LOG_FILE)
     }
 
+    /// Verifies the vault's tamper-evident mutation audit log.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`VaultError::TamperLog`] if the log file cannot be read.
+    pub fn verify_tamper_log(&self) -> Result<VerificationResult, VaultError> {
+        koinon::verify_chain(self.tamper_log_path(), &self.chain_key()).context(TamperLogSnafu)
+    }
+
+    /// Derives this vault's tamper-log chain key from its [`VaultKey`].
+    ///
+    /// A fresh derivation on every call, not a stored copy: the vault
+    /// holds only the `VaultKey`, and every caller that needs to open or
+    /// verify the tamper log derives the chain key from it on demand —
+    /// no second secret to generate, store, or rotate.
+    fn chain_key(&self) -> ChainKey {
+        ChainKey::from_bytes(blake3::keyed_hash(self.key.as_bytes(), CHAIN_KEY_DOMAIN).into())
+    }
+
     fn append_vault_audit(&self, name: &str, operation: &str) -> Result<(), VaultError> {
-        let mut log = TamperLog::open(self.tamper_log_path()).context(TamperLogSnafu)?;
+        let mut log =
+            TamperLog::open(self.tamper_log_path(), self.chain_key()).context(TamperLogSnafu)?;
         log.append(LogEntryKind::VaultMutation {
             credential_name: CompactString::from(name),
             operation: CompactString::from(operation),

@@ -474,37 +474,37 @@ hash = "635566a5376aca1bf92ec855cbe96b69003a02f89b19a6dbdc822d59e580ed34"
 [[baseline.entry]]
 rule = "RUST/config-deny-unknown-fields"
 file = "crates/koinon/src/tamper_log.rs"
-line = 46
+line = 64
 hash = "ab6fa7ce2a569a6a8354104318c49f7ae1f5b147a2c0685363a8b09356549fe2"
 
 [[baseline.entry]]
 rule = "RUST/no-debug-derive-on-public-types"
 file = "crates/koinon/src/tamper_log.rs"
-line = 114
+line = 150
 hash = "50d045131e1a2f659ef9b7d91f23499570d3c0ff047998ea759d704128bf5265"
 
 [[baseline.entry]]
 rule = "RUST/no-result-unwrap-or-default"
 file = "crates/koinon/src/tamper_log.rs"
-line = 235
+line = 273
 hash = "8c45bee0afc5b671fa5c4e4691d11d232504f3a410456c18e3d22e94134777aa"
 
 [[baseline.entry]]
 rule = "TOPOLOGY/shallow-struct"
 file = "crates/koinon/src/tamper_log.rs"
-line = 282
+line = 330
 hash = "3a82e225fc3e3091c19d16433c344bc468c91f63799cc74461cdecc11ca44675"
 
 [[baseline.entry]]
 rule = "RUST/no-result-unwrap-or-default"
 file = "crates/koinon/src/tamper_log.rs"
-line = 341
+line = 384
 hash = "8c45bee0afc5b671fa5c4e4691d11d232504f3a410456c18e3d22e94134777aa"
 
 [[baseline.entry]]
 rule = "TESTING/tautological-test"
 file = "crates/koinon/src/tamper_log_tests.rs"
-line = 420
+line = 612
 hash = "26a67c8087ce26d3ebc7f99316e15d35ecafdaff41db965676ded36d5acd328e"
 
 [[baseline.entry]]
@@ -516,31 +516,31 @@ hash = "d1416ac2d86b612a4585758a52e83d66a15450d7f58243b77b7d088f687b2d55"
 [[baseline.entry]]
 rule = "RUST/no-debug-derive-on-public-types"
 file = "crates/kryphos/src/storage.rs"
-line = 62
+line = 70
 hash = "3fe1ad211aa8bad42fceb09d5fbdb3d78493b8f18f5116b56985f2ae1c2d1c6b"
 
 [[baseline.entry]]
 rule = "TOPOLOGY/shallow-struct"
 file = "crates/kryphos/src/storage.rs"
-line = 63
+line = 71
 hash = "3f0f8583d594548d11aaf1c74efb937b839ef9910edd2af0826ac7fbcc29010b"
 
 [[baseline.entry]]
 rule = "RUST/no-debug-derive-on-public-types"
 file = "crates/kryphos/src/storage.rs"
-line = 75
+line = 83
 hash = "3fe1ad211aa8bad42fceb09d5fbdb3d78493b8f18f5116b56985f2ae1c2d1c6b"
 
 [[baseline.entry]]
 rule = "TOPOLOGY/shallow-struct"
 file = "crates/kryphos/src/storage.rs"
-line = 76
+line = 84
 hash = "fd3f0e0d2616149449f38db6417ee5f11afa4559749b9b54e4fb41274f44265b"
 
 [[baseline.entry]]
 rule = "TOPOLOGY/shallow-struct"
 file = "crates/kryphos/src/storage.rs"
-line = 89
+line = 97
 hash = "a33d08186fabd42dc752ef22864297a54ba5b14c3c7b8c38097315f2582b7990"
 
 [[baseline.entry]]
