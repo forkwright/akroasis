@@ -24,7 +24,7 @@ use crate::handshake;
 use crate::heartbeat;
 use crate::node_db::NodeDb;
 use crate::outbound::OutboundQueue;
-use crate::processor::PacketProcessor;
+use crate::processor::{PacketProcessor, RoutingProcessor, RoutingResult};
 use crate::proto::{FromRadio, from_radio};
 use crate::router::MeshRouter;
 use crate::store_forward::StoreForward;
@@ -187,6 +187,28 @@ impl MeshCollector {
             id = mesh_packet.id,
             "mesh packet received"
         );
+    }
+
+    /// Applies inbound `ROUTING_APP` ACK/NAK results to the shared router state.
+    ///
+    /// A NAK either schedules a retry (message re-enqueued, still inflight
+    /// budget remaining) or, once retries are exhausted, marks the delivery
+    /// record failed  -  both are [`DeliveryTracker`]'s existing semantics via
+    /// [`RoutingProcessor::apply_routing_result`].
+    async fn dispatch_routing(&self, mesh_packet: &crate::proto::MeshPacket) {
+        let routing_result = RoutingProcessor::process_routing(mesh_packet);
+        if routing_result == RoutingResult::NotRouting {
+            return;
+        }
+
+        let mut guard = self.router.lock().await;
+        let router = &mut *guard;
+        RoutingProcessor::apply_routing_result(
+            &routing_result,
+            &mut router.delivery,
+            &mut router.outbound,
+        );
+        drop(guard);
     }
 
     /// Connects to all configured transports and performs handshakes.
@@ -399,6 +421,8 @@ impl Collector for MeshCollector { // kanon:ignore ARCHITECTURE/trait-impl-coloc
                                 &from_radio.payload_variant
                             {
                                 processor.lock().await.process_mesh_packet(pkt);
+                                // Inbound ACK/NAK: update the delivery tracker + outbound queue.
+                                self.dispatch_routing(pkt).await;
                             }
                         }
                         Err(e) => {
@@ -705,5 +729,185 @@ mod tests {
         #[expect(clippy::unwrap_used, reason = "test-only")]
         let result = handle.await.unwrap();
         assert!(result.is_ok(), "router flush should cancel cleanly");
+    }
+
+    // ── akroasis#235: inbound ACK/NAK reaches DeliveryTracker ────────────
+
+    fn make_outbound_packet(id: u32, to: u32) -> crate::proto::MeshPacket {
+        crate::proto::MeshPacket {
+            from: 0,
+            to,
+            channel: 0,
+            id,
+            rx_time: 0,
+            rx_snr: 0.0,
+            hop_limit: 3,
+            want_ack: true,
+            priority: i32::from(crate::proto::mesh_packet::Priority::Default),
+            rx_rssi: 0,
+            via_mqtt: false,
+            hop_start: 3,
+            payload_variant: None,
+        }
+    }
+
+    /// Builds an inbound `ROUTING_APP` packet ACKing/NAKing `request_id`.
+    fn make_routing_packet(request_id: u32, error_code: i32) -> crate::proto::MeshPacket {
+        use prost::Message as _;
+
+        let routing = crate::proto::Routing {
+            variant: Some(crate::proto::routing::Variant::ErrorReason(error_code)),
+        };
+        let data = crate::proto::Data {
+            portnum: i32::from(crate::proto::PortNum::RoutingApp),
+            payload: routing.encode_to_vec(),
+            want_response: false,
+            dest: 0,
+            source: 0,
+            request_id,
+            reply_id: 0,
+            emoji: vec![],
+        };
+        crate::proto::MeshPacket {
+            from: 0x2222,
+            to: 0x1111,
+            channel: 0,
+            id: 0xFFFF,
+            rx_time: 0,
+            rx_snr: 0.0,
+            hop_limit: 3,
+            want_ack: false,
+            priority: i32::from(crate::proto::mesh_packet::Priority::Default),
+            rx_rssi: 0,
+            via_mqtt: false,
+            hop_start: 3,
+            payload_variant: Some(crate::proto::mesh_packet::PayloadVariant::Decoded(data)),
+        }
+    }
+
+    #[tokio::test]
+    async fn dispatch_routing_ack_marks_delivered() {
+        let c = MeshCollector::new(make_config(vec![]));
+
+        let packet_id = {
+            let mut router = c.router().lock().await;
+            #[expect(clippy::unwrap_used, reason = "test-only")]
+            let id = router
+                .send(
+                    make_outbound_packet(0x9001, 0xBBBB),
+                    true,
+                    &crate::router::SendOptions::default(),
+                )
+                .unwrap();
+            if let Some(msg) = router.next_to_send() {
+                router.track_sent(msg);
+            }
+            id
+        };
+
+        let ack_pkt = make_routing_packet(0x9001, i32::from(crate::proto::routing::Error::None));
+        c.dispatch_routing(&ack_pkt).await;
+
+        let router = c.router().lock().await;
+        assert!(
+            matches!(
+                router.delivery.delivery_status(packet_id),
+                Some(crate::delivery::DeliveryStatus::Acknowledged { .. })
+            ),
+            "inbound ACK should mark the tracked message delivered"
+        );
+        drop(router);
+    }
+
+    #[tokio::test]
+    async fn dispatch_routing_nak_retries_when_budget_remains() {
+        let c = MeshCollector::new(make_config(vec![]));
+
+        let packet_id = {
+            let mut router = c.router().lock().await;
+            #[expect(clippy::unwrap_used, reason = "test-only")]
+            let id = router
+                .send(
+                    make_outbound_packet(0x9002, 0xCCCC),
+                    true,
+                    &crate::router::SendOptions::default(),
+                )
+                .unwrap();
+            if let Some(msg) = router.next_to_send() {
+                router.track_sent(msg);
+            }
+            id
+        };
+
+        let nak_pkt =
+            make_routing_packet(0x9002, i32::from(crate::proto::routing::Error::NoRoute));
+        c.dispatch_routing(&nak_pkt).await;
+
+        let router = c.router().lock().await;
+        assert_eq!(
+            router.outbound.pending_count(),
+            1,
+            "NAK with retry budget remaining should re-enqueue the message"
+        );
+        assert!(
+            matches!(
+                router.delivery.delivery_status(packet_id),
+                Some(crate::delivery::DeliveryStatus::Sent { .. })
+            ),
+            "should remain Sent (not Failed) while retries remain"
+        );
+        assert_eq!(
+            router.delivery.stats_for(0xCCCC).map(|s| s.total_retries),
+            Some(1),
+            "DeliveryTracker::record_retry should have fired"
+        );
+        drop(router);
+    }
+
+    #[tokio::test]
+    async fn dispatch_routing_nak_marks_failed_when_not_inflight() {
+        let c = MeshCollector::new(make_config(vec![]));
+        let packet_id = crate::types::PacketId(0x9003);
+
+        {
+            let mut router = c.router().lock().await;
+            // WHY: tracked + sent but never handed to the outbound queue,
+            // mirroring processor_tests.rs's `apply_nak_marks_failed_when_no_inflight` -
+            // no inflight record means the retry budget is already exhausted.
+            router.delivery.track(packet_id, 0xDDDD);
+            router.delivery.mark_sent(packet_id);
+        }
+
+        let nak_pkt = make_routing_packet(
+            0x9003,
+            i32::from(crate::proto::routing::Error::MaxRetransmit),
+        );
+        c.dispatch_routing(&nak_pkt).await;
+
+        let router = c.router().lock().await;
+        assert!(
+            matches!(
+                router.delivery.delivery_status(packet_id),
+                Some(crate::delivery::DeliveryStatus::Failed { .. })
+            ),
+            "NAK with no retry budget should mark the message failed"
+        );
+        drop(router);
+    }
+
+    #[tokio::test]
+    async fn dispatch_routing_ignores_non_routing_packet() {
+        let c = MeshCollector::new(make_config(vec![]));
+        let pkt = make_outbound_packet(0x9004, 0xEEEE);
+
+        c.dispatch_routing(&pkt).await;
+
+        let router = c.router().lock().await;
+        assert_eq!(
+            router.delivery.tracked_count(),
+            0,
+            "non-routing packet must not create a delivery record"
+        );
+        drop(router);
     }
 }
