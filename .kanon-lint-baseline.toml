@@ -516,31 +516,31 @@ hash = "d1416ac2d86b612a4585758a52e83d66a15450d7f58243b77b7d088f687b2d55"
 [[baseline.entry]]
 rule = "RUST/no-debug-derive-on-public-types"
 file = "crates/kryphos/src/storage.rs"
-line = 61
+line = 62
 hash = "3fe1ad211aa8bad42fceb09d5fbdb3d78493b8f18f5116b56985f2ae1c2d1c6b"
 
 [[baseline.entry]]
 rule = "TOPOLOGY/shallow-struct"
 file = "crates/kryphos/src/storage.rs"
-line = 62
+line = 63
 hash = "3f0f8583d594548d11aaf1c74efb937b839ef9910edd2af0826ac7fbcc29010b"
 
 [[baseline.entry]]
 rule = "RUST/no-debug-derive-on-public-types"
 file = "crates/kryphos/src/storage.rs"
-line = 74
+line = 75
 hash = "3fe1ad211aa8bad42fceb09d5fbdb3d78493b8f18f5116b56985f2ae1c2d1c6b"
 
 [[baseline.entry]]
 rule = "TOPOLOGY/shallow-struct"
 file = "crates/kryphos/src/storage.rs"
-line = 75
+line = 76
 hash = "fd3f0e0d2616149449f38db6417ee5f11afa4559749b9b54e4fb41274f44265b"
 
 [[baseline.entry]]
 rule = "TOPOLOGY/shallow-struct"
 file = "crates/kryphos/src/storage.rs"
-line = 88
+line = 89
 hash = "a33d08186fabd42dc752ef22864297a54ba5b14c3c7b8c38097315f2582b7990"
 
 [[baseline.entry]]

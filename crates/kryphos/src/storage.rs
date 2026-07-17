@@ -1,6 +1,7 @@
 //! Vault storage backend: encrypted credential CRUD over fjall.
 
 use std::fs::{self, File};
+use std::io::Write as _;
 use std::path::{Path, PathBuf};
 
 use compact_str::CompactString;
@@ -113,7 +114,10 @@ impl Vault {
     /// Creates a new vault at the given path.
     ///
     /// Generates a random salt, derives a key from the passphrase,
-    /// writes the header, and initializes the fjall keyspace.
+    /// writes the header, and initializes the fjall keyspace. On Unix
+    /// the vault directory, its `data/` subdirectory, and every file
+    /// written are created owner-only (`0700`/`0600`) so a local
+    /// unprivileged user cannot read the key-check oracle or ciphertext.
     ///
     /// # Errors
     ///
@@ -126,7 +130,7 @@ impl Vault {
             return AlreadyExistsSnafu { path }.fail();
         }
 
-        fs::create_dir_all(path).context(IoSnafu { path })?;
+        create_owner_only_dir(path)?;
 
         let lock = acquire_lock(path)?;
         let salt = crypto::generate_salt();
@@ -142,8 +146,12 @@ impl Vault {
         };
 
         let header_json = serde_json::to_string_pretty(&header).context(SerializationSnafu)?;
-        fs::write(path.join(HEADER_FILE), header_json).context(IoSnafu { path })?;
+        write_owner_only_file(&path.join(HEADER_FILE), header_json.as_bytes())?;
 
+        // WHY: pre-create the data dir owner-only before fjall populates it —
+        // fjall's own `create_dir_all` uses process-default (umask) perms and
+        // would otherwise leave the keyspace directory world-readable.
+        create_owner_only_dir(&path.join(DATA_DIR))?;
         let (db, keyspace) = open_fjall(&path.join(DATA_DIR))?;
 
         Ok(Self {
@@ -482,17 +490,60 @@ impl std::fmt::Debug for Vault {
 fn acquire_lock(vault_path: &Path) -> Result<File, VaultError> {
     let lock_path = vault_path.join(LOCK_FILE);
 
-    // WHY: create_dir_all is idempotent and needed when called from open()
-    // before the lock file exists.
-    fs::create_dir_all(vault_path).context(IoSnafu { path: vault_path })?;
+    // WHY: create_owner_only_dir is idempotent and needed when called from
+    // open() before the lock file exists.
+    create_owner_only_dir(vault_path)?;
 
-    let file = File::create(&lock_path).context(IoSnafu { path: vault_path })?;
+    let file = create_owner_only_file(&lock_path)?;
 
     file.try_lock_exclusive().map_err(|_| VaultError::Locked {
         path: vault_path.to_path_buf(),
     })?;
 
     Ok(file)
+}
+
+/// Creates `path` as a directory restricted to the owner on Unix (`0700`).
+///
+/// Idempotent: succeeds without error if `path` already exists as a
+/// directory (matching the prior `create_dir_all` behavior). On non-Unix
+/// platforms this is equivalent to `create_dir_all` — no portable
+/// owner-only directory API exists in `std`.
+fn create_owner_only_dir(path: &Path) -> Result<(), VaultError> {
+    let mut builder = fs::DirBuilder::new();
+    builder.recursive(true);
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        builder.mode(0o700);
+    }
+
+    builder.create(path).context(IoSnafu { path })
+}
+
+/// Opens `path` for writing, creating (or truncating) it, restricted to the
+/// owner on Unix (`0600`). On non-Unix platforms this is equivalent to
+/// `File::create` — no portable owner-only file-creation API exists in
+/// `std`.
+fn create_owner_only_file(path: &Path) -> Result<File, VaultError> {
+    let mut options = fs::OpenOptions::new();
+    options.write(true).create(true).truncate(true);
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+
+    options.open(path).context(IoSnafu { path })
+}
+
+/// Writes `contents` to a fresh owner-only file at `path` (`0600` on Unix).
+fn write_owner_only_file(path: &Path, contents: &[u8]) -> Result<(), VaultError> {
+    create_owner_only_file(path)?
+        .write_all(contents)
+        .context(IoSnafu { path })
 }
 
 /// Opens or creates a fjall database and keyspace at the given path.
