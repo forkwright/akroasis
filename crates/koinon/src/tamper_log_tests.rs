@@ -6,6 +6,14 @@ use ulid::Ulid;
 
 use super::*;
 
+fn test_key() -> ChainKey {
+    ChainKey::from_bytes([0x5A; CHAIN_KEY_LEN])
+}
+
+fn other_key() -> ChainKey {
+    ChainKey::from_bytes([0xC3; CHAIN_KEY_LEN])
+}
+
 fn signal_kind() -> LogEntryKind {
     LogEntryKind::SignalObserved {
         signal_id: SignalId::new(),
@@ -53,12 +61,12 @@ fn append_single_entry_and_verify_fields() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("test.log");
 
-    let mut log = TamperLog::open(&path).unwrap();
+    let mut log = TamperLog::open(&path, test_key()).unwrap();
     let seq = log.append(signal_kind()).unwrap();
     assert_eq!(seq, 0);
     assert_eq!(log.entry_count(), 1);
 
-    let result = verify_chain(&path).unwrap();
+    let result = verify_chain(&path, &test_key()).unwrap();
     assert_eq!(result.entries_verified, 1);
     assert_eq!(result.status, ChainStatus::Intact);
 }
@@ -68,13 +76,13 @@ fn append_100_entries_chain_intact() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("test.log");
 
-    let mut log = TamperLog::open(&path).unwrap();
+    let mut log = TamperLog::open(&path, test_key()).unwrap();
     for i in 0..100_u64 {
         let seq = log.append(alert_kind()).unwrap();
         assert_eq!(seq, i);
     }
 
-    let result = verify_chain(&path).unwrap();
+    let result = verify_chain(&path, &test_key()).unwrap();
     assert_eq!(result.entries_verified, 100);
     assert_eq!(result.status, ChainStatus::Intact);
 }
@@ -85,7 +93,7 @@ fn empty_file_returns_empty_status() {
     let path = dir.path().join("empty.log");
     File::create(&path).unwrap();
 
-    let result = verify_chain(&path).unwrap();
+    let result = verify_chain(&path, &test_key()).unwrap();
     assert_eq!(result.status, ChainStatus::Empty);
     assert_eq!(result.entries_verified, 0);
 }
@@ -96,21 +104,21 @@ fn recovery_continues_chain_correctly() {
     let path = dir.path().join("recover.log");
 
     {
-        let mut log = TamperLog::open(&path).unwrap();
+        let mut log = TamperLog::open(&path, test_key()).unwrap();
         for _ in 0..5 {
             log.append(action_kind()).unwrap();
         }
     }
 
     {
-        let mut log = TamperLog::open(&path).unwrap();
+        let mut log = TamperLog::open(&path, test_key()).unwrap();
         assert_eq!(log.entry_count(), 5);
         for _ in 0..5 {
             log.append(config_kind()).unwrap();
         }
     }
 
-    let result = verify_chain(&path).unwrap();
+    let result = verify_chain(&path, &test_key()).unwrap();
     assert_eq!(result.entries_verified, 10);
     assert_eq!(result.status, ChainStatus::Intact);
 }
@@ -142,7 +150,7 @@ fn flip_byte_in_cbor_payload_detected() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("tamper.log");
 
-    let mut log = TamperLog::open(&path).unwrap();
+    let mut log = TamperLog::open(&path, test_key()).unwrap();
     for _ in 0..10 {
         log.append(signal_kind()).unwrap();
     }
@@ -154,7 +162,7 @@ fn flip_byte_in_cbor_payload_detected() {
     data[off + 4] ^= 0xFF;
     std::fs::write(&path, &data).unwrap();
 
-    let result = verify_chain(&path).unwrap();
+    let result = verify_chain(&path, &test_key()).unwrap();
     assert!(matches!(
         result.status,
         ChainStatus::Broken { sequence: 5, .. }
@@ -166,7 +174,7 @@ fn flip_byte_in_hash_detected() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("tamper_hash.log");
 
-    let mut log = TamperLog::open(&path).unwrap();
+    let mut log = TamperLog::open(&path, test_key()).unwrap();
     for _ in 0..10 {
         log.append(entity_kind()).unwrap();
     }
@@ -180,7 +188,7 @@ fn flip_byte_in_hash_detected() {
     data[off + 4 + payload_len] ^= 0x01;
     std::fs::write(&path, &data).unwrap();
 
-    let result = verify_chain(&path).unwrap();
+    let result = verify_chain(&path, &test_key()).unwrap();
     // Entry 3's stored hash is wrong → broken at entry 3.
     assert!(matches!(result.status, ChainStatus::Broken { .. }));
 }
@@ -190,7 +198,7 @@ fn truncated_file_returns_corrupted() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("truncate.log");
 
-    let mut log = TamperLog::open(&path).unwrap();
+    let mut log = TamperLog::open(&path, test_key()).unwrap();
     for _ in 0..10 {
         log.append(config_kind()).unwrap();
     }
@@ -200,7 +208,7 @@ fn truncated_file_returns_corrupted() {
     let truncated = &data[..data.len() - 20];
     std::fs::write(&path, truncated).unwrap();
 
-    let result = verify_chain(&path).unwrap();
+    let result = verify_chain(&path, &test_key()).unwrap();
     assert!(matches!(result.status, ChainStatus::Corrupted { .. }));
 }
 
@@ -209,7 +217,7 @@ fn zero_out_last_hash_detected() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("zerohash.log");
 
-    let mut log = TamperLog::open(&path).unwrap();
+    let mut log = TamperLog::open(&path, test_key()).unwrap();
     for _ in 0..10 {
         log.append(alert_kind()).unwrap();
     }
@@ -222,8 +230,182 @@ fn zero_out_last_hash_detected() {
     }
     std::fs::write(&path, &data).unwrap();
 
-    let result = verify_chain(&path).unwrap();
+    let result = verify_chain(&path, &test_key()).unwrap();
     assert!(matches!(result.status, ChainStatus::Broken { .. }));
+}
+
+// -----------------------------------------------------------------------
+// Truncation & keying (akroasis#213)
+// -----------------------------------------------------------------------
+
+#[test]
+fn removing_final_entry_reports_non_intact() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("truncate_tail.log");
+
+    let mut log = TamperLog::open(&path, test_key()).unwrap();
+    for _ in 0..10 {
+        log.append(alert_kind()).unwrap();
+    }
+    drop(log);
+
+    let data = std::fs::read(&path).unwrap();
+    let cutoff = entry_offset(&data, 9);
+    std::fs::write(&path, &data[..cutoff]).unwrap();
+
+    let result = verify_chain(&path, &test_key()).unwrap();
+    assert!(
+        !matches!(result.status, ChainStatus::Intact),
+        "removing the final entry must not verify as Intact"
+    );
+    assert!(
+        matches!(
+            result.status,
+            ChainStatus::Truncated {
+                sealed_entries: Some(10)
+            }
+        ),
+        "expected Truncated{{sealed_entries: Some(10)}}, got {:?}",
+        result.status
+    );
+}
+
+#[test]
+fn wiping_all_entries_is_not_reported_empty() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("wipe_all.log");
+
+    let mut log = TamperLog::open(&path, test_key()).unwrap();
+    for _ in 0..5 {
+        log.append(config_kind()).unwrap();
+    }
+    drop(log);
+
+    std::fs::write(&path, []).unwrap();
+
+    let result = verify_chain(&path, &test_key()).unwrap();
+    assert_ne!(
+        result.status,
+        ChainStatus::Empty,
+        "wiping all entries while the seal still claims 5 must not read as Empty"
+    );
+    assert!(matches!(
+        result.status,
+        ChainStatus::Truncated {
+            sealed_entries: Some(5)
+        }
+    ));
+}
+
+#[test]
+fn open_refuses_to_resume_a_truncated_chain() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("resume_truncated.log");
+
+    let mut log = TamperLog::open(&path, test_key()).unwrap();
+    for _ in 0..6 {
+        log.append(action_kind()).unwrap();
+    }
+    drop(log);
+
+    let data = std::fs::read(&path).unwrap();
+    let cutoff = entry_offset(&data, 5);
+    std::fs::write(&path, &data[..cutoff]).unwrap();
+
+    let result = TamperLog::open(&path, test_key());
+    assert!(
+        matches!(result, Err(TamperLogError::ChainCompromised { .. })),
+        "opening a chain whose tail was truncated must refuse to resume, not silently launder it"
+    );
+}
+
+#[test]
+fn verify_with_wrong_key_rejects_chain() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("wrong_key.log");
+
+    let mut log = TamperLog::open(&path, test_key()).unwrap();
+    for _ in 0..5 {
+        log.append(signal_kind()).unwrap();
+    }
+    drop(log);
+
+    let result = verify_chain(&path, &other_key()).unwrap();
+    assert!(
+        !matches!(result.status, ChainStatus::Intact),
+        "verifying with the wrong key must not report Intact"
+    );
+}
+
+#[test]
+fn forged_unkeyed_chain_rejected_by_keyed_verification() {
+    // WHY: simulates an attacker without the chain key, who can only
+    // recompute the OLD unkeyed-BLAKE3-over-a-public-genesis scheme this
+    // module used before akroasis#213.
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("forged_unkeyed.log");
+
+    let entry = LogEntry {
+        sequence: 0,
+        timestamp_ms: 0,
+        kind: signal_kind(),
+    };
+    let mut cbor_bytes = Vec::new();
+    ciborium::into_writer(&entry, &mut cbor_bytes).unwrap();
+
+    let prev_hash = [0u8; 32]; // the old public genesis constant
+    let mut hasher = blake3::Hasher::new(); // the old UNKEYED hasher
+    hasher.update(&cbor_bytes);
+    hasher.update(&prev_hash);
+    let forged_hash: [u8; 32] = hasher.finalize().into();
+
+    let mut wire = Vec::new();
+    wire.extend_from_slice(&(u32::try_from(cbor_bytes.len()).unwrap()).to_le_bytes());
+    wire.extend_from_slice(&cbor_bytes);
+    wire.extend_from_slice(&forged_hash);
+    std::fs::write(&path, &wire).unwrap();
+
+    let result = verify_chain(&path, &test_key()).unwrap();
+    assert!(
+        matches!(result.status, ChainStatus::Broken { .. }),
+        "a chain forged with the old unkeyed scheme must not validate under keyed verification"
+    );
+}
+
+#[test]
+fn forged_seal_without_key_is_not_trusted() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("forged_seal.log");
+
+    let mut log = TamperLog::open(&path, test_key()).unwrap();
+    for _ in 0..8 {
+        log.append(entity_kind()).unwrap();
+    }
+    drop(log);
+
+    // Attacker truncates off the last 3 entries...
+    let data = std::fs::read(&path).unwrap();
+    let cutoff = entry_offset(&data, 5);
+    std::fs::write(&path, &data[..cutoff]).unwrap();
+
+    // ...and, lacking the real chain key, forges a replacement seal
+    // claiming the new (truncated) count of 5 under a key they guessed.
+    let forged_key = other_key();
+    let mut mac_hasher = blake3::Hasher::new_keyed(forged_key.as_bytes());
+    mac_hasher.update(b"koinon/tamper-log/seal/v1");
+    mac_hasher.update(&5_u64.to_le_bytes());
+    let forged_mac: [u8; 32] = mac_hasher.finalize().into();
+
+    let mut forged_seal = Vec::new();
+    forged_seal.extend_from_slice(&5_u64.to_le_bytes());
+    forged_seal.extend_from_slice(&forged_mac);
+    std::fs::write(seal::seal_path(&path), &forged_seal).unwrap();
+
+    let result = verify_chain(&path, &test_key()).unwrap();
+    assert!(
+        !matches!(result.status, ChainStatus::Intact),
+        "a forged seal claiming a matching count under the wrong key must not be trusted as Intact"
+    );
 }
 
 // -----------------------------------------------------------------------
@@ -235,7 +417,9 @@ fn rotation_triggers_at_threshold() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("rotate.log");
 
-    let mut log = TamperLog::open(&path).unwrap().with_max_file_bytes(500);
+    let mut log = TamperLog::open(&path, test_key())
+        .unwrap()
+        .with_max_file_bytes(500);
     for _ in 0..20 {
         log.append(alert_kind()).unwrap();
     }
@@ -250,7 +434,9 @@ fn rotated_file_named_correctly() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("mylog.log");
 
-    let mut log = TamperLog::open(&path).unwrap().with_max_file_bytes(200);
+    let mut log = TamperLog::open(&path, test_key())
+        .unwrap()
+        .with_max_file_bytes(200);
     for _ in 0..15 {
         log.append(action_kind()).unwrap();
     }
@@ -264,13 +450,15 @@ fn new_file_after_rotation_has_fresh_chain() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("chain.log");
 
-    let mut log = TamperLog::open(&path).unwrap().with_max_file_bytes(300);
+    let mut log = TamperLog::open(&path, test_key())
+        .unwrap()
+        .with_max_file_bytes(300);
     for _ in 0..20 {
         log.append(signal_kind()).unwrap();
     }
     drop(log);
 
-    let result = verify_chain(&path).unwrap();
+    let result = verify_chain(&path, &test_key()).unwrap();
     assert!(
         matches!(result.status, ChainStatus::Intact | ChainStatus::Empty),
         "new file must be intact or empty"
@@ -282,7 +470,9 @@ fn pre_rotation_file_verifies_independently() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("pre.log");
 
-    let mut log = TamperLog::open(&path).unwrap().with_max_file_bytes(300);
+    let mut log = TamperLog::open(&path, test_key())
+        .unwrap()
+        .with_max_file_bytes(300);
     for _ in 0..20 {
         log.append(entity_kind()).unwrap();
     }
@@ -290,7 +480,7 @@ fn pre_rotation_file_verifies_independently() {
 
     let rotated = dir.path().join("pre.1.log");
     if rotated.exists() {
-        let result = verify_chain(&rotated).unwrap();
+        let result = verify_chain(&rotated, &test_key()).unwrap();
         assert_eq!(result.status, ChainStatus::Intact);
     }
 }
@@ -300,7 +490,9 @@ fn multiple_rotations_sequential_numbering() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("multi.log");
 
-    let mut log = TamperLog::open(&path).unwrap().with_max_file_bytes(150);
+    let mut log = TamperLog::open(&path, test_key())
+        .unwrap()
+        .with_max_file_bytes(150);
     for _ in 0..60 {
         log.append(config_kind()).unwrap();
     }
@@ -325,11 +517,11 @@ fn single_entry_chain_valid() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("single.log");
 
-    let mut log = TamperLog::open(&path).unwrap();
+    let mut log = TamperLog::open(&path, test_key()).unwrap();
     log.append(signal_kind()).unwrap();
     drop(log);
 
-    let result = verify_chain(&path).unwrap();
+    let result = verify_chain(&path, &test_key()).unwrap();
     assert_eq!(result.status, ChainStatus::Intact);
     assert_eq!(result.entries_verified, 1);
 }
@@ -342,7 +534,7 @@ fn cbor_roundtrip_signal_observed() {
         kind: signal_kind(),
     };
     let prev = [0u8; 32];
-    let (wire, _) = encode_entry(&entry, &prev).unwrap();
+    let (wire, _) = encode_entry(&entry, &prev, &test_key()).unwrap();
     let (decoded, _) = decode_entry(&wire).unwrap();
     assert_eq!(entry, decoded);
 }
@@ -354,7 +546,7 @@ fn cbor_roundtrip_entity_created() {
         timestamp_ms: 2_000_000,
         kind: entity_kind(),
     };
-    let (wire, _) = encode_entry(&entry, &[0u8; 32]).unwrap();
+    let (wire, _) = encode_entry(&entry, &[0u8; 32], &test_key()).unwrap();
     let (decoded, _) = decode_entry(&wire).unwrap();
     assert_eq!(entry, decoded);
 }
@@ -366,7 +558,7 @@ fn cbor_roundtrip_config_changed() {
         timestamp_ms: 3_000_000,
         kind: config_kind(),
     };
-    let (wire, _) = encode_entry(&entry, &[0u8; 32]).unwrap();
+    let (wire, _) = encode_entry(&entry, &[0u8; 32], &test_key()).unwrap();
     let (decoded, _) = decode_entry(&wire).unwrap();
     assert_eq!(entry, decoded);
 }
@@ -378,7 +570,7 @@ fn cbor_roundtrip_alert_raised() {
         timestamp_ms: 4_000_000,
         kind: alert_kind(),
     };
-    let (wire, _) = encode_entry(&entry, &[0u8; 32]).unwrap();
+    let (wire, _) = encode_entry(&entry, &[0u8; 32], &test_key()).unwrap();
     let (decoded, _) = decode_entry(&wire).unwrap();
     assert_eq!(entry, decoded);
 }
@@ -390,7 +582,7 @@ fn cbor_roundtrip_action_taken() {
         timestamp_ms: 5_000_000,
         kind: action_kind(),
     };
-    let (wire, _) = encode_entry(&entry, &[0u8; 32]).unwrap();
+    let (wire, _) = encode_entry(&entry, &[0u8; 32], &test_key()).unwrap();
     let (decoded, _) = decode_entry(&wire).unwrap();
     assert_eq!(entry, decoded);
 }
@@ -411,7 +603,7 @@ fn large_metadata_no_truncation() {
         timestamp_ms: 0,
         kind,
     };
-    let (wire, _) = encode_entry(&entry, &[0u8; 32]).unwrap();
+    let (wire, _) = encode_entry(&entry, &[0u8; 32], &test_key()).unwrap();
     let (decoded, _) = decode_entry(&wire).unwrap();
     assert_eq!(entry, decoded);
 }
@@ -441,7 +633,7 @@ fn configured_rotation_observably_changes_trigger() {
     let cfg = TamperLogConfig {
         max_file_bytes: 300,
     };
-    let mut log = TamperLog::open_with_config(&path, &cfg).unwrap();
+    let mut log = TamperLog::open_with_config(&path, test_key(), &cfg).unwrap();
     for _ in 0..30 {
         log.append(alert_kind()).unwrap();
     }
