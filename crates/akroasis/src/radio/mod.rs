@@ -110,7 +110,7 @@ impl ExportFormat {
     not(feature = "hardware-serial"),
     allow(
         dead_code,
-        reason = "radio variants used in test mocks; not all exercised in binary"
+        reason = "radio variants used in test mocks; not all exercised in binary (test-fixture)"
     )
 )]
 pub enum RadioVariant {
@@ -225,7 +225,7 @@ pub trait Session {
     all(feature = "hardware-serial", not(test)),
     allow(
         dead_code,
-        reason = "stub backend remains available for tests and no-hardware builds"
+        reason = "stub backend remains available for tests and no-hardware builds (test-fixture)"
     )
 )]
 pub struct StubHardware;

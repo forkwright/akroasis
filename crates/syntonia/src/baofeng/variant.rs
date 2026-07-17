@@ -6,7 +6,7 @@
     not(feature = "hardware-serial"),
     expect(
         dead_code,
-        reason = "variant API used only with hardware-serial feature"
+        reason = "variant API used only with hardware-serial feature, tracked in #264"
     )
 )]
 
