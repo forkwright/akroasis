@@ -48,7 +48,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 jiff = { version = "0.2", features = ["serde"] }
 
 # IDs
-ulid = { version = "1", features = ["serde"] }
+ulid = { version = "3", features = ["serde"] }
 
 # String optimisation
 compact_str = { version = "0.9", features = ["serde"] }
