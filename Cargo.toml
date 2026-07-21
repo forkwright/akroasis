@@ -51,7 +51,7 @@ jiff = { version = "0.2", features = ["serde"] }
 ulid = { version = "1", features = ["serde"] }
 
 # String optimisation
-compact_str = { version = "0.9", features = ["serde"] }
+compact_str = { version = "0.10", features = ["serde"] }
 
 # CLI
 clap = { version = "4", features = ["derive"] }
