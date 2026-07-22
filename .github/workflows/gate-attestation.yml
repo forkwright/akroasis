@@ -1,3 +1,46 @@
+# WHY(#262 / kanon#2522): replaces the trailer-only passthrough
+# (forkwright/.github/.github/workflows/gate-attestation.yml@57d32f7 — pure
+# trailer verify, no ai-attribution, no doc-only exemption, no build at all)
+# with the fleet hybrid gate. akroasis has never had a compiling/testing CI
+# workflow (#262) -- full-gate-build below is the first one: a
+# trailer-stamped PR takes the fast path; a trailer-less human PR falls
+# through to a real fmt/check/clippy/nextest build; a docs-only PR is exempt
+# from that build; ai-attribution runs unconditionally via the reusable
+# workflow's own centralized job.
+#
+# NOTE (#262 residual gap, tracked -- not closed by this change): the
+# reusable workflow's check-trailer job waives dependabot[bot] PRs from
+# full-gate-build unconditionally (fleet-wide behavior, not overridable
+# per-caller), and this workflow triggers on pull_request only (no
+# push-to-main compile check). #262's "Done when" (a PR that fails
+# `cargo check --workspace` cannot auto-merge; main compiles in CI on every
+# push) is therefore only partially met: dependabot bumps still bypass the
+# build, and there is no push-triggered compile check. Left as an explicit
+# comment on #262 rather than silently claimed done.
+#
+# fmt/check/clippy/nextest command strings mirror .kanon-ci.toml's stage
+# commands verbatim (the local `kanon gate --stamp` SSOT) so a Gate-Passed
+# trailer and a green full-gate-build attest the identical stages, per the
+# reusable workflow's own contract. --jobs 8 / --build-jobs 8 --test-threads 8
+# match .kanon-ci.toml's concurrency cap (OOM guard on the local gate box;
+# harmless headroom on the hosted runner).
+#
+# system_packages: libusb-1.0-0-dev (rusb -> libusb1-sys) + libudev-dev
+# (-> libudev-sys), the only native -sys crates in Cargo.lock that need a
+# pkg-config-discoverable Linux system library on the hosted runner
+# (core-foundation-sys/io-kit-sys are macOS-only; js-sys/windows-sys/
+# linux-raw-sys are pure-Rust bindings needing no apt package). No
+# alsa/cpal/libasound anywhere in the Cargo.toml tree -- akroasis (ἀκρόασις,
+# "attentive reception") is RF/mesh/comms, not a DSP/audio-synthesis
+# pipeline.
+#
+# rust_toolchain input intentionally omitted (stays default ""): akroasis
+# carries its own rust-toolchain.toml (channel "stable"), auto-detected by
+# actions-rust-lang/setup-rust-toolchain inside the reusable workflow.
+#
+# needs_fleet_repo_token false: the sole git dependency (sphragis) is a
+# public forkwright repo with no observed anonymous-fetch rate-limit
+# flakiness -- matches the reusable workflow's own conservative default.
 name: Gate Attestation
 
 on:
@@ -7,47 +50,18 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
-  gate-attestation:
-    name: gate-attestation
-    runs-on: ubuntu-latest
-    steps:
-      - name: Pass trusted automation PRs
-        if: ${{ github.actor == 'dependabot[bot]' || github.actor == 'release-please[bot]' }}
-        run: echo "Gate attestation waived for trusted automation actor."
-
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v6
-        if: ${{ github.actor != 'dependabot[bot]' && github.actor != 'release-please[bot]' }}
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-
-      - name: Verify Gate-Passed trailer
-        if: ${{ github.actor != 'dependabot[bot]' && github.actor != 'release-please[bot]' }}
-        run: |
-          commits=$(git log --format="%H" "origin/${{ github.base_ref }}..HEAD")
-          if [ -z "$commits" ]; then
-            echo "ERROR: No commits found in PR"
-            exit 1
-          fi
-
-          found=false
-          for sha in $commits; do
-            body=$(git log -1 --format="%b" "$sha")
-            if echo "$body" | grep -q "^Gate-Passed:"; then
-              version=$(echo "$body" | grep "^Gate-Passed:" | head -1)
-              echo "Found gate attestation: $version"
-              found=true
-              break
-            fi
-          done
-
-          if [ "$found" = false ]; then
-            echo "ERROR: No Gate-Passed trailer found in any PR commit."
-            echo "Run the local gate and commit with the trailer."
-            exit 1
-          fi
+  gate:
+    uses: forkwright/.github/.github/workflows/hybrid-gate.yml@main
+    with:
+      fmt_cmd: "cargo fmt --all -- --check"
+      check_cmd: "cargo check --workspace --all-targets --jobs 8"
+      clippy_cmd: "cargo clippy --workspace --all-targets --jobs 8 -- -D warnings"
+      nextest_cmd: "cargo nextest run --workspace --build-jobs 8 --test-threads 8"
+      doctest_cmd: ""
+      system_packages: "libusb-1.0-0-dev libudev-dev"
+      needs_fleet_repo_token: false
+      rust_cache_key: "gate-attestation"
+      ai_attribution_check: true
+      docs_only_exemption: true
+    secrets: inherit
