@@ -40,6 +40,11 @@ pub struct PendingMessage {
 pub struct InflightMessage {
     /// The packet that was sent.
     pub packet: MeshPacket,
+    /// When this message was originally enqueued (preserved across retries).
+    pub created: Instant,
+    /// Time-to-live FROM `created`: message is discarded after this duration,
+    /// carried forward unchanged FROM the original `PendingMessage`.
+    pub ttl: Duration,
     /// When the packet was transmitted.
     pub sent_at: Instant,
     /// How many times this packet has been retried.
@@ -138,6 +143,8 @@ impl OutboundQueue {
                     id,
                     InflightMessage {
                         packet: msg.packet,
+                        created: msg.created,
+                        ttl: msg.ttl,
                         sent_at: Instant::now(),
                         retries: 0,
                         max_retries,
@@ -155,6 +162,8 @@ impl OutboundQueue {
             PacketId(msg.packet.id),
             InflightMessage {
                 packet: msg.packet,
+                created: msg.created,
+                ttl: msg.ttl,
                 sent_at: Instant::now(),
                 retries: msg.retries,
                 max_retries: self.max_retries,
@@ -201,10 +210,13 @@ impl OutboundQueue {
         msg.retries += 1;
         let priority = Priority::try_from(msg.packet.priority).unwrap_or(Priority::Default);
 
+        // INVARIANT: `created`/`ttl` are the ORIGINAL enqueue time and configured
+        // TTL, carried forward unchanged so the message expires at its originally
+        // configured deadline regardless of how many retries it goes through.
         self.enqueue(PendingMessage {
             packet: msg.packet,
-            created: Instant::now(),
-            ttl: Duration::from_secs(3600),
+            created: msg.created,
+            ttl: msg.ttl,
             priority,
             retries: msg.retries,
         });
@@ -217,7 +229,7 @@ impl OutboundQueue {
         self.pending
             .retain(|msg| now.duration_since(msg.created) < msg.ttl);
         self.inflight
-            .retain(|_, msg| now.duration_since(msg.sent_at) < Duration::from_secs(3600));
+            .retain(|_, msg| now.duration_since(msg.created) < msg.ttl);
     }
 
     /// Number of messages waiting to be sent.
@@ -363,6 +375,67 @@ mod tests {
 
         // One more retry should fail (max retries exceeded).
         assert!(!q.retry(PacketId(10)), "should fail after max retries");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn retry_preserves_original_ttl_deadline() {
+        // WHY: regression test for retry() resetting `ttl`/`created` to a
+        // hard-coded 3600s instead of honoring the message's own configured
+        // TTL; a short-lived message must still expire at its ORIGINAL
+        // deadline after being retried.
+        let mut q = OutboundQueue::new();
+        q.enqueue(PendingMessage {
+            packet: make_packet(1, Priority::Default),
+            created: Instant::now(),
+            ttl: Duration::from_secs(60),
+            priority: Priority::Default,
+            retries: 0,
+        });
+
+        #[expect(clippy::unwrap_used, reason = "test-only: queue has 1 item")]
+        let msg = q.next_to_send().unwrap();
+        q.track_inflight(msg, DEFAULT_ACK_TIMEOUT);
+
+        tokio::time::advance(Duration::from_secs(31)).await;
+        assert!(
+            q.retry(PacketId(1)),
+            "retry should succeed before max_retries"
+        );
+
+        // Elapsed since original creation is now 61s, past the message's
+        // originally configured 60s TTL — it must expire there, not be kept
+        // alive by a fresh hour-long TTL substituted at retry time.
+        tokio::time::advance(Duration::from_secs(30)).await;
+        assert!(
+            q.next_to_send().is_none(),
+            "message should have expired at its original 60s deadline"
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn drain_expired_removes_ttl_expired_inflight() {
+        // WHY: regression test for drain_expired's inflight branch using a
+        // hard-coded 3600s cutoff instead of each message's own TTL.
+        let mut q = OutboundQueue::new();
+        q.track_inflight(
+            PendingMessage {
+                packet: make_packet(5, Priority::Default),
+                created: Instant::now(),
+                ttl: Duration::from_secs(60),
+                priority: Priority::Default,
+                retries: 0,
+            },
+            DEFAULT_ACK_TIMEOUT,
+        );
+        assert_eq!(q.inflight_count(), 1);
+
+        tokio::time::advance(Duration::from_secs(61)).await;
+        q.drain_expired();
+        assert_eq!(
+            q.inflight_count(),
+            0,
+            "inflight message past its own TTL should be drained"
+        );
     }
 
     #[test]
