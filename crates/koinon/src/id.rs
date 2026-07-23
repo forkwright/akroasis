@@ -17,7 +17,7 @@ macro_rules! define_id {
             /// Generate a new ID backed by a fresh ULID.
             #[must_use]
             pub fn new() -> Self {
-                Self(Ulid::new())
+                Self(Ulid::generate())
             }
 
             /// Reconstruct an ID from an existing [`Ulid`].
@@ -69,7 +69,7 @@ mod tests {
 
     #[test]
     fn entity_id_from_ulid_round_trips() {
-        let ulid = Ulid::new();
+        let ulid = Ulid::generate();
         let id = EntityId::from_ulid(ulid);
         assert_eq!(id.as_ulid(), ulid);
     }
