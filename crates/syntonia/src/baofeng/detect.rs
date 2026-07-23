@@ -7,7 +7,8 @@
 
 use snafu::Snafu;
 
-use super::variant::{MAGIC_SETS, RadioIdent, VariantConfig, VariantError, identify_variant};
+use super::ident::RadioIdent;
+use super::variant::{MAGIC_SETS, VariantConfig, VariantError, identify_variant};
 
 // ── SerialPort trait ─────────────────────────────────────────────────────────
 
@@ -73,6 +74,13 @@ pub enum DetectError {
         /// The underlying variant error.
         source: VariantError,
     },
+
+    /// The ident response length does not match the wire framing (8 or 12 bytes).
+    #[snafu(display("radio identification response could not be parsed ({len} bytes)"))]
+    IdentFailed {
+        /// Length of the received identification payload in bytes.
+        len: usize,
+    },
 }
 
 // ── Detection flow ───────────────────────────────────────────────────────────
@@ -89,6 +97,7 @@ pub enum DetectError {
 ///   troubleshooting hints for UV-5RM Plus / `UV17Pro`)
 /// - [`DetectError::VariantIdentification`] if the radio responds but has
 ///   an unrecognized firmware ident
+/// - [`DetectError::IdentFailed`] if the ident response length is not 8 or 12 bytes
 /// - [`DetectError::SerialIo`] on I/O errors
 pub(crate) fn auto_detect(
     port: &mut dyn SerialPort,
@@ -132,7 +141,10 @@ fn try_magic(
     let mut ident_data = vec![0u8; ident_len];
     port.read_exact(&mut ident_data)?;
 
-    let ident = RadioIdent { raw: ident_data };
+    // WHY: RadioIdent::from_raw only accepts 8- or 12-byte wire responses
+    // (the real UV-5R framing) — see baofeng::ident.
+    let ident =
+        RadioIdent::from_raw(&ident_data).ok_or(DetectError::IdentFailed { len: ident_len })?;
 
     let config =
         identify_variant(&ident).map_err(|e| DetectError::VariantIdentification { source: e })?;
@@ -208,6 +220,10 @@ mod tests {
         }
     }
 
+    // WHY: RadioIdent::from_raw only accepts 8- or 12-byte wire responses
+    // (the real UV-5R framing), so firmware strings below are padded to 8
+    // bytes with filler that never collides with a known prefix (mirrors the
+    // convention in baofeng::variant's own tests).
     /// Queue a successful handshake for a UV-5R with given firmware prefix.
     fn queue_uv5r_handshake(mock: &mut MockSerial, firmware: &[u8]) {
         // ACK
@@ -223,10 +239,10 @@ mod tests {
     #[test]
     fn detect_uv5r_on_first_magic() {
         let mut mock = MockSerial::new();
-        queue_uv5r_handshake(&mut mock, b"BFB297");
+        queue_uv5r_handshake(&mut mock, b"BFB297\x00\x00");
         let (ident, config) = auto_detect(&mut mock).unwrap();
         assert_eq!(config.variant, RadioVariant::Uv5r);
-        assert!(ident.firmware_prefix().starts_with("BFB"));
+        assert!(ident.firmware_prefix.starts_with("BFB"));
     }
 
     #[test]
@@ -267,7 +283,7 @@ mod tests {
         // Second magic: timeout
         mock.queue_timeout();
         // Third magic: success (original UV-5R)
-        queue_uv5r_handshake(&mut mock, b"BFB100");
+        queue_uv5r_handshake(&mut mock, b"BFB100\x00\x00");
         let (_, config) = auto_detect(&mut mock).unwrap();
         assert_eq!(config.variant, RadioVariant::Uv5r);
     }
@@ -275,10 +291,10 @@ mod tests {
     #[test]
     fn unknown_ident_returns_variant_error() {
         let mut mock = MockSerial::new();
-        // ACK + unknown ident
+        // ACK + unknown ident (8-byte padded, per RadioIdent::from_raw framing)
         mock.queue_data(&[0x06]);
-        mock.queue_data(&[4]); // length = 4
-        mock.queue_data(&[0xDE, 0xAD, 0xBE, 0xEF]);
+        mock.queue_data(&[8]); // length = 8
+        mock.queue_data(&[0xDE, 0xAD, 0xBE, 0xEF, 0x00, 0x00, 0x00, 0x00]);
         let err = auto_detect(&mut mock).unwrap_err();
         assert!(
             matches!(err, DetectError::VariantIdentification { .. }),

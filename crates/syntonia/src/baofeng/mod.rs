@@ -3,6 +3,9 @@
 pub mod bcd;
 pub mod codec;
 pub(crate) mod constants;
+#[cfg(feature = "hardware-serial")]
+// kanon:ignore RUST/feature-gate-check -- declared in syntonia/Cargo.toml [features]
+pub(crate) mod detect;
 pub mod ident;
 pub mod image;
 pub mod memmap;
