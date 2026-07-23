@@ -133,12 +133,26 @@ impl DeliveryTracker {
     }
 
     /// Mark a message as acknowledged (ACK received).
+    ///
+    /// Idempotent against duplicate ACKs: a record already `Acknowledged` is left
+    /// unchanged. A late ACK for a `Failed`/`Expired` record reconciles the
+    /// destination's `failed` counter before recording the acknowledgment, since
+    /// the message did reach its destination after all.
     pub fn mark_acknowledged(&mut self, id: PacketId, hops: Option<u8>) {
         if let Some(record) = self.records.get_mut(&id) {
+            let reconcile_failed = match record.status {
+                DeliveryStatus::Acknowledged { .. } => return,
+                DeliveryStatus::Failed { .. } | DeliveryStatus::Expired => true,
+                DeliveryStatus::Queued | DeliveryStatus::Sent { .. } => false,
+            };
+
             let now = Instant::now();
             let latency_ms = now.duration_since(record.created).as_millis();
             record.status = DeliveryStatus::Acknowledged { at: now, hops };
             let stats = self.dest_stats.entry(record.dest).or_default();
+            if reconcile_failed {
+                stats.failed = stats.failed.saturating_sub(1);
+            }
             stats.acknowledged += 1;
             // NOTE: u128→u64 safe because latencies never exceed u64 range.
             #[expect(
@@ -347,6 +361,82 @@ mod tests {
         tracker.track(PacketId(1), 0x1234);
         tracker.track(PacketId(2), 0x1234);
         assert_eq!(tracker.tracked_count(), 2);
+    }
+
+    #[test]
+    fn mark_acknowledged_idempotent_on_duplicate_ack() {
+        let mut tracker = DeliveryTracker::new();
+        let id = PacketId(500);
+        let dest = 0xCAFEu32;
+
+        tracker.track(id, dest);
+        tracker.mark_sent(id);
+        tracker.mark_acknowledged(id, Some(3));
+
+        #[expect(
+            clippy::unwrap_used,
+            reason = "test-only: stats guaranteed to exist after tracking"
+        )]
+        let first = tracker.stats_for(dest).unwrap().clone();
+        assert_eq!(first.acknowledged, 1, "first ACK should count once");
+
+        // A duplicate ACK for the same packet (multi-path / retransmission) must
+        // not double-count.
+        tracker.mark_acknowledged(id, Some(3));
+
+        #[expect(
+            clippy::unwrap_used,
+            reason = "test-only: stats guaranteed to exist after tracking"
+        )]
+        let second = tracker.stats_for(dest).unwrap().clone();
+        assert_eq!(
+            second.acknowledged, first.acknowledged,
+            "replayed ACK must not inflate acknowledged count"
+        );
+        assert_eq!(
+            second.latency_sum_ms, first.latency_sum_ms,
+            "replayed ACK must not inflate latency_sum_ms"
+        );
+    }
+
+    #[test]
+    fn mark_acknowledged_reconciles_failed_counter_on_late_ack() {
+        let mut tracker = DeliveryTracker::new();
+        let id = PacketId(501);
+        let dest = 0xBABEu32;
+
+        tracker.track(id, dest);
+        tracker.mark_sent(id);
+        tracker.mark_failed(id, DeliveryFailure::MaxRetries);
+
+        #[expect(
+            clippy::unwrap_used,
+            reason = "test-only: stats guaranteed to exist after tracking"
+        )]
+        let failed_stats = tracker.stats_for(dest).unwrap().clone();
+        assert_eq!(failed_stats.failed, 1);
+        assert_eq!(failed_stats.acknowledged, 0);
+
+        // A late ACK arrives after the record was already given up on.
+        tracker.mark_acknowledged(id, None);
+
+        #[expect(
+            clippy::unwrap_used,
+            reason = "test-only: stats guaranteed to exist after tracking"
+        )]
+        let reconciled = tracker.stats_for(dest).unwrap().clone();
+        assert_eq!(
+            reconciled.failed, 0,
+            "late ACK should reconcile failed count"
+        );
+        assert_eq!(
+            reconciled.acknowledged, 1,
+            "late ACK should still count as delivered"
+        );
+        assert!(matches!(
+            tracker.delivery_status(id),
+            Some(DeliveryStatus::Acknowledged { .. })
+        ));
     }
 
     #[test]
