@@ -143,8 +143,6 @@ impl MeshRouter {
         let id = PacketId(packet.id);
         let dest = packet.to;
 
-        self.delivery.track(id, dest);
-
         if reachable {
             self.outbound.enqueue(PendingMessage {
                 packet,
@@ -172,6 +170,11 @@ impl MeshRouter {
                 },
             )?;
         }
+
+        // WHY (akroasis#245): track only once dispatch is confirmed — tracking
+        // before the fallible store_forward.store() call left a phantom
+        // Queued record behind when QueueFull propagated via `?` above.
+        self.delivery.track(id, dest);
 
         Ok(id)
     }
@@ -322,6 +325,36 @@ mod tests {
         assert_eq!(router.outbound.pending_count(), 0);
         assert_eq!(router.store_forward.total_stored(), 1);
         assert!(router.delivery.delivery_status(id).is_some());
+    }
+
+    #[test]
+    fn queue_full_send_leaves_no_orphaned_delivery_record() {
+        // WHY (akroasis#245): store_forward.store() can fail with QueueFull
+        // via the `?` in send(); the delivery tracker must not hold a
+        // phantom Queued record for a packet id that was never dispatched.
+        let mut router = make_router();
+        let options = SendOptions::default();
+
+        // Fill the destination's store-forward queue at equal priority so
+        // the eviction path (`msg.priority > min_priority`) can't free a
+        // slot and the next store() hits QueueFull.
+        for i in 0..16 {
+            #[expect(clippy::unwrap_used, reason = "test-only: queue has room for the fill")]
+            router.send(make_packet(i), false, &options).unwrap();
+        }
+        assert_eq!(router.store_forward.total_stored(), 16);
+
+        let overflow_id = PacketId(999);
+        let result = router.send(make_packet(999), false, &options);
+
+        assert!(
+            matches!(result, Err(crate::Error::QueueFull { .. })),
+            "queue at capacity with equal-priority overflow must reject with QueueFull"
+        );
+        assert!(
+            router.delivery.delivery_status(overflow_id).is_none(),
+            "a rejected send must not leave an orphaned delivery record"
+        );
     }
 
     #[test]
