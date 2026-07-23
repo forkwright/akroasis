@@ -86,7 +86,13 @@ impl MeshTopology {
 
     /// Remove nodes not heard within `timeout`.
     pub fn remove_stale_nodes(&mut self, timeout: Duration) {
-        let cutoff = Instant::now() - timeout;
+        // WHY: `Instant::now() - timeout` panics on underflow when `timeout`
+        // exceeds process uptime (e.g. the default 7200s stale window on a
+        // freshly booted host). `checked_sub` returning `None` means nothing
+        // has been up long enough to be stale yet.
+        let Some(cutoff) = Instant::now().checked_sub(timeout) else {
+            return;
+        };
         let stale: Vec<NodeNum> = self
             .node_index
             .iter()
@@ -112,7 +118,11 @@ impl MeshTopology {
 
     /// Remove edges not observed within `timeout`.
     pub fn remove_stale_links(&mut self, timeout: Duration) {
-        let cutoff = Instant::now() - timeout;
+        // WHY: see `remove_stale_nodes` — avoid underflow panic when
+        // `timeout` exceeds process uptime.
+        let Some(cutoff) = Instant::now().checked_sub(timeout) else {
+            return;
+        };
         let stale_edges: Vec<petgraph::graph::EdgeIndex> = self
             .graph
             .edge_indices()
@@ -530,6 +540,27 @@ mod tests {
         assert!(!topo.contains_node(n(2)), "stale node 2 should be removed");
         assert!(topo.contains_node(n(3)));
         assert!(topo.contains_node(n(4)));
+    }
+
+    // WHY: regression for the monotonic-clock underflow panic (#206) — a
+    // fresh process (t≈0, no `tokio::time::advance`) pruning against the
+    // default 7200s stale window must not panic, and nothing is old enough
+    // to be considered stale yet.
+    #[tokio::test(start_paused = true)]
+    async fn remove_stale_links_no_panic_when_timeout_exceeds_uptime() {
+        let mut topo = MeshTopology::new();
+        topo.update_link(n(1), n(2), 10.0);
+        topo.remove_stale_links(Duration::from_secs(7200));
+        assert_eq!(topo.edge_count(), 1, "nothing is stale yet at t=0");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn remove_stale_nodes_no_panic_when_timeout_exceeds_uptime() {
+        let mut topo = MeshTopology::new();
+        topo.update_link(n(1), n(2), 10.0);
+        topo.remove_stale_nodes(Duration::from_secs(7200));
+        assert!(topo.contains_node(n(1)), "nothing is stale yet at t=0");
+        assert!(topo.contains_node(n(2)), "nothing is stale yet at t=0");
     }
 
     #[test]
