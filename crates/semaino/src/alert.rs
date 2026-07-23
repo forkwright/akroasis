@@ -130,14 +130,26 @@ pub struct AlertPipeline {
     suppression: HashMap<AlertFingerprint, i64>,
     /// How long (ms) to suppress repeated fingerprints.
     suppression_window_ms: i64,
+    /// Grid quantization factor, matching the convergence engine's resolution.
+    ///
+    /// INVARIANT: must equal the `resolution` the sibling [`ConvergenceGrid`]
+    /// was constructed with so `Alert.cell` / `AlertFingerprint.cell` agree
+    /// with the cells the convergence engine actually reports.
+    ///
+    /// [`ConvergenceGrid`]: crate::convergence::ConvergenceGrid
+    grid_resolution: u32,
     /// Registered alert sinks.
     sinks: Vec<Box<dyn AlertSink>>,
 }
 
 impl AlertPipeline {
-    /// Create a pipeline with a 60-second default suppression window.
+    /// Create a pipeline with a suppression window and grid quantization resolution.
+    ///
+    /// `grid_resolution` must match the resolution the sibling `ConvergenceGrid`
+    /// was constructed with, or reported alert cells will disagree with the
+    /// convergence engine's cells.
     #[must_use]
-    pub fn new(suppression_window_secs: u64) -> Self {
+    pub fn new(suppression_window_secs: u64, grid_resolution: u32) -> Self {
         Self {
             suppression: HashMap::new(),
             #[expect(
@@ -145,6 +157,7 @@ impl AlertPipeline {
                 reason = "suppression_window_secs comes from config; realistic values are seconds, not close to u64::MAX / 1_000, so wrap is not a concern"
             )]
             suppression_window_ms: (suppression_window_secs * 1_000) as i64, // SAFETY: suppression_window_secs is config-derived seconds; *1000 fits i64 for any realistic window
+            grid_resolution,
             sinks: Vec::new(),
         }
     }
@@ -173,7 +186,7 @@ impl AlertPipeline {
         let cell = aggregated
             .signal
             .location
-            .map(|c| crate::convergence::quantize(&c, 10_000));
+            .map(|c| crate::convergence::quantize(&c, self.grid_resolution));
         let sev_disc = severity_discriminant(&severity);
         let fingerprint = AlertFingerprint::new(kind_disc, cell, sev_disc);
 
@@ -344,6 +357,26 @@ mod tests {
         }
     }
 
+    fn rf_aggregated_at(score: AnomalyScore, location: Coordinates) -> AggregatedSignal {
+        use koinon::GeoSignal;
+
+        AggregatedSignal {
+            signal: GeoSignal::new(
+                koinon::signal::SignalKind::Rf(RfDetail::Transmission {
+                    frequency: Frequency::mhz(146),
+                    power: Power::dbm(-30.0),
+                    modulation: "FM".into(),
+                    bandwidth: Frequency::khz(25),
+                }),
+                Timestamp::now(),
+                Some(location),
+            ),
+            score,
+            baseline_mean: Some(-50.0),
+            baseline_stddev: Some(2.0),
+        }
+    }
+
     fn fake_convergence(domain_count: usize) -> Convergence {
         let kind = koinon::signal::SignalKind::Rf(RfDetail::Transmission {
             frequency: Frequency::mhz(146),
@@ -414,7 +447,7 @@ mod tests {
 
     #[test]
     fn dedup_suppresses_within_window() {
-        let mut pipeline = AlertPipeline::new(60);
+        let mut pipeline = AlertPipeline::new(60, 10_000);
         let agg = rf_aggregated(AnomalyScore::Anomalous(4.0));
 
         // First call should produce an alert.
@@ -432,7 +465,7 @@ mod tests {
     #[test]
     fn dedup_passes_after_window() {
         // Use a suppression window of 0 s so every call passes.
-        let mut pipeline = AlertPipeline::new(0);
+        let mut pipeline = AlertPipeline::new(0, 10_000);
         let agg = rf_aggregated(AnomalyScore::Anomalous(4.0));
 
         let first = pipeline.process(&agg, None);
@@ -445,7 +478,7 @@ mod tests {
 
     #[test]
     fn dedup_different_fingerprints_both_pass() {
-        let mut pipeline = AlertPipeline::new(60);
+        let mut pipeline = AlertPipeline::new(60, 10_000);
 
         let agg_anomalous = rf_aggregated(AnomalyScore::Anomalous(4.0));
         let agg_elevated = rf_aggregated(AnomalyScore::Elevated(2.5));
@@ -461,13 +494,42 @@ mod tests {
 
     #[test]
     fn alert_fields_are_populated() {
-        let mut pipeline = AlertPipeline::new(60);
+        let mut pipeline = AlertPipeline::new(60, 10_000);
         let agg = rf_aggregated(AnomalyScore::Anomalous(4.0));
         let conv = fake_convergence(3);
         let alert = pipeline.process(&agg, Some(&conv)).unwrap();
         assert_eq!(alert.severity, AlertSeverity::Critical);
         assert!(!alert.source_signals.is_empty());
         assert!(!alert.summary.is_empty());
+    }
+
+    #[test]
+    fn alert_cell_uses_configured_resolution_not_hardcoded_default() {
+        // WHY: regression guard for the alert cell being quantized at a
+        // literal 10_000 regardless of the configured grid_resolution,
+        // which would desync Alert.cell / AlertFingerprint.cell from the
+        // convergence grid's actual cells whenever an operator retunes
+        // resolution.
+        let coords = Coordinates::new(51.5, -0.1, None).unwrap();
+        let configured_resolution = 50_000;
+
+        let mut pipeline = AlertPipeline::new(60, configured_resolution);
+        let agg = rf_aggregated_at(AnomalyScore::Anomalous(4.0), coords);
+        let alert = pipeline.process(&agg, None).unwrap();
+
+        let expected_cell = crate::convergence::quantize(&coords, configured_resolution);
+        let stale_default_cell = crate::convergence::quantize(&coords, 10_000);
+
+        assert_eq!(
+            alert.cell,
+            Some(expected_cell),
+            "alert cell must match the configured grid_resolution"
+        );
+        assert_ne!(
+            expected_cell, stale_default_cell,
+            "test coordinates must actually differ between resolutions to be a valid regression guard"
+        );
+        assert_eq!(alert.fingerprint.cell, Some(expected_cell));
     }
 
     // ── TracingSink ──────────────────────────────────────────────────────────
@@ -506,7 +568,7 @@ mod tests {
             baseline_mean: Some(22.0),
             baseline_stddev: Some(1.0),
         };
-        let mut pipeline = AlertPipeline::new(60);
+        let mut pipeline = AlertPipeline::new(60, 10_000);
         let result = pipeline.process(&agg, None);
         assert!(result.is_some());
         assert_eq!(result.unwrap().severity, AlertSeverity::Low);

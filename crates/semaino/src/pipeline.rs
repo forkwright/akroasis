@@ -72,7 +72,7 @@ impl SemainoPipeline {
     pub fn new(config: &SemainoConfig) -> Self {
         Self {
             grid: ConvergenceGrid::new(config.grid_resolution),
-            alerts: AlertPipeline::new(config.suppression_window_secs),
+            alerts: AlertPipeline::new(config.suppression_window_secs, config.grid_resolution),
             time_window: Duration::from_secs(config.time_window_secs),
             min_convergence_domains: config.min_convergence_domains,
         }
