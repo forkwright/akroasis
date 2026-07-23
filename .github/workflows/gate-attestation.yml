@@ -32,7 +32,8 @@
 # linux-raw-sys are pure-Rust bindings needing no apt package). No
 # alsa/cpal/libasound anywhere in the Cargo.toml tree -- akroasis (ἀκρόασις,
 # "attentive reception") is RF/mesh/comms, not a DSP/audio-synthesis
-# pipeline.
+# pipeline. protobuf-compiler is a build tool, not a -sys library:
+# prost-build shells out to protoc at compile time.
 #
 # rust_toolchain input intentionally omitted (stays default ""): akroasis
 # carries its own rust-toolchain.toml (channel "stable"), auto-detected by
@@ -59,7 +60,7 @@ jobs:
       clippy_cmd: "cargo clippy --workspace --all-targets --jobs 8 -- -D warnings"
       nextest_cmd: "cargo nextest run --workspace --build-jobs 8 --test-threads 8"
       doctest_cmd: ""
-      system_packages: "libusb-1.0-0-dev libudev-dev"
+      system_packages: "libusb-1.0-0-dev libudev-dev protobuf-compiler"
       needs_fleet_repo_token: false
       rust_cache_key: "gate-attestation"
       ai_attribution_check: true
