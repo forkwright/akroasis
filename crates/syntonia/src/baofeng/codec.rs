@@ -280,8 +280,8 @@ pub fn encode_all_channels(
     }
 
     for channel in &plan.channels {
-        let index = u8::try_from(channel.index).unwrap_or_default();
-        if index < CHANNEL_COUNT {
+        if channel.index < u16::from(CHANNEL_COUNT) {
+            let index = channel.index as u8; // SAFETY: guarded above, fits u8 by construction
             encode_channel(channel, image, index)?;
         }
     }
@@ -372,5 +372,49 @@ mod tests {
             assert_eq!(a.tone, b.tone);
             assert_eq!(a.power, b.power);
         }
+    }
+
+    #[test]
+    fn encode_all_channels_skips_out_of_range_index_without_overwriting_slot_zero() {
+        let ch0 = Channel {
+            index: 0,
+            name: "CALL".to_string(),
+            rx_freq: Frequency::hz(146_520_000),
+            tx_freq: Some(Frequency::hz(146_520_000)),
+            offset: FrequencyOffset::None,
+            tone: ToneMode::None,
+            power: PowerLevel::High,
+            bandwidth: Bandwidth::Wide,
+            scan: ScanMode::Include,
+            busy_lock: false,
+        };
+        let ch_overrange = Channel {
+            index: 300,
+            name: "BOGUS".to_string(),
+            rx_freq: Frequency::hz(433_000_000),
+            tx_freq: None,
+            offset: FrequencyOffset::None,
+            tone: ToneMode::None,
+            power: PowerLevel::Low,
+            bandwidth: Bandwidth::Narrow,
+            scan: ScanMode::Skip,
+            busy_lock: false,
+        };
+        let plan = FrequencyPlan {
+            name: String::new(),
+            radio_model: None,
+            channels: vec![ch0, ch_overrange],
+            created: None,
+        };
+
+        let mut image = MemoryImage::new(0x1800);
+        encode_all_channels(&plan, &mut image).unwrap();
+
+        let decoded = decode_channel(&image, 0).unwrap().unwrap();
+        assert_eq!(decoded.name, "CALL");
+        assert_eq!(decoded.rx_freq, Frequency::hz(146_520_000));
+
+        let plan2 = decode_all_channels(&image).unwrap();
+        assert_eq!(plan2.channel_count(), 1);
     }
 }
