@@ -31,20 +31,22 @@ pub struct GridCell(pub i32, pub i32);
 /// same integer pair regardless of sub-cell offset.
 #[must_use]
 pub(crate) fn quantize(coords: &Coordinates, resolution: u32) -> GridCell {
-    // WHY: cast from f64 to i32 is intentional; lat * 10_000 ≤ 900_000 and
-    // lon * 10_000 ≤ 1_800_000, both within i32 range. The floor truncation
-    // defines the grid cell lower-left corner.
+    // WHY: `.floor()` before the cast is required — `as i32` truncates toward
+    // zero, not toward negative infinity, which would double the width of the
+    // cell straddling zero and desync from `cell_center`'s `+half` assumption
+    // for negative coordinates. lat * 10_000 ≤ 900_000 and lon * 10_000 ≤
+    // 1_800_000, both within i32 range after flooring.
     let res = f64::from(resolution);
     #[expect(
         clippy::cast_possible_truncation,
         reason = "lat * resolution bounded by 900_000 for resolution ≤ 10_000; fits i32"
     )]
-    let lat_cell = (coords.latitude * res) as i32; // SAFETY: lat*resolution bounded by 900_000 (resolution ≤ 10_000); fits i32
+    let lat_cell = (coords.latitude * res).floor() as i32; // SAFETY: lat*resolution bounded by 900_000 (resolution ≤ 10_000); fits i32
     #[expect(
         clippy::cast_possible_truncation,
         reason = "lon * resolution bounded by 1_800_000 for resolution ≤ 10_000; fits i32"
     )]
-    let lon_cell = (coords.longitude * res) as i32; // SAFETY: lon*resolution bounded by 1_800_000 (resolution ≤ 10_000); fits i32
+    let lon_cell = (coords.longitude * res).floor() as i32; // SAFETY: lon*resolution bounded by 1_800_000 (resolution ≤ 10_000); fits i32
     GridCell(lat_cell, lon_cell)
 }
 
@@ -336,6 +338,62 @@ mod tests {
         assert_ne!(
             cell_a, cell_b,
             "distant coordinates must be in different cells"
+        );
+    }
+
+    // ── floor semantics for negative coordinates ──────────────────────────────
+
+    #[test]
+    fn quantize_floors_negative_coordinates_not_truncates_toward_zero() {
+        // -0.00015 * 10_000 = -1.5. Truncation-toward-zero (`as i32` alone)
+        // gives -1; floor must give -2, matching the doc's floor contract.
+        let loc = coords(-0.00015, -0.00015);
+        let cell = quantize(&loc, 10_000);
+        assert_eq!(
+            cell,
+            GridCell(-2, -2),
+            "floor(-1.5) must be -2, not -1 (truncation-toward-zero)"
+        );
+    }
+
+    #[test]
+    fn cell_center_reconstructs_within_true_cell_range_for_negative_coords() {
+        let resolution = 10_000;
+        let res = f64::from(resolution);
+        let loc = coords(-0.00015, -0.00015);
+        let cell = quantize(&loc, resolution);
+        let center = cell_center(cell, resolution);
+
+        // True cell range under floor semantics: [cell / res, (cell + 1) / res).
+        let lat_lo = f64::from(cell.0) / res;
+        let lat_hi = f64::from(cell.0 + 1) / res;
+        let lon_lo = f64::from(cell.1) / res;
+        let lon_hi = f64::from(cell.1 + 1) / res;
+
+        assert!(
+            center.latitude >= lat_lo && center.latitude < lat_hi,
+            "reconstructed centre latitude {} must lie within cell range [{lat_lo}, {lat_hi})",
+            center.latitude
+        );
+        assert!(
+            center.longitude >= lon_lo && center.longitude < lon_hi,
+            "reconstructed centre longitude {} must lie within cell range [{lon_lo}, {lon_hi})",
+            center.longitude
+        );
+    }
+
+    #[test]
+    fn equator_and_prime_meridian_cell_is_not_double_width() {
+        // The cell straddling (0, 0) must be the same width as every other
+        // cell: a coordinate just below zero and one just above zero must
+        // fall in different cells, not share one double-width cell.
+        let resolution = 10_000;
+        let just_below = coords(-0.00001, -0.00001);
+        let just_above = coords(0.00001, 0.00001);
+        assert_ne!(
+            quantize(&just_below, resolution),
+            quantize(&just_above, resolution),
+            "the cell straddling zero must not be double-width"
         );
     }
 
