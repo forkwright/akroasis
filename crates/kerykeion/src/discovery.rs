@@ -205,8 +205,11 @@ async fn run_stale_detection(
         let _ = tx.send(signal);
     }
 
-    // WHY: remove nodes past 3× timeout FROM the active topology.
+    // WHY: remove nodes past 3× timeout FROM the active topology. Edges must
+    // be pruned first so an orphaned node (zero remaining incident edges)
+    // is eligible for eviction on the same pass.
     proc.topology_mut().remove_stale_links(stale_timeout * 3);
+    proc.topology_mut().remove_stale_nodes(stale_timeout * 3);
 
     // WHY: check for partitions after removing stale links.
     let components = proc.topology().connected_components();
@@ -261,6 +264,27 @@ mod tests {
         assert_eq!(
             classify_node_state(Duration::from_secs(21601), timeout),
             NodeState::Removed
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn run_stale_detection_evicts_dead_node_from_topology() {
+        let (tx, _rx) = broadcast::channel(64);
+        let node_db = crate::node_db::NodeDb::new();
+        let mut topology = crate::topology::MeshTopology::new();
+        topology.update_link(NodeNum(2), NodeNum(3), 10.0);
+        let processor =
+            tokio::sync::Mutex::new(PacketProcessor::new(node_db, topology, tx.clone()));
+
+        let stale_timeout = Duration::from_secs(60);
+        tokio::time::advance(stale_timeout * 3 + Duration::from_secs(1)).await;
+
+        run_stale_detection(&processor, stale_timeout, &tx).await;
+
+        let node_count = processor.lock().await.topology().node_count();
+        assert_eq!(
+            node_count, 0,
+            "nodes past 3x timeout must be evicted from node_index, not just their edges"
         );
     }
 
