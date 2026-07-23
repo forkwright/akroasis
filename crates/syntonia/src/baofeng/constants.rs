@@ -36,18 +36,10 @@ pub(crate) const CMD_WRITE: u8 = 0x58;
 /// Terminator byte in the identification response.
 pub(crate) const IDENT_TERMINATOR: u8 = 0xDD;
 
-// ---------------------------------------------------------------------------
-// Magic byte sequences for entering programming mode (variant-specific)
-// ---------------------------------------------------------------------------
-
-/// UV-5R firmware BFB291 and later.
-pub(crate) const MAGIC_UV5R_291: [u8; 7] = [0x50, 0xBB, 0xFF, 0x20, 0x12, 0x07, 0x25];
-
-/// UV-5R original firmware.
-pub(crate) const MAGIC_UV5R_ORIG: [u8; 7] = [0x50, 0xBB, 0xFF, 0x01, 0x25, 0x98, 0x4D];
-
-/// BF-F8HP / BF-A58 variants.
-pub(crate) const MAGIC_BF_F8HP: [u8; 7] = [0x50, 0xBB, 0xFF, 0x20, 0x14, 0x04, 0x13];
+// NOTE: magic byte sequences for entering programming mode live in
+// `variant.rs` (`MAGIC_UV5R_291`, `MAGIC_UV5R_ORIG`, `MAGIC_BF_F8HP`,
+// `MAGIC_SETS`) — that is the sole authoritative source; do not redefine
+// them here (#237).
 
 // ---------------------------------------------------------------------------
 // EEPROM memory layout
