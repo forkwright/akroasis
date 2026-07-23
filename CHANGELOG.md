@@ -1,5 +1,39 @@
 # Changelog
 
+## [0.1.13](https://github.com/forkwright/akroasis/compare/v0.1.12...v0.1.13) (2026-07-23)
+
+
+### Features
+
+* **akroasis-server:** scaffold axum HTTP backend; lock desktop-first surface ([#118](https://github.com/forkwright/akroasis/issues/118), [#126](https://github.com/forkwright/akroasis/issues/126)) ([#174](https://github.com/forkwright/akroasis/issues/174)) ([2c06653](https://github.com/forkwright/akroasis/commit/2c06653dc51facb47804f7acc2aca2728b9cf28c))
+* **akroasis:** add direct-port radio detection ([#171](https://github.com/forkwright/akroasis/issues/171)) ([350c268](https://github.com/forkwright/akroasis/commit/350c2687c316f5348822674f53648d518ef4a4f3))
+* **akroasis:** add mesh json reports ([#161](https://github.com/forkwright/akroasis/issues/161)) ([fb99ce9](https://github.com/forkwright/akroasis/commit/fb99ce9e0a51e5a31b87a2a873ba6b6a669e2e30))
+* **akroasis:** add radio detect json report ([#160](https://github.com/forkwright/akroasis/issues/160)) ([a3bf2db](https://github.com/forkwright/akroasis/commit/a3bf2db4c66ff33d5088efd704c5138cf707354a))
+* **akroasis:** add radio export json report ([#162](https://github.com/forkwright/akroasis/issues/162)) ([e8b3e91](https://github.com/forkwright/akroasis/commit/e8b3e91837198d6fbe645300b15c54976cd27b0d))
+* **akroasis:** add radio import json report ([6933828](https://github.com/forkwright/akroasis/commit/6933828c9da90f2d2babb78c896129d3d27004db))
+* **akroasis:** add vault identity json report ([98fa796](https://github.com/forkwright/akroasis/commit/98fa7965f6608fba3c8fa193ac5fbfc05507def5))
+* **akroasis:** add vault list json report ([#170](https://github.com/forkwright/akroasis/issues/170)) ([45b406e](https://github.com/forkwright/akroasis/commit/45b406e64ff65cd5ec73bfe89c13c4bc7a5b1499))
+* **akroasis:** wire opt-in radio detect hardware ([#159](https://github.com/forkwright/akroasis/issues/159)) ([46032ae](https://github.com/forkwright/akroasis/commit/46032ae4f7fef3c88ede8e43c42931a05de54d4d)), closes [#122](https://github.com/forkwright/akroasis/issues/122)
+* **kerykeion:** instrument runtime async entrypoints ([#150](https://github.com/forkwright/akroasis/issues/150)) ([a9693c8](https://github.com/forkwright/akroasis/commit/a9693c88b623f45dc2c9e886ecc8c1f33eafd31a)), closes [#124](https://github.com/forkwright/akroasis/issues/124)
+* **kerykeion:** live-reload bridge health interval ([ea632c0](https://github.com/forkwright/akroasis/commit/ea632c0e424034a34191447e6b02db20b172787e)), closes [#142](https://github.com/forkwright/akroasis/issues/142)
+* **kryphos:** audit vault mutations ([0e30ee9](https://github.com/forkwright/akroasis/commit/0e30ee97f27073d2cf121fd210fcf6f736ec2128))
+* **semaino:** instrument runtime async entrypoints ([#156](https://github.com/forkwright/akroasis/issues/156)) ([0509df7](https://github.com/forkwright/akroasis/commit/0509df73153969d5fdd59edaf1f6975bff67bbbf)), closes [#124](https://github.com/forkwright/akroasis/issues/124)
+* **sphragis:** repoint to standalone forkwright/sphragis git dep ([#176](https://github.com/forkwright/akroasis/issues/176)) ([eff13bd](https://github.com/forkwright/akroasis/commit/eff13bd68ac786f2bd4d18bff6533df91595f713))
+* **syntonia,akroasis:** public protocol API + BaofengProtocolSession ([#122](https://github.com/forkwright/akroasis/issues/122)) ([#175](https://github.com/forkwright/akroasis/issues/175)) ([80cd09a](https://github.com/forkwright/akroasis/commit/80cd09a91671262f5642a21bd6ffbf8df7606d7d))
+
+
+### Bug Fixes
+
+* **akroasis:** remove unwired daemon and mesh send surfaces ([#148](https://github.com/forkwright/akroasis/issues/148)) ([ec68ab9](https://github.com/forkwright/akroasis/commit/ec68ab9e926b9f85afe77c67a6305158d56087d6))
+* **deps:** clear RUSTSEC-2026-0190/-0204 + yanked crates via lockfile bumps ([#260](https://github.com/forkwright/akroasis/issues/260)) ([80c8516](https://github.com/forkwright/akroasis/commit/80c85164b6deaa14f66c02e0a69fc0957993d6b4))
+* **kerykeion:** recover receive stream from malformed protobuf payloads ([#275](https://github.com/forkwright/akroasis/issues/275)) ([746e8e3](https://github.com/forkwright/akroasis/commit/746e8e35a5460e48de585416e2a4cab24678d866))
+* **kerykeion:** store-and-forward preserves payload + real stored_at_ms ([#272](https://github.com/forkwright/akroasis/issues/272)) ([f93ef9a](https://github.com/forkwright/akroasis/commit/f93ef9ada4f02ec508b311191f0e6f1e2190b4f7)), closes [#189](https://github.com/forkwright/akroasis/issues/189) [#236](https://github.com/forkwright/akroasis/issues/236)
+* **kerykeion:** wire RoutingProcessor ACK/NAK into the collector receive loop ([#274](https://github.com/forkwright/akroasis/issues/274)) ([14498ae](https://github.com/forkwright/akroasis/commit/14498ae99b74a8282e7af1b9bffd039d328ad89b))
+* **koinon:** key the tamper-log hash chain and seal trailing truncation ([#276](https://github.com/forkwright/akroasis/issues/276)) ([08ed40f](https://github.com/forkwright/akroasis/commit/08ed40f3577cdf663e4874eff3fe4f28ea76659e)), closes [#213](https://github.com/forkwright/akroasis/issues/213)
+* **kryphos:** restrict vault dir and files to owner-only perms on Unix ([e50f966](https://github.com/forkwright/akroasis/commit/e50f9662b5e97424097543af5ca6866708599ed5)), closes [#217](https://github.com/forkwright/akroasis/issues/217)
+* **lint:** satisfy unwired-dead-code-untracked markers + clear pre-existing clippy/fmt fails ([#267](https://github.com/forkwright/akroasis/issues/267)) ([3987d54](https://github.com/forkwright/akroasis/commit/3987d54df851e9184a39394e162e640d9a3b7ad3))
+* **syntonia:** unify baofeng RadioIdent + non-exhaustive RadioVariant arm ([#268](https://github.com/forkwright/akroasis/issues/268)) ([76583b8](https://github.com/forkwright/akroasis/commit/76583b871b28bfd6d9b8005ccb5869203f053a9c)), closes [#265](https://github.com/forkwright/akroasis/issues/265)
+
 ## [0.1.12](https://github.com/forkwright/akroasis/compare/v0.1.11...v0.1.12) (2026-05-21)
 
 
