@@ -192,7 +192,7 @@ impl AlertPipeline {
         let summary = build_summary(&aggregated.signal.kind, &severity, convergence);
 
         let alert = Alert {
-            id: Ulid::new(),
+            id: Ulid::generate(),
             severity,
             source_signals: vec![aggregated.signal.signal_id],
             timestamp: Timestamp::now(),
@@ -476,7 +476,7 @@ mod tests {
     fn tracing_sink_emit_does_not_panic() {
         let sink = TracingSink;
         let alert = Alert {
-            id: Ulid::new(),
+            id: Ulid::generate(),
             severity: AlertSeverity::High,
             source_signals: vec![],
             timestamp: Timestamp::now(),

@@ -610,8 +610,8 @@ fn large_metadata_no_truncation() {
 
 #[test]
 fn id_types_usable_in_entry_kinds() {
-    let sid = SignalId::from_ulid(Ulid::new());
-    let eid = EntityId::from_ulid(Ulid::new());
+    let sid = SignalId::from_ulid(Ulid::generate());
+    let eid = EntityId::from_ulid(Ulid::generate());
     let _ = LogEntryKind::SignalObserved {
         signal_id: sid,
         kind_tag: CompactString::from("t"),
