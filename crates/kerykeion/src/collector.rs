@@ -409,9 +409,7 @@ impl Collector for MeshCollector { // kanon:ignore ARCHITECTURE/trait-impl-coloc
                     tracing::info!("collector shutdown requested");
                     break;
                 }
-                result = async {
-                    primary_conn.lock().await.recv().await
-                } => {
+                result = recv_yielding(&*primary_conn) => {
                     match result {
                         Ok(from_radio) => {
                             // Update node_db for CLI display.
@@ -461,6 +459,41 @@ impl Collector for MeshCollector { // kanon:ignore ARCHITECTURE/trait-impl-coloc
 
         tracing::info!("collector shutdown complete");
         Ok(())
+    }
+}
+
+/// Bound on how long [`recv_yielding`] holds the connection lock during a
+/// single `recv()` poll before releasing it.
+const RECV_LOCK_YIELD: Duration = Duration::from_millis(250);
+
+/// Awaits the next inbound frame on `conn` without holding its lock for the
+/// full, potentially-indefinite duration of `MeshConnection::recv()`.
+///
+/// akroasis#190: on a quiet mesh `recv()` blocks until the next frame
+/// arrives  -  unbounded. The previous `conn.lock().await.recv().await`
+/// pattern held the `MutexGuard` across that whole wait, starving every
+/// send-only task sharing the same `Arc<Mutex<ConnectionHandle>>`  -  heartbeat,
+/// discovery, and router-flush all only ever need the lock briefly to
+/// `send()`. This polls `recv()` in `RECV_LOCK_YIELD`-bounded windows,
+/// dropping the guard between polls so a waiting sender is guaranteed a
+/// turn (`tokio::sync::Mutex` is FIFO-fair: a task already queued on
+/// `lock()` is served before a fresh, uncontended re-lock from this loop).
+///
+/// # Cancellation safety
+///
+/// Both transports read through a `Framed`, whose internal buffer persists
+/// across a cancelled poll, so a timed-out window loses no already-buffered
+/// bytes  -  the next iteration resumes cleanly.
+async fn recv_yielding<C>(conn: &Mutex<C>) -> Result<FromRadio, Error>
+where
+    C: MeshConnection,
+{
+    loop {
+        let mut guard = conn.lock().await;
+        match tokio::time::timeout(RECV_LOCK_YIELD, guard.recv()).await {
+            Ok(result) => return result,
+            Err(_elapsed) => drop(guard),
+        }
     }
 }
 
