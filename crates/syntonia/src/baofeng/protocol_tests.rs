@@ -2,7 +2,7 @@
 //! RUST/file-too-long 800-line threshold.
 
 use super::*;
-use crate::baofeng::variant::{bf_f8hp_config, uv5r_config, uv5rm_plus_config};
+use crate::baofeng::variant::{MAGIC_UV5R_291, bf_f8hp_config, uv5r_config, uv5rm_plus_config};
 use crate::serial::mock::MockSerialPort;
 
 // -----------------------------------------------------------------------
@@ -176,15 +176,10 @@ fn enter_programming_mode_sends_magic_bytes() {
     mock.enqueue_response(&[ACK]);
 
     let mut proto = make_protocol(mock);
-    proto
-        .enter_programming_mode(&super::super::constants::MAGIC_UV5R_291)
-        .unwrap();
+    proto.enter_programming_mode(&MAGIC_UV5R_291).unwrap();
 
     // All 7 magic bytes should have been written.
-    assert_eq!(
-        &proto.port.written[..7],
-        &super::super::constants::MAGIC_UV5R_291
-    );
+    assert_eq!(&proto.port.written[..7], &MAGIC_UV5R_291);
 }
 
 #[test]
@@ -193,9 +188,7 @@ fn enter_programming_mode_bad_ack_returns_error() {
     mock.enqueue_response(&[0xFF]);
 
     let mut proto = make_protocol(mock);
-    let err = proto
-        .enter_programming_mode(&super::super::constants::MAGIC_UV5R_291)
-        .unwrap_err();
+    let err = proto.enter_programming_mode(&MAGIC_UV5R_291).unwrap_err();
 
     assert!(matches!(
         err,
@@ -210,9 +203,7 @@ fn enter_programming_mode_bad_ack_returns_error() {
 fn enter_programming_mode_timeout_returns_error() {
     let mock = MockSerialPort::new();
     let mut proto = make_protocol(mock);
-    let err = proto
-        .enter_programming_mode(&super::super::constants::MAGIC_UV5R_291)
-        .unwrap_err();
+    let err = proto.enter_programming_mode(&MAGIC_UV5R_291).unwrap_err();
 
     assert!(matches!(err, ProtocolError::Timeout));
 }
