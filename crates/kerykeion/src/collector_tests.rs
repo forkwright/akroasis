@@ -204,6 +204,73 @@ async fn router_flush_cancels_cleanly() {
     assert!(result.is_ok(), "router flush should cancel cleanly");
 }
 
+// ── akroasis#190: recv_yielding must not starve send-side tasks ──────
+
+/// Mock connection whose `recv()` never resolves, reproducing a quiet mesh.
+struct BlockingRecvConn;
+
+impl crate::connection::MeshConnection for BlockingRecvConn {
+    async fn send(&mut self, _: crate::proto::ToRadio) -> Result<(), Error> {
+        Ok(())
+    }
+    async fn recv(&mut self) -> Result<FromRadio, Error> {
+        std::future::pending().await
+    }
+    fn is_connected(&self) -> bool {
+        true
+    }
+    async fn reconnect(&mut self) -> Result<(), Error> {
+        Ok(())
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn recv_yielding_releases_lock_for_waiting_sender() {
+    let conn = Arc::new(Mutex::new(BlockingRecvConn));
+
+    // Main-loop stand-in: parked on the quiet-mesh recv().
+    let recv_conn = Arc::clone(&conn);
+    let recv_handle = tokio::spawn(async move {
+        let _ = recv_yielding(&*recv_conn).await;
+    });
+    tokio::task::yield_now().await;
+
+    // Send-side stand-in (heartbeat / router-flush): queues on the same
+    // lock before the recv loop's poll window elapses.
+    let send_conn = Arc::clone(&conn);
+    let send_handle = tokio::spawn(async move {
+        send_conn
+            .lock()
+            .await
+            .send(crate::proto::ToRadio {
+                payload_variant: None,
+            })
+            .await
+    });
+    tokio::task::yield_now().await;
+
+    // Elapse one poll window: recv_yielding's inner timeout fires and drops
+    // the guard, handing the fair mutex to the already-queued sender.
+    tokio::time::advance(RECV_LOCK_YIELD).await;
+    tokio::task::yield_now().await;
+
+    #[expect(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        reason = "test-only: recv_yielding must release the lock within one poll window"
+    )]
+    let send_result = tokio::time::timeout(RECV_LOCK_YIELD, send_handle)
+        .await
+        .expect("send should complete once recv_yielding releases the lock")
+        .unwrap();
+
+    recv_handle.abort();
+    assert!(
+        send_result.is_ok(),
+        "queued send should succeed once the guard is dropped"
+    );
+}
+
 // ── akroasis#235: inbound ACK/NAK reaches DeliveryTracker ────────────
 
 fn make_outbound_packet(id: u32, to: u32) -> crate::proto::MeshPacket {
