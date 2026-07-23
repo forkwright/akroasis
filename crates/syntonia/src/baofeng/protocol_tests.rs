@@ -483,14 +483,11 @@ fn download_image_reads_correct_address_sequence() {
 
     assert_eq!(image.len(), usize::from(AUX_BLOCK_END));
     // First main block byte.
-    assert_eq!(image.read_bytes(0x0000, 1), Some(&[0u8][..]));
+    assert_eq!(image.read_bytes(0x0000, 1), &[0u8][..]);
     // Last aux block byte.
     let last_aux_addr = AUX_BLOCK_END - u16::from(AUX_READ_BLOCK_SIZE);
     let expected_val = (128 + aux_blocks - 1) as u8;
-    assert_eq!(
-        image.read_bytes(last_aux_addr, 1),
-        Some(&[expected_val][..])
-    );
+    assert_eq!(image.read_bytes(last_aux_addr, 1), &[expected_val][..]);
 }
 
 // -----------------------------------------------------------------------
@@ -560,26 +557,33 @@ fn upload_calls_progress_callback() {
 fn memory_image_read_write_roundtrip() {
     let mut img = MemoryImage::new(256);
     let data = [0xDE, 0xAD, 0xBE, 0xEF];
-    assert!(img.write_bytes(0x10, &data));
-    assert_eq!(img.read_bytes(0x10, 4), Some(&data[..]));
+    img.write_bytes(0x10, &data);
+    assert_eq!(img.read_bytes(0x10, 4), &data[..]);
 }
 
 #[test]
-fn memory_image_out_of_bounds_read_returns_none() {
+// NOTE: read_bytes documents a panic-on-out-of-bounds contract (see `image.rs` `# Panics`);
+// this verifies the invariant rather than a graceful `None` the API no longer returns.
+#[should_panic]
+fn memory_image_out_of_bounds_read_panics() {
     let img = MemoryImage::new(16);
-    assert_eq!(img.read_bytes(0x10, 1), None);
+    let _ = img.read_bytes(0x10, 1);
 }
 
 #[test]
-fn memory_image_out_of_bounds_write_returns_false() {
+// NOTE: write_bytes documents a panic-on-out-of-bounds contract (see `image.rs` `# Panics`);
+// this verifies the invariant rather than a graceful `false` the API no longer returns.
+#[should_panic]
+fn memory_image_out_of_bounds_write_panics() {
     let mut img = MemoryImage::new(16);
-    assert!(!img.write_bytes(0x10, &[0xFF]));
+    img.write_bytes(0x10, &[0xFF]);
 }
 
 #[test]
-fn memory_image_zero_filled_on_creation() {
+// NOTE: MemoryImage::new represents erased EEPROM state (0xFF), not zero.
+fn memory_image_ff_filled_on_creation() {
     let img = MemoryImage::new(8);
-    assert_eq!(img.as_slice(), &[0, 0, 0, 0, 0, 0, 0, 0]);
+    assert_eq!(img.as_slice(), &[0xFF; 8]);
 }
 
 #[test]
@@ -593,9 +597,9 @@ fn memory_image_len_and_is_empty() {
 }
 
 #[test]
-fn memory_image_from_vec() {
+fn memory_image_from_bytes() {
     let data = vec![1, 2, 3, 4];
-    let img = MemoryImage::from_vec(data.clone());
+    let img = MemoryImage::from_bytes(data.clone());
     assert_eq!(img.as_slice(), &data);
 }
 
