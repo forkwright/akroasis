@@ -299,7 +299,7 @@ fn hex_encode(bytes: &[u8]) -> String {
 
 // ── Tests ────────────────────────────────────────────────────────────────────
 
-#[cfg(all(test, feature = "hardware-serial"))] // kanon:ignore RUST/feature-gate-check -- declared in syntonia/Cargo.toml [features]
+#[cfg(test)]
 #[expect(
     clippy::unwrap_used,
     clippy::indexing_slicing,
