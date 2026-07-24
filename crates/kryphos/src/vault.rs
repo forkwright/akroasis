@@ -5,8 +5,9 @@ use chacha20poly1305::{ChaCha20Poly1305, KeyInit, Nonce};
 use compact_str::CompactString;
 use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
+use snafu::ResultExt;
 
-use crate::error::CryptoError;
+use crate::error::{CryptoError, KeyParseSnafu};
 use crate::key::{InstallationIdentity, SigningKey, VaultKey};
 
 /// Size of the Argon2id salt in bytes.
@@ -218,8 +219,8 @@ pub fn seal_signing_key(
 ///
 /// Returns [`CryptoError::DecryptionFailed`] if decryption fails (wrong key
 /// or tampered ciphertext).
-/// Returns [`crate::KeyError`] (wrapped in `CryptoError`) if the decrypted
-/// bytes are not a valid Ed25519 key.
+/// Returns [`CryptoError::KeyParse`] if the decrypted bytes are not a valid
+/// Ed25519 key.
 pub fn unseal_signing_key(
     ciphertext: &[u8],
     vault_key: &VaultKey,
@@ -232,10 +233,7 @@ pub fn unseal_signing_key(
         .decrypt(nonce, ciphertext)
         .map_err(|_| CryptoError::DecryptionFailed)?;
 
-    let signing =
-        SigningKey::from_bytes(&plaintext).map_err(|e| CryptoError::EncryptionFailed {
-            reason: e.to_string(),
-        })?;
+    let signing = SigningKey::from_bytes(&plaintext).context(KeyParseSnafu)?;
 
     Ok(InstallationIdentity::from_signing_key(signing))
 }
@@ -449,6 +447,23 @@ mod tests {
         let ciphertext = seal_signing_key(&identity, &vault_key, &nonce).unwrap();
         let result = unseal_signing_key(&ciphertext, &vault_key, &wrong_nonce);
         assert!(result.is_err(), "decryption must fail with wrong nonce");
+    }
+
+    #[test]
+    fn unseal_wrong_length_plaintext_is_key_parse_error() {
+        let vault_key = VaultKey::from_bytes([0x42; 32]);
+        let nonce = [0x01; NONCE_LEN];
+        let cipher = ChaCha20Poly1305::new(vault_key.as_bytes().into());
+        let ciphertext = cipher
+            .encrypt(Nonce::from_slice(&nonce), &[0u8; 16][..])
+            .unwrap();
+
+        let result = unseal_signing_key(&ciphertext, &vault_key, &nonce);
+
+        assert!(
+            matches!(result, Err(CryptoError::KeyParse { .. })),
+            "got {result:?}"
+        );
     }
 
     #[test]

@@ -143,6 +143,13 @@ pub enum CryptoError {
         reason: String,
     },
 
+    /// The decrypted plaintext could not be parsed as a valid signing key.
+    #[snafu(display("unseal produced invalid key material: {source}"))]
+    KeyParse {
+        /// Underlying key-parse error.
+        source: KeyError,
+    },
+
     /// Signature verification failed.
     #[snafu(display("signature verification failed"))]
     SignatureInvalid,
