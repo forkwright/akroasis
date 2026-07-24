@@ -154,7 +154,9 @@ fn process_neighborinfo_updates_topology() {
     let mut payload = Vec::new();
     ni.encode(&mut payload).unwrap();
 
-    let packet = make_mesh_packet(0x1111, portnum::NEIGHBORINFO_APP, payload);
+    let mut packet = make_mesh_packet(0x1111, portnum::NEIGHBORINFO_APP, payload);
+    // WHY: hop_limit == hop_start -> hop_count 0 -> direct, so passive learning adds the +1 edge.
+    packet.hop_limit = packet.hop_start;
     let events = proc.process_mesh_packet(&packet);
 
     // WHY: 2 FROM neighborinfo + 1 FROM passive learning (direct link).
@@ -212,8 +214,9 @@ fn passive_learning_infers_hop_count() {
 #[test]
 fn passive_learning_creates_direct_link() {
     let mut proc = make_processor();
-    // hop_start=3, hop_limit=2 → 1 hop (direct)
-    let packet = make_mesh_packet(0xCCCC, portnum::NODEINFO_APP, vec![]);
+    // WHY: hop_limit == hop_start → hop_count 0 → no relay traversed (direct).
+    let mut packet = make_mesh_packet(0xCCCC, portnum::NODEINFO_APP, vec![]);
+    packet.hop_limit = packet.hop_start;
     proc.process_mesh_packet(&packet);
 
     // WHY: direct packet should CREATE a link FROM sender to our node.
@@ -222,6 +225,21 @@ fn passive_learning_creates_direct_link() {
     assert!(
         neighbors.iter().any(|(n, _)| *n == my_node),
         "direct packet should CREATE link to server node"
+    );
+}
+
+#[test]
+fn passive_learning_one_relay_does_not_create_direct_link() {
+    let mut proc = make_processor();
+    // WHY: hop_start=3, hop_limit=2 → hop_count 1 → one relay traversed (not direct).
+    let packet = make_mesh_packet(0xDDDD, portnum::NODEINFO_APP, vec![]);
+    proc.process_mesh_packet(&packet);
+
+    let my_node = proc.node_db().my_node().unwrap();
+    let neighbors = proc.topology().neighbors(NodeNum(0xDDDD));
+    assert!(
+        !neighbors.iter().any(|(n, _)| *n == my_node),
+        "one-relay packet should NOT create a direct link to server node"
     );
 }
 
