@@ -382,24 +382,42 @@ pub fn verify_chain(
 
         // Read CBOR payload.
         let mut cbor_bytes = vec![0u8; usize::try_from(payload_len).unwrap_or_default()];
-        if reader.read_exact(&mut cbor_bytes).is_err() {
-            return Ok(VerificationResult {
-                entries_verified,
-                status: ChainStatus::Corrupted {
-                    byte_offset: byte_offset + 4,
-                },
-            });
+        match reader.read_exact(&mut cbor_bytes) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
+                return Ok(VerificationResult {
+                    entries_verified,
+                    status: ChainStatus::Corrupted {
+                        byte_offset: byte_offset + 4,
+                    },
+                });
+            }
+            Err(e) => {
+                return Err(TamperLogError::Io {
+                    path: path.to_owned(),
+                    source: e,
+                });
+            }
         }
 
         // Read stored hash.
         let mut stored_hash = [0u8; 32];
-        if reader.read_exact(&mut stored_hash).is_err() {
-            return Ok(VerificationResult {
-                entries_verified,
-                status: ChainStatus::Corrupted {
-                    byte_offset: byte_offset + 4 + payload_len,
-                },
-            });
+        match reader.read_exact(&mut stored_hash) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
+                return Ok(VerificationResult {
+                    entries_verified,
+                    status: ChainStatus::Corrupted {
+                        byte_offset: byte_offset + 4 + payload_len,
+                    },
+                });
+            }
+            Err(e) => {
+                return Err(TamperLogError::Io {
+                    path: path.to_owned(),
+                    source: e,
+                });
+            }
         }
 
         // Recompute the keyed hash.
