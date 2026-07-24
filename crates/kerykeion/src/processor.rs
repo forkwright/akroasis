@@ -186,8 +186,8 @@ impl PacketProcessor {
         }
         self.node_db.insert(node);
 
-        // WHY: if hop_count is 1 (direct), establish a direct link.
-        if hop_count == Some(1) {
+        // WHY: if hop_count is 0 (direct, hop_start == hop_limit), establish a direct link.
+        if hop_count == Some(0) {
             if let Some(my_node) = self.node_db.my_node() {
                 if let Some(s) = snr {
                     self.topology.update_link(from, my_node, s);
