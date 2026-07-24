@@ -109,6 +109,16 @@ Every collection crate is expected to produce typed `GeoSignal` objects into koi
 
 ---
 
+## Environment Variables
+
+Akroasis reads these environment variables at runtime; unset variables fall back to the defaults below.
+
+| Variable | Purpose | Default |
+|----------|---------|---------|
+| `AKROASIS_VAULT_PATH` | Overrides the credential vault's storage directory. | `~/.local/share/akroasis/vault` |
+
+---
+
 ## Documentation
 
 - [standards/](standards/): Pointer to canonical kanon standards (STANDARDS.md, GNOMON.md, etc.)
