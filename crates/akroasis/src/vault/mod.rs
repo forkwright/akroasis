@@ -235,9 +235,10 @@ fn run_get(name: &str, out: &mut dyn Write) -> Result<(), VaultCliError> {
     let vault = Vault::open(&path, passphrase.as_bytes()).context(VaultSnafu)?;
     let entry = vault.get(name).context(VaultSnafu)?;
 
-    let secret_str = String::from_utf8_lossy(&entry.secret);
-
-    writeln!(out, "{secret_str}").context(IoSnafu)?;
+    // WHY: credential types include binary classes (Psk, Certificate, RadioKey) that are
+    // routinely non-UTF-8 — from_utf8_lossy would substitute U+FFFD and corrupt the secret.
+    // Write the stored bytes exactly, with no added trailing newline.
+    out.write_all(&entry.secret).context(IoSnafu)?;
     Ok(())
 }
 
@@ -638,6 +639,26 @@ mod tests {
 
         let entry = vault.get("rotate-key").unwrap();
         assert_eq!(entry.secret, b"new-secret");
+    }
+
+    #[test]
+    fn vault_get_round_trip_preserves_non_utf8_secret() {
+        // NOTE: this exercises the same vault.get() data path run_get() reads from —
+        // run_get itself reads its passphrase interactively via rpassword and has no
+        // seam for injecting one in a unit test, so this pins the byte-exact invariant
+        // at the Vault layer instead: a non-UTF-8 secret (invalid as UTF-8, so lossy
+        // decoding would corrupt it) must round-trip unchanged.
+        let (_dir, vault) = create_temp_vault();
+        let non_utf8_secret: &[u8] = b"\xFF\xFE\x00secret";
+        vault
+            .add("binary-key", CredentialType::Psk, non_utf8_secret)
+            .unwrap();
+
+        let entry = vault.get("binary-key").unwrap();
+        assert_eq!(
+            entry.secret, non_utf8_secret,
+            "secret bytes must round-trip exactly, with no UTF-8 lossy substitution"
+        );
     }
 
     #[test]
