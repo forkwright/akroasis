@@ -3,11 +3,12 @@
 #![expect(
     clippy::unwrap_used,
     clippy::indexing_slicing,
+    clippy::panic,
     reason = "integration test — panics are the correct failure mode"
 )]
 
-use koinon::ChainStatus;
-use kryphos::{CredentialType, Vault};
+use koinon::{ChainStatus, LogEntryKind};
+use kryphos::{CredentialType, Vault, VaultError};
 
 const TEST_PASSPHRASE: &[u8] = b"correct horse battery staple";
 
@@ -37,10 +38,82 @@ fn vault_mutations_append_intact_tamper_log() {
         .unwrap();
     vault.rotate("incident-radio-key", b"secret-v2").unwrap();
     vault.revoke("incident-radio-key").unwrap();
+    // Separate credential: `remove` refuses a revoked entry (audit trail
+    // preservation, see storage.rs), so exercising it needs a credential
+    // that was never revoked.
+    vault
+        .add(
+            "incident-backup-key",
+            CredentialType::RadioKey,
+            b"secret-v3",
+        )
+        .unwrap();
+    vault.remove("incident-backup-key").unwrap();
 
     let result = vault.verify_tamper_log().unwrap();
     assert_eq!(result.status, ChainStatus::Intact);
-    assert_eq!(result.entries_verified, 3);
+    assert_eq!(result.entries_verified, 5);
+
+    let data = std::fs::read(vault.tamper_log_path()).unwrap();
+    let expected = [
+        ("incident-radio-key", "add"),
+        ("incident-radio-key", "rotate"),
+        ("incident-radio-key", "revoke"),
+        ("incident-backup-key", "add"),
+        ("incident-backup-key", "remove"),
+    ];
+    for (idx, (name, operation)) in expected.into_iter().enumerate() {
+        let offset = entry_offset(&data, idx);
+        let (entry, _hash) = koinon::tamper_log::decode_entry(&data[offset..]).unwrap();
+        match entry.kind {
+            LogEntryKind::VaultMutation {
+                credential_name,
+                operation: logged_operation,
+            } => {
+                assert_eq!(
+                    credential_name, name,
+                    "entry {idx} credential_name mismatch"
+                );
+                assert_eq!(
+                    logged_operation, operation,
+                    "entry {idx} operation mismatch"
+                );
+            }
+            other => panic!("entry {idx}: expected VaultMutation, got {other:?}"),
+        }
+    }
+}
+
+#[test]
+fn corrupted_tamper_log_blocks_further_vault_mutations() {
+    let dir = tempfile::tempdir().unwrap();
+    let vault_path = dir.path().join("failure-path-vault");
+
+    let vault = Vault::create(&vault_path, TEST_PASSPHRASE).unwrap();
+    vault
+        .add("setup-cred", CredentialType::ApiKey, b"v0")
+        .unwrap();
+    vault
+        .add("setup-cred-2", CredentialType::ApiKey, b"v1")
+        .unwrap();
+
+    // Delete the most recent entry (same attack shape as
+    // `truncated_vault_audit_log_is_detected` above): the sidecar seal
+    // still authenticates 2 entries, so re-opening the log for a further
+    // append sees a streamed-but-short chain and must refuse to resume it
+    // rather than silently laundering the tampering.
+    let log_path = vault.tamper_log_path();
+    let mut data = std::fs::read(&log_path).unwrap();
+    let cutoff = entry_offset(&data, 1);
+    data.truncate(cutoff);
+    std::fs::write(&log_path, &data).unwrap();
+
+    let result = vault.add("failure-path-cred", CredentialType::ApiKey, b"v2");
+    assert!(
+        matches!(result, Err(VaultError::TamperLog { .. })),
+        "a vault mutation on top of a compromised tamper log must surface \
+         VaultError::TamperLog, got {result:?}"
+    );
 }
 
 #[test]
