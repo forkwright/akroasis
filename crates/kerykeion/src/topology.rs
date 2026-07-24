@@ -296,17 +296,21 @@ impl MeshTopology {
     }
 
     /// Returns `true` if `node` is unreachable from `server_node`.
+    ///
+    /// NOTE: reuses [`Self::connected_components`] (undirected) rather than a
+    /// directed dijkstra query — mesh edges point toward the server
+    /// (`update_link(from=heard_node, to=my_node)`), so a directed
+    /// server->node query false-positives on nodes only reachable via a
+    /// node->server edge.
     #[must_use]
     pub fn is_partitioned(&self, node: NodeNum, server_node: NodeNum) -> bool {
-        let Some(&server_idx) = self.node_index.get(&server_node) else {
+        if !self.node_index.contains_key(&node) || !self.node_index.contains_key(&server_node) {
             return true;
-        };
-        let Some(&node_idx) = self.node_index.get(&node) else {
-            return true;
-        };
-
-        let costs = dijkstra(&self.graph, server_idx, Some(node_idx), |_| 1u32);
-        !costs.contains_key(&node_idx)
+        }
+        !self
+            .connected_components()
+            .iter()
+            .any(|group| group.contains(&node) && group.contains(&server_node))
     }
 
     /// Return the number of tracked nodes.
@@ -543,6 +547,16 @@ mod tests {
         topo.add_node(n(3));
         assert!(!topo.is_partitioned(n(2), n(1)));
         assert!(topo.is_partitioned(n(3), n(1)));
+    }
+
+    #[test]
+    fn is_partitioned_false_for_node_to_server_directed_edge() {
+        let mut topo = MeshTopology::new();
+        topo.update_link(n(2), n(1), 10.0);
+        assert!(
+            !topo.is_partitioned(n(2), n(1)),
+            "a node->server edge must not read as partitioned"
+        );
     }
 
     #[tokio::test(start_paused = true)]
