@@ -55,6 +55,21 @@ impl MeshTopology {
 
     /// Add or update a directed edge from `from` to `to` with the given SNR.
     pub fn update_link(&mut self, from: NodeNum, to: NodeNum, snr: f32) {
+        // WHY: a non-finite SNR (NaN/Inf from OTA protobuf) corrupts astar
+        // cost (line below: `ceiling - snr` → -Inf cost, a free edge) and
+        // cannot round-trip through the JSON snapshot. Reject before storage
+        // and before touching the graph — a later valid observation still
+        // adds the nodes.
+        if !snr.is_finite() {
+            tracing::warn!(
+                from = from.0,
+                to = to.0,
+                snr,
+                "rejecting non-finite link SNR"
+            );
+            return;
+        }
+
         let from_idx = self.add_node(from);
         let to_idx = self.add_node(to);
 
@@ -450,6 +465,18 @@ mod tests {
         let neighbors = topo.neighbors(n(1));
         assert!((neighbors[0].1.snr - 8.0).abs() < f32::EPSILON);
         assert_eq!(neighbors[0].1.packet_count, 2);
+    }
+
+    #[test]
+    fn update_link_rejects_non_finite_snr() {
+        let mut topo = MeshTopology::new();
+        topo.update_link(n(1), n(2), f32::NAN);
+        topo.update_link(n(1), n(2), f32::INFINITY);
+        assert_eq!(
+            topo.edge_count(),
+            0,
+            "non-finite SNR must not create an edge"
+        );
     }
 
     #[test]
