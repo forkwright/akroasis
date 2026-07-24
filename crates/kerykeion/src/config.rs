@@ -139,7 +139,10 @@ pub struct TopologyConfig {
     /// `cost = max(snr_ceiling - observed_snr, 0)`. Higher values flatten
     /// the cost function; lower values amplify the preference for strong
     /// links at the expense of hop count.
-    #[serde(default = "default_snr_ceiling")]
+    #[serde(
+        default = "default_snr_ceiling",
+        deserialize_with = "deserialize_finite_snr_ceiling"
+    )]
     pub snr_ceiling: f32,
 }
 
@@ -149,6 +152,24 @@ pub struct TopologyConfig {
 )]
 fn default_snr_ceiling() -> f32 {
     30.0
+}
+
+// WHY: a non-finite snr_ceiling (NaN/inf) silently corrupts the Dijkstra
+// edge-cost formula `max(snr_ceiling - observed_snr, 0)` — NaN comparisons
+// are always false, poisoning every edge weight without an observable error.
+// Reject at config deserialization instead of at routing time.
+fn deserialize_finite_snr_ceiling<'de, D>(deserializer: D) -> Result<f32, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = f32::deserialize(deserializer)?;
+    if value.is_finite() {
+        Ok(value)
+    } else {
+        Err(serde::de::Error::custom(format!(
+            "snr_ceiling must be finite, got {value}"
+        )))
+    }
 }
 
 impl Default for TopologyConfig {
@@ -444,6 +465,21 @@ neighbor_info_enabled = true
         assert!(cfg.neighbor_info_enabled);
         assert_eq!(cfg.stale_node_timeout_secs, 7200);
         assert!((cfg.snr_ceiling - 30.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn topology_config_rejects_non_finite_snr_ceiling() {
+        // WHY: NaN/inf must be rejected at config load, not left to poison
+        // Dijkstra edge-cost math (`max(snr_ceiling - observed_snr, 0)`)
+        // silently at routing time.
+        let nan_result: Result<TopologyConfig, _> = toml::from_str("snr_ceiling = nan");
+        assert!(nan_result.is_err());
+
+        let inf_result: Result<TopologyConfig, _> = toml::from_str("snr_ceiling = inf");
+        assert!(inf_result.is_err());
+
+        let neg_inf_result: Result<TopologyConfig, _> = toml::from_str("snr_ceiling = -inf");
+        assert!(neg_inf_result.is_err());
     }
 
     #[test]
