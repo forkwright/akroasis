@@ -546,4 +546,54 @@ mod tests {
             "should not be failed yet after first NAK (retry should occur)"
         );
     }
+
+    #[tokio::test(start_paused = true)]
+    async fn process_timeouts_retries_then_fails_after_max_retries() {
+        // WHY (akroasis#248): process_timeouts is the sole producer of
+        // DeliveryFailure::MaxRetries but had no direct coverage — only the
+        // sibling NAK retry path was tested.
+        let cfg = OutboundConfig {
+            max_retries: 1,
+            ack_timeout_secs: 1,
+            ..OutboundConfig::default()
+        };
+        let mut router = MeshRouter::with_config(
+            OutboundQueue::with_config(&cfg),
+            StoreForward::new(StoreForwardConfig::default()),
+            DeliveryTracker::new(),
+            &cfg,
+        );
+
+        #[expect(clippy::unwrap_used, reason = "test-only")]
+        let id = router
+            .send(make_packet(50), true, &SendOptions::default())
+            .unwrap();
+        if let Some(msg) = router.next_to_send() {
+            router.track_sent(msg);
+        }
+
+        tokio::time::advance(Duration::from_secs(2)).await;
+        assert!(
+            router.process_timeouts().is_empty(),
+            "first timeout should retry, not fail"
+        );
+
+        if let Some(msg) = router.next_to_send() {
+            router.track_sent(msg);
+        }
+
+        tokio::time::advance(Duration::from_secs(2)).await;
+        assert_eq!(
+            router.process_timeouts(),
+            vec![id],
+            "exhausted retries must report the failed id"
+        );
+        assert!(
+            matches!(
+                router.delivery.delivery_status(id),
+                Some(DeliveryStatus::Failed { .. })
+            ),
+            "delivery must be marked Failed after retries exhausted"
+        );
+    }
 }
