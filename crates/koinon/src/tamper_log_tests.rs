@@ -52,6 +52,13 @@ fn action_kind() -> LogEntryKind {
     }
 }
 
+fn vault_mutation_kind() -> LogEntryKind {
+    LogEntryKind::VaultMutation {
+        credential_name: CompactString::from("incident-radio-key"),
+        operation: CompactString::from("rotate"),
+    }
+}
+
 // -----------------------------------------------------------------------
 // Core functionality
 // -----------------------------------------------------------------------
@@ -585,6 +592,37 @@ fn cbor_roundtrip_action_taken() {
     let (wire, _) = encode_entry(&entry, &[0u8; 32], &test_key()).unwrap();
     let (decoded, _) = decode_entry(&wire).unwrap();
     assert_eq!(entry, decoded);
+}
+
+#[test]
+fn cbor_roundtrip_vault_mutation() {
+    let entry = LogEntry {
+        sequence: 5,
+        timestamp_ms: 6_000_000,
+        kind: vault_mutation_kind(),
+    };
+    let (wire, _) = encode_entry(&entry, &[0u8; 32], &test_key()).unwrap();
+    let (decoded, _) = decode_entry(&wire).unwrap();
+    assert_eq!(entry, decoded);
+}
+
+#[test]
+fn entry_too_large_guard_rejects_oversized_length_prefix() {
+    // WHY: a length prefix claiming u32::MAX bytes must be rejected by the
+    // MAX_ENTRY_BYTES sanity guard BEFORE decode_entry attempts the
+    // corresponding `vec![0u8; payload_len]` allocation. If the guard were
+    // removed, this would instead surface as a Corrupted (short-read) or
+    // an out-of-memory abort, not EntryTooLarge.
+    let bytes = u32::MAX.to_le_bytes();
+
+    let result = decode_entry(&bytes);
+    assert!(
+        matches!(
+            result,
+            Err(TamperLogError::EntryTooLarge { max, .. }) if max == MAX_ENTRY_BYTES
+        ),
+        "expected EntryTooLarge{{max: {MAX_ENTRY_BYTES}, ..}}, got {result:?}"
+    );
 }
 
 #[test]
