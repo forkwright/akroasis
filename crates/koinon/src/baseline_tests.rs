@@ -326,6 +326,21 @@ fn baseline_mean_of_constant_sequence() {
     );
 }
 
+/// A zero-variance baseline (all identical observations) must still score:
+/// the matching value is `Normal`, any deviation is `Anomalous` — never
+/// `InsufficientData`, since `min_observations` was already satisfied.
+#[test]
+fn score_on_zero_variance_baseline_is_not_insufficient_data() {
+    let mut b = Baseline::new();
+    for _ in 0..20 {
+        b.observe(5.0);
+    }
+    assert_eq!(b.count(), 20);
+    assert_eq!(b.stddev(), Some(0.0));
+    assert_eq!(b.score(5.0), AnomalyScore::Normal);
+    assert!(matches!(b.score(6.0), AnomalyScore::Anomalous(_)));
+}
+
 /// After 100 observations near 50.0 the baseline is stable; a value of 500.0
 /// must score as Anomalous (it is far beyond 3 sigma).
 #[test]
