@@ -513,4 +513,51 @@ mod tests {
         let results = detect_radios_impl(vec![], &prober);
         assert!(results.is_empty());
     }
+
+    // ── Single-port detection tests (detect_radio_on_port_impl) ──────────
+
+    #[test]
+    fn detect_radio_on_port_returns_responding_radio() {
+        let prober = MockProber {
+            responses: vec![(
+                "/dev/ttyUSB-TEST-A".to_string(),
+                Some((make_variant(RadioKind::BaofengUv5r), make_ident("BFB297"))),
+            )],
+        };
+
+        let radio = detect_radio_on_port_impl("/dev/ttyUSB-TEST-A", &prober)
+            .unwrap()
+            .unwrap();
+        assert_eq!(radio.variant.kind, RadioKind::BaofengUv5r);
+    }
+
+    #[test]
+    fn detect_radio_on_port_returns_none_when_unresponsive() {
+        let prober = MockProber {
+            responses: vec![("/dev/ttyUSB-TEST-B".to_string(), None)],
+        };
+
+        let result = detect_radio_on_port_impl("/dev/ttyUSB-TEST-B", &prober).unwrap();
+        assert!(result.is_none());
+    }
+
+    // WHY: "/dev/ttyUSB-TEST-C" is absent from any real host's port list, so
+    // find_cable_for_port deterministically takes the not-found fallback
+    // (vid/pid 0, CableChip::Unknown) rather than a live OS port lookup.
+    #[test]
+    fn detect_radio_on_port_not_found_falls_back_to_unknown_cable() {
+        let prober = MockProber {
+            responses: vec![(
+                "/dev/ttyUSB-TEST-C".to_string(),
+                Some((make_variant(RadioKind::BaofengBfF8hp), make_ident("BFF800"))),
+            )],
+        };
+
+        let radio = detect_radio_on_port_impl("/dev/ttyUSB-TEST-C", &prober)
+            .unwrap()
+            .unwrap();
+        assert_eq!(radio.cable.chip, CableChip::Unknown { vid: 0, pid: 0 });
+        assert_eq!(radio.cable.vid, 0);
+        assert_eq!(radio.cable.pid, 0);
+    }
 }
