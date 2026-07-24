@@ -238,15 +238,37 @@ pub(crate) fn parse_chirp_csv(content: &str) -> Result<FrequencyPlan, RadioError
         )]
         let offset_freq = Frequency::hz((offset_mhz * 1_000_000.0).round() as u64);
 
+        // WHY: Frequency's Add/Sub overload panics (debug) / wraps (release) on
+        // out-of-range CSV offsets; check on raw hertz so a malformed row is a
+        // CsvParse error instead of a crash or a silently-wrong tx frequency.
+        let rx_hz = rx_freq.as_hz();
+        let off_hz = offset_freq.as_hz();
+
         let (offset, tx_freq) = match duplex {
-            "+" => (
-                syntonia::FrequencyOffset::Plus(offset_freq),
-                Some(rx_freq + offset_freq),
-            ),
-            "-" => (
-                syntonia::FrequencyOffset::Minus(offset_freq),
-                Some(rx_freq - offset_freq),
-            ),
+            "+" => {
+                let tx_hz = rx_hz
+                    .checked_add(off_hz)
+                    .ok_or_else(|| RadioError::CsvParse {
+                        line: line_num + 2,
+                        message: format!("frequency offset overflow: {rx_freq} + {offset_freq}"),
+                    })?;
+                (
+                    syntonia::FrequencyOffset::Plus(offset_freq),
+                    Some(Frequency::hz(tx_hz)),
+                )
+            }
+            "-" => {
+                let tx_hz = rx_hz
+                    .checked_sub(off_hz)
+                    .ok_or_else(|| RadioError::CsvParse {
+                        line: line_num + 2,
+                        message: format!("frequency offset underflow: {rx_freq} - {offset_freq}"),
+                    })?;
+                (
+                    syntonia::FrequencyOffset::Minus(offset_freq),
+                    Some(Frequency::hz(tx_hz)),
+                )
+            }
             "split" => (
                 syntonia::FrequencyOffset::Split(offset_freq),
                 Some(offset_freq),
@@ -389,6 +411,16 @@ Location,Name,Frequency,Duplex,Offset,Tone,rToneFreq,cToneFreq,DtcsCode,DtcsPola
         assert_eq!(ch1.name, "RPT-IN");
         assert!(ch1.tx_freq.is_some());
         assert!(matches!(ch1.tone, ToneMode::Ctcss(_)));
+    }
+
+    #[test]
+    fn parse_chirp_csv_duplex_minus_underflow_errors() {
+        let csv = "\
+Location,Name,Frequency,Duplex,Offset,Tone,rToneFreq,cToneFreq,DtcsCode,DtcsPolarity,RxDtcsCode,Mode,TStep,Skip,Power,Comment,URCALL,RPT1CALL,RPT2CALL,DVCODE
+0,CALL,146.520000,-,200.000000,,88.5,88.5,023,NN,023,FM,5.00,,High,,,,,\n";
+
+        let result = parse_chirp_csv(csv);
+        assert!(matches!(result, Err(RadioError::CsvParse { .. })));
     }
 
     #[test]
