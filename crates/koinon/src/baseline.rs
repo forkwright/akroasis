@@ -177,8 +177,28 @@ impl Baseline {
         if self.count < config.min_observations {
             return AnomalyScore::InsufficientData;
         }
-        self.z_score(value)
-            .map_or(AnomalyScore::InsufficientData, |z| {
+        // WHY: z_score is None exactly when stddev is not > 0.0 (a zero-variance
+        // baseline), which is not the same as insufficient data — the count gate
+        // above already guarantees min_observations were recorded. Any deviation
+        // FROM a perfectly stable baseline is maximally significant.
+        self.z_score(value).map_or_else(
+            || {
+                let mean = self.mean().unwrap_or(value);
+                // WHY: exact equality is intentional — a zero-variance baseline means
+                // every recorded observation equals `mean` bit-for-bit (Welford), so
+                // this is the precise "no deviation" test, not an approximate one.
+                #[expect(
+                    clippy::float_cmp,
+                    reason = "zero-variance baseline: exact equality to a bit-stable mean is the intended zero-deviation check"
+                )]
+                let at_baseline = value == mean;
+                if at_baseline {
+                    AnomalyScore::Normal
+                } else {
+                    AnomalyScore::Anomalous(f64::INFINITY.copysign(value - mean))
+                }
+            },
+            |z| {
                 let abs_z = z.abs();
                 if abs_z >= config.anomalous_threshold {
                     AnomalyScore::Anomalous(z)
@@ -187,7 +207,8 @@ impl Baseline {
                 } else {
                     AnomalyScore::Normal
                 }
-            })
+            },
+        )
     }
 }
 
