@@ -9,6 +9,9 @@ use crate::config::StoreForwardConfig;
 use crate::error::{Error, QueueFullSnafu};
 use crate::types::NodeNum;
 
+// WHY: bounds StoreForward.queues cardinality independent of max_queue_per_dest, which only bounds messages inside one queue (#242).
+const MAX_DESTINATIONS: usize = 256;
+
 /// A message stored for later delivery to an offline node.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StoredMessage {
@@ -64,8 +67,14 @@ impl StoreForward {
     /// # Errors
     ///
     /// Returns [`Error::QueueFull`] if the destination's queue is at capacity
-    /// and the incoming message is not higher priority than any queued message.
+    /// and the incoming message is not higher priority than any queued message,
+    /// or if `dest` is new and [`MAX_DESTINATIONS`] distinct destinations are
+    /// already tracked.
     pub fn store(&mut self, dest: NodeNum, msg: StoredMessage) -> Result<(), Error> {
+        if !self.queues.contains_key(&dest) && self.queues.len() >= MAX_DESTINATIONS {
+            return QueueFullSnafu { dest: dest.0 }.fail();
+        }
+
         let queue = self.queues.entry(dest).or_default();
 
         if queue.messages.len() >= self.config.max_queue_per_dest {
@@ -123,6 +132,12 @@ impl StoreForward {
     #[must_use]
     pub fn total_stored(&self) -> usize {
         self.queues.values().map(|q| q.messages.len()).sum()
+    }
+
+    /// Number of distinct destination nodes currently tracked.
+    #[must_use]
+    pub fn destination_count(&self) -> usize {
+        self.queues.len()
     }
 
     /// Serialize the store-forward state to JSON bytes.
@@ -316,5 +331,32 @@ mod tests {
                 .unwrap();
         }
         assert_eq!(sf.total_stored(), 5);
+    }
+
+    #[test]
+    fn destination_count_bounded_at_max_destinations() {
+        let mut sf = StoreForward::new(make_config(16));
+
+        for i in 0..MAX_DESTINATIONS as u32 {
+            #[expect(clippy::unwrap_used, reason = "test-only")]
+            sf.store(NodeNum(i), make_stored(i, 64, 1000, 3600))
+                .unwrap();
+        }
+        assert_eq!(sf.destination_count(), MAX_DESTINATIONS);
+
+        // One more distinct destination beyond the cap should be rejected.
+        let result = sf.store(
+            NodeNum(MAX_DESTINATIONS as u32),
+            make_stored(MAX_DESTINATIONS as u32, 64, 1000, 3600),
+        );
+        assert!(result.is_err(), "should reject new destination over cap");
+        assert_eq!(sf.destination_count(), MAX_DESTINATIONS);
+
+        // An existing destination should still accept more messages.
+        #[expect(clippy::unwrap_used, reason = "test-only")]
+        sf.store(NodeNum(0), make_stored(9999, 64, 2000, 3600))
+            .unwrap();
+        assert_eq!(sf.destination_count(), MAX_DESTINATIONS);
+        assert_eq!(sf.queue_depth(NodeNum(0)), 2);
     }
 }
