@@ -47,7 +47,7 @@ impl MessageBuilder {
             payload: text.as_bytes().to_vec(),
             channel: ChannelIndex(0),
             want_ack: false,
-            hop_limit: config.default_hop_limit,
+            hop_limit: config.default_hop_limit.min(MAX_HOP_LIMIT),
             priority: Priority::Default,
         }
     }
@@ -80,7 +80,7 @@ impl MessageBuilder {
             payload: pos.encode_to_vec(),
             channel: ChannelIndex(0),
             want_ack: false,
-            hop_limit: config.default_hop_limit,
+            hop_limit: config.default_hop_limit.min(MAX_HOP_LIMIT),
             priority: Priority::Default,
         }
     }
@@ -104,7 +104,7 @@ impl MessageBuilder {
             payload: admin_msg.encode_to_vec(),
             channel: ChannelIndex(0),
             want_ack: true,
-            hop_limit: config.default_hop_limit,
+            hop_limit: config.default_hop_limit.min(MAX_HOP_LIMIT),
             priority: Priority::Reliable,
         }
     }
@@ -378,6 +378,21 @@ mod tests {
             .unwrap();
         assert_eq!(pkt.hop_limit, 1);
         assert_eq!(pkt.hop_start, 1);
+    }
+
+    #[test]
+    fn configured_hop_limit_over_max_is_clamped() {
+        // WHY: config-sourced hop_limit bypassed the builder's `hop_limit()`
+        // clamp — a misconfigured or malicious MessageConfig could exceed
+        // MAX_HOP_LIMIT and inflate mesh flooding (#240).
+        let cfg = MessageConfig {
+            default_hop_limit: 255,
+        };
+        #[expect(clippy::unwrap_used, reason = "test-only")]
+        let pkt = MessageBuilder::text_with_config(DEST, "test", &cfg)
+            .build(FROM_NODE, &[])
+            .unwrap();
+        assert_eq!(pkt.hop_limit, u32::from(MAX_HOP_LIMIT));
     }
 
     #[test]
