@@ -232,6 +232,23 @@ pub enum Error {
         #[snafu(implicit)]
         location: snafu::Location,
     },
+
+    /// A store-forward snapshot has more distinct destinations than the
+    /// running cap allows; loading it verbatim would silently disable the
+    /// per-destination resource-exhaustion protection for every over-cap
+    /// destination.
+    #[snafu(display(
+        "store-forward snapshot has {destination_count} destinations, exceeding the cap of {max}"
+    ))]
+    StoreForwardOverCapacity {
+        /// Distinct destination count found in the snapshot.
+        destination_count: usize,
+        /// The configured distinct-destination cap (`store_forward::MAX_DESTINATIONS`).
+        max: usize,
+        /// Source location for diagnostics.
+        #[snafu(implicit)]
+        location: snafu::Location,
+    },
 }
 
 // WHY: tokio_util::codec::Decoder::Error and Encoder::Error both require

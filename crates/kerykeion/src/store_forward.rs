@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use tokio::time::Instant;
 
 use crate::config::StoreForwardConfig;
-use crate::error::{Error, QueueFullSnafu};
+use crate::error::{Error, QueueFullSnafu, StoreForwardOverCapacitySnafu};
 use crate::types::NodeNum;
 
 // WHY: bounds StoreForward.queues cardinality independent of max_queue_per_dest, which only bounds messages inside one queue (#242).
@@ -162,12 +162,29 @@ impl StoreForward {
     /// # Errors
     ///
     /// Returns [`Error::StoreForwardSerde`] if deserialization fails.
+    ///
+    /// Returns [`Error::StoreForwardOverCapacity`] if the snapshot holds
+    /// more than [`MAX_DESTINATIONS`] distinct destinations. `store()`'s cap
+    /// guard only rejects *new* destinations once the cap is reached — a
+    /// destination restored wholesale here would count as "existing" from
+    /// `store()`'s point of view and accept unbounded messages forever, so
+    /// an over-cap snapshot is rejected outright rather than silently
+    /// admitted. `self` is left unmodified when this error is returned.
     pub fn deserialize(&mut self, data: &[u8]) -> Result<(), Error> {
         let raw: HashMap<u32, Vec<StoredMessage>> =
             serde_json::from_slice(data).map_err(|source| Error::StoreForwardSerde {
                 source,
                 location: snafu::location!(),
             })?;
+
+        if raw.len() > MAX_DESTINATIONS {
+            return StoreForwardOverCapacitySnafu {
+                destination_count: raw.len(),
+                max: MAX_DESTINATIONS,
+            }
+            .fail();
+        }
+
         self.queues = raw
             .into_iter()
             .map(|(node, messages)| {
@@ -358,5 +375,45 @@ mod tests {
             .unwrap();
         assert_eq!(sf.destination_count(), MAX_DESTINATIONS);
         assert_eq!(sf.queue_depth(NodeNum(0)), 2);
+    }
+
+    #[test]
+    fn deserialize_rejects_snapshot_over_max_destinations() {
+        // Hand-build a raw snapshot with one destination beyond the cap —
+        // simulates a pre-#242 snapshot, a migration, or a corrupted file.
+        let raw: HashMap<u32, Vec<StoredMessage>> = (0..=MAX_DESTINATIONS as u32)
+            .map(|i| (i, vec![make_stored(i, 64, 1000, 3600)]))
+            .collect();
+        assert_eq!(raw.len(), MAX_DESTINATIONS + 1);
+        #[expect(clippy::unwrap_used, reason = "test-only")]
+        let data = serde_json::to_vec(&raw).unwrap();
+
+        let mut sf = StoreForward::new(make_config(16));
+        let result = sf.deserialize(&data);
+
+        assert!(
+            result.is_err(),
+            "an over-cap snapshot must be rejected, not silently admitted"
+        );
+        assert_eq!(
+            sf.destination_count(),
+            0,
+            "a rejected snapshot must leave existing state unmodified"
+        );
+    }
+
+    #[test]
+    fn deserialize_accepts_snapshot_at_exactly_max_destinations() {
+        let raw: HashMap<u32, Vec<StoredMessage>> = (0..MAX_DESTINATIONS as u32)
+            .map(|i| (i, vec![make_stored(i, 64, 1000, 3600)]))
+            .collect();
+        #[expect(clippy::unwrap_used, reason = "test-only")]
+        let data = serde_json::to_vec(&raw).unwrap();
+
+        let mut sf = StoreForward::new(make_config(16));
+        #[expect(clippy::unwrap_used, reason = "test-only")]
+        sf.deserialize(&data).unwrap();
+
+        assert_eq!(sf.destination_count(), MAX_DESTINATIONS);
     }
 }
