@@ -221,7 +221,7 @@ fn observe_rejects_infinite_values() {
         count_before,
         "infinite observations must not be counted"
     );
-    assert!(b.mean().is_some_and(|m| m.is_finite()));
+    assert!(b.mean().is_some_and(f64::is_finite));
 }
 
 // ── TimeWindowedBaseline tests ────────────────────────────────────────────
