@@ -188,8 +188,16 @@ fn observe_rejects_nan_and_does_not_poison_future_scores() {
     b.observe(f64::NAN);
 
     // The NaN observation must be rejected outright, not merely tolerated.
-    assert_eq!(b.count(), count_before, "NaN observation must not be counted");
-    assert_eq!(b.mean(), mean_before, "NaN observation must not perturb the mean");
+    assert_eq!(
+        b.count(),
+        count_before,
+        "NaN observation must not be counted"
+    );
+    assert_eq!(
+        b.mean(),
+        mean_before,
+        "NaN observation must not perturb the mean"
+    );
     assert!(!b.mean().unwrap().is_nan());
 
     // A subsequent, ordinary observation still scores sanely — the baseline
@@ -208,7 +216,11 @@ fn observe_rejects_infinite_values() {
     b.observe(f64::INFINITY);
     b.observe(f64::NEG_INFINITY);
 
-    assert_eq!(b.count(), count_before, "infinite observations must not be counted");
+    assert_eq!(
+        b.count(),
+        count_before,
+        "infinite observations must not be counted"
+    );
     assert!(b.mean().is_some_and(|m| m.is_finite()));
 }
 
