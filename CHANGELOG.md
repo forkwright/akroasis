@@ -1,5 +1,35 @@
 # Changelog
 
+## [0.1.14](https://github.com/forkwright/akroasis/compare/v0.1.13...v0.1.14) (2026-07-28)
+
+
+### Bug Fixes
+
+* **akroasis:** reject overflowing chirp csv frequency offsets ([#197](https://github.com/forkwright/akroasis/issues/197)) ([#309](https://github.com/forkwright/akroasis/issues/309)) ([0ef72bb](https://github.com/forkwright/akroasis/commit/0ef72bb343f9584e9f2a6b6ac4e62ac4e25faba4))
+* **akroasis:** retrieve vault secrets byte-exact instead of lossy utf8 ([#196](https://github.com/forkwright/akroasis/issues/196)) ([#308](https://github.com/forkwright/akroasis/issues/308)) ([80f952c](https://github.com/forkwright/akroasis/commit/80f952caaaef46cead3cd5f8f60a6bdf881abf2e))
+* **kerykeion:** bound store-forward destination-map cardinality ([#242](https://github.com/forkwright/akroasis/issues/242)) ([#311](https://github.com/forkwright/akroasis/issues/311)) ([94f5dfa](https://github.com/forkwright/akroasis/commit/94f5dfa19837d946931d6cae52e3f2aac770d75f))
+* **kerykeion:** clamp config-sourced hop_limit to MAX_HOP_LIMIT ([#240](https://github.com/forkwright/akroasis/issues/240)) ([#305](https://github.com/forkwright/akroasis/issues/305)) ([43025c8](https://github.com/forkwright/akroasis/commit/43025c8a51d24a080180d226a59a0366a5f1d17b))
+* **kerykeion:** correct direct-link hop_count predicate to 0 ([#201](https://github.com/forkwright/akroasis/issues/201)) ([#303](https://github.com/forkwright/akroasis/issues/303)) ([138bbec](https://github.com/forkwright/akroasis/commit/138bbecdc5147c4ce084ab8d195f5c94b392ea94))
+* **kerykeion:** evict stale nodes from topology, not just stale links ([#299](https://github.com/forkwright/akroasis/issues/299)) ([b8aa81d](https://github.com/forkwright/akroasis/commit/b8aa81d26533f3f1ecb3598d325ba51ef4ec2def)), closes [#243](https://github.com/forkwright/akroasis/issues/243)
+* **kerykeion:** guard mark_acknowledged against duplicate/late ACKs ([#199](https://github.com/forkwright/akroasis/issues/199)) ([#291](https://github.com/forkwright/akroasis/issues/291)) ([7879844](https://github.com/forkwright/akroasis/commit/787984410698258e606e5a9d6a27448e857c9f54))
+* **kerykeion:** guard topology staleness cutoff against clock underflow ([#293](https://github.com/forkwright/akroasis/issues/293)) ([18e59c1](https://github.com/forkwright/akroasis/commit/18e59c1ad050db08ccd98769a4293830b2397093)), closes [#206](https://github.com/forkwright/akroasis/issues/206)
+* **kerykeion:** make is_partitioned agree with connected_components ([#202](https://github.com/forkwright/akroasis/issues/202)) ([#313](https://github.com/forkwright/akroasis/issues/313)) ([21863c8](https://github.com/forkwright/akroasis/commit/21863c86f97405cb3a93444c7e216cb011eb2d95))
+* **kerykeion:** preserve message TTL/created across outbound retry ([#200](https://github.com/forkwright/akroasis/issues/200)) ([#292](https://github.com/forkwright/akroasis/issues/292)) ([53491d6](https://github.com/forkwright/akroasis/commit/53491d6712a42eaa8da7bfe18dea852b82a08359))
+* **kerykeion:** reject non-finite SNR in topology update_link ([#203](https://github.com/forkwright/akroasis/issues/203)) ([#304](https://github.com/forkwright/akroasis/issues/304)) ([8de2e5d](https://github.com/forkwright/akroasis/commit/8de2e5dc69d62dad3364f35804ab548ba2c9401e))
+* **kerykeion:** reject non-finite snr_ceiling at config deserialization ([#241](https://github.com/forkwright/akroasis/issues/241)) ([#306](https://github.com/forkwright/akroasis/issues/306)) ([1d4c9f6](https://github.com/forkwright/akroasis/commit/1d4c9f607d3279ceac2103251c61d3b35f21eb2b))
+* **kerykeion:** stop starving heartbeat/router-flush behind main recv() lock ([#190](https://github.com/forkwright/akroasis/issues/190)) ([#289](https://github.com/forkwright/akroasis/issues/289)) ([cb57cb8](https://github.com/forkwright/akroasis/commit/cb57cb8751e80b0921348b6417f1da2734c2cd63))
+* **kerykeion:** track delivery only after dispatch succeeds ([#245](https://github.com/forkwright/akroasis/issues/245)) ([#300](https://github.com/forkwright/akroasis/issues/300)) ([3f6c484](https://github.com/forkwright/akroasis/commit/3f6c484c992d248e20c99fcf8129d9dbd0866761))
+* **kerykeion:** treat hops_away 0 as direct, matching the sibling path ([#325](https://github.com/forkwright/akroasis/issues/325)) ([1c160b5](https://github.com/forkwright/akroasis/commit/1c160b50b6d02b2e5ebb013a683034363fff49f8)), closes [#321](https://github.com/forkwright/akroasis/issues/321)
+* **koinon:** propagate non-eof io errors from verify_chain reads ([#210](https://github.com/forkwright/akroasis/issues/210)) ([#310](https://github.com/forkwright/akroasis/issues/310)) ([3e093d5](https://github.com/forkwright/akroasis/commit/3e093d518c678f7f17ccfdb86633f2e0d933f4d6))
+* **koinon:** score zero-variance baseline deviations as anomalous ([#212](https://github.com/forkwright/akroasis/issues/212)) ([#307](https://github.com/forkwright/akroasis/issues/307)) ([8b44e4f](https://github.com/forkwright/akroasis/commit/8b44e4fbae0af56e7c801720e9cc4fc01c2a4c23))
+* **kryphos:** report unseal key-parse failure as KeyParse not EncryptionFailed ([#216](https://github.com/forkwright/akroasis/issues/216)) ([#314](https://github.com/forkwright/akroasis/issues/314)) ([a2bc7d5](https://github.com/forkwright/akroasis/commit/a2bc7d5315ccacf3393cdcf8a930da616ea90da9))
+* **semaino:** floor cell quantization for negative coordinates ([#221](https://github.com/forkwright/akroasis/issues/221)) ([#295](https://github.com/forkwright/akroasis/issues/295)) ([9e26eea](https://github.com/forkwright/akroasis/commit/9e26eea431496c7570df14142e89584db504fe9f))
+* **semaino:** quantize alert cells at configured grid_resolution ([#294](https://github.com/forkwright/akroasis/issues/294)) ([48e4ca4](https://github.com/forkwright/akroasis/commit/48e4ca4262689bac620ad690cb4b5e3c395da0d7)), closes [#220](https://github.com/forkwright/akroasis/issues/220)
+* **syntonia:** remove duplicate baofeng magic-byte constants ([#237](https://github.com/forkwright/akroasis/issues/237)) ([#296](https://github.com/forkwright/akroasis/issues/296)) ([456ec9d](https://github.com/forkwright/akroasis/commit/456ec9d4967e47caafd5d69c2ed2bb6ecb922aa6))
+* **syntonia:** repair protocol_tests.rs API drift ([#239](https://github.com/forkwright/akroasis/issues/239)) ([#298](https://github.com/forkwright/akroasis/issues/298)) ([d47387c](https://github.com/forkwright/akroasis/commit/d47387c9943d98664164a7bf6c664780368b8a5f))
+* **syntonia:** skip out-of-range channel index instead of truncating to 0 ([#290](https://github.com/forkwright/akroasis/issues/290)) ([5fd1156](https://github.com/forkwright/akroasis/commit/5fd1156c1ee15a94b4f258c267eb56cc6e8e22c0)), closes [#193](https://github.com/forkwright/akroasis/issues/193)
+* **syntonia:** wire baofeng::detect into the crate module tree ([#238](https://github.com/forkwright/akroasis/issues/238)) ([#297](https://github.com/forkwright/akroasis/issues/297)) ([2aafbe9](https://github.com/forkwright/akroasis/commit/2aafbe95a1d163bde7c52d6a196cb52fd496f24c))
+
 ## [0.1.13](https://github.com/forkwright/akroasis/compare/v0.1.12...v0.1.13) (2026-07-23)
 
 
