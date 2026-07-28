@@ -205,15 +205,15 @@ pub(crate) fn node_info_to_mesh_node(ni: &crate::proto::NodeInfo) -> MeshNode {
             None
         },
         snr: if ni.snr == 0.0 { None } else { Some(ni.snr) },
+        // WHY: hops_away's valid domain includes 0 (a direct neighbor), unlike
+        // snr/last_heard where 0 IS the proto3 unset sentinel — so it is
+        // always present, matching processor.rs's hop_count == Some(0)
+        // "direct" convention (#201) instead of treating 0 as unknown.
         #[expect(
             clippy::cast_possible_truncation,
             reason = "hops_away is bounded by MAX_HOP_LIMIT (7) in Meshtastic firmware"
         )]
-        hop_count: if ni.hops_away != 0 {
-            Some(ni.hops_away as u8) // SAFETY: Meshtastic hops_away field is 0..255 per protocol; fits u8
-        } else {
-            None
-        },
+        hop_count: Some(ni.hops_away as u8), // SAFETY: Meshtastic hops_away field is 0..255 per protocol; fits u8
     }
 }
 
@@ -430,5 +430,32 @@ mod tests {
         #[expect(clippy::unwrap_used, reason = "test-only")]
         let result = handshake(&mut conn, &mut db).await.unwrap();
         assert_eq!(result.channels.len(), 1);
+    }
+
+    #[test]
+    fn node_info_zero_hops_away_maps_to_direct_hop_count() {
+        // WHY: 0 hops away means "direct neighbor", not "unknown" — must
+        // agree with processor.rs's Some(0)-is-direct convention (#201),
+        // not collapse to None the way it did before #321.
+        let ni = NodeInfo {
+            hops_away: 0,
+            ..Default::default()
+        };
+
+        let node = node_info_to_mesh_node(&ni);
+
+        assert_eq!(node.hop_count, Some(0));
+    }
+
+    #[test]
+    fn node_info_nonzero_hops_away_maps_to_that_hop_count() {
+        let ni = NodeInfo {
+            hops_away: 3,
+            ..Default::default()
+        };
+
+        let node = node_info_to_mesh_node(&ni);
+
+        assert_eq!(node.hop_count, Some(3));
     }
 }
