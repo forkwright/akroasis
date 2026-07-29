@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.17](https://github.com/forkwright/akroasis/compare/v0.1.16...v0.1.17) (2026-07-29)
+
+
+### Bug Fixes
+
+* **kerykeion:** drive retention and TTL maintenance from the router flush tick ([#332](https://github.com/forkwright/akroasis/issues/332)) ([dc70325](https://github.com/forkwright/akroasis/commit/dc70325f7d289736f3ab1759025886e726f5c215)), closes [#244](https://github.com/forkwright/akroasis/issues/244)
+
 ## [0.1.16](https://github.com/forkwright/akroasis/compare/v0.1.15...v0.1.16) (2026-07-29)
 
 
