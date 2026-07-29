@@ -32,7 +32,10 @@ fn uv5r_download_covers_full_main_region() {
         plan.len(),
         usize::try_from(expected_blocks).unwrap_or_default()
     );
-    assert_eq!(plan.get(0).copied().unwrap_or_default().addr, MAIN_START);
+    assert_eq!(
+        plan.first().expect("download plan is non-empty").addr,
+        MAIN_START
+    );
     let last = plan.last().unwrap();
     assert_eq!(last.addr + last.size, MAIN_END);
 }
@@ -44,7 +47,7 @@ fn f8hp_download_includes_aux_warmup() {
     let warmup_ops: Vec<_> = plan.iter().filter(|op| op.is_warmup).collect();
     assert_eq!(warmup_ops.len(), 1);
     assert_eq!(
-        warmup_ops.get(0).copied().unwrap_or_default().addr,
+        warmup_ops.first().expect("exactly one warm-up op").addr,
         AUX_WARMUP_ADDR
     );
 }
@@ -470,7 +473,7 @@ fn download_image_reads_correct_address_sequence() {
     }
 
     let mut proto = make_protocol(mock);
-    let image = proto.download_image().unwrap();
+    let image = proto.download_image(&bf_f8hp_config()).unwrap();
 
     assert_eq!(image.len(), usize::from(AUX_BLOCK_END));
     // First main block byte.
@@ -504,7 +507,7 @@ fn upload_only_writes_safe_ranges() {
     let mut proto = make_protocol(mock);
 
     proto
-        .upload_image(&image, &mut |current, total| {
+        .upload_image(&bf_f8hp_config(), &image, &mut |current, total| {
             progress_calls.push((current, total));
         })
         .unwrap();
@@ -532,7 +535,7 @@ fn upload_calls_progress_callback() {
     let mut proto = make_protocol(mock);
 
     proto
-        .upload_image(&image, &mut |_current, _total| {
+        .upload_image(&bf_f8hp_config(), &image, &mut |_current, _total| {
             called = true;
         })
         .unwrap();
@@ -633,4 +636,97 @@ fn radio_ident_firmware_prefix_from_ascii() {
 #[test]
 fn radio_ident_rejects_odd_length() {
     assert!(RadioIdent::from_raw(&[1, 2, 3]).is_none());
+}
+
+// -----------------------------------------------------------------------
+// Variant-aware live-driver I/O (#225)
+// -----------------------------------------------------------------------
+
+/// Script exactly the main-block reads a UV-5R download should issue.
+fn enqueue_main_block_reads(mock: &mut MockSerialPort) {
+    let mut addr = MAIN_BLOCK_START;
+    while addr < MAIN_BLOCK_END {
+        let data = vec![0u8; usize::from(READ_BLOCK_SIZE)];
+        mock.enqueue_response(&read_response_packet(addr, &data));
+        addr += u16::from(READ_BLOCK_SIZE);
+    }
+}
+
+#[test]
+fn download_skips_aux_block_for_variant_without_one() {
+    // WARNING: the mock is scripted with main-block reads ONLY. If the driver
+    // issues the aux warm-up the way it did before #225, the queue is empty by
+    // then and the read fails — which is what makes this assertion able to go
+    // red rather than merely describing current behaviour.
+    let mut mock = MockSerialPort::new();
+    enqueue_main_block_reads(&mut mock);
+
+    let mut proto = make_protocol(mock);
+    let image = proto
+        .download_image(&uv5r_config())
+        .expect("plain UV-5R download must not touch the aux block");
+
+    assert_eq!(image.len(), usize::from(MAIN_BLOCK_END));
+}
+
+#[test]
+fn download_still_reads_aux_block_for_f8hp() {
+    let mut mock = MockSerialPort::new();
+    enqueue_main_block_reads(&mut mock);
+    let aux_blocks = (AUX_BLOCK_END - AUX_BLOCK_START) / u16::from(AUX_READ_BLOCK_SIZE);
+    for i in 0..=aux_blocks {
+        let addr = AUX_BLOCK_START + i * u16::from(AUX_READ_BLOCK_SIZE);
+        let data = vec![0u8; usize::from(AUX_READ_BLOCK_SIZE)];
+        mock.enqueue_response(&read_response_packet(addr, &data));
+    }
+
+    let mut proto = make_protocol(mock);
+    let image = proto
+        .download_image(&bf_f8hp_config())
+        .expect("F8HP download covers the aux block");
+
+    assert_eq!(image.len(), usize::from(AUX_BLOCK_END));
+}
+
+#[test]
+fn upload_skips_aux_ranges_for_variant_without_one() {
+    let main_blocks: usize = UPLOAD_RANGES_MAIN
+        .iter()
+        .map(|(s, e)| usize::from(e - s) / usize::from(WRITE_BLOCK_SIZE))
+        .sum();
+
+    // Only enough ACKs for the main ranges: an aux write would run the mock dry.
+    let mut mock = MockSerialPort::new();
+    for _ in 0..main_blocks {
+        mock.enqueue_response(&[ACK]);
+    }
+
+    let image = MemoryImage::new(usize::from(MAIN_BLOCK_END));
+    let mut progress_calls = Vec::new();
+    let mut proto = make_protocol(mock);
+
+    proto
+        .upload_image(&uv5r_config(), &image, &mut |current, total| {
+            progress_calls.push((current, total));
+        })
+        .expect("plain UV-5R upload must not write the aux ranges");
+
+    assert_eq!(progress_calls.len(), main_blocks);
+    assert_eq!(progress_calls.last(), Some(&(main_blocks, main_blocks)));
+}
+
+#[test]
+fn upload_refuses_an_image_shorter_than_the_ranges_it_would_write() {
+    let mut proto = make_protocol(MockSerialPort::new());
+    // A standard `.img` import is 0x1800 — short of the aux ranges an F8HP writes.
+    let image = MemoryImage::new(usize::from(MAIN_BLOCK_END));
+
+    let err = proto
+        .upload_image(&bf_f8hp_config(), &image, &mut |_, _| {})
+        .expect_err("a short image must be refused, not panic mid-transfer");
+
+    assert!(
+        matches!(err, ProtocolError::ImageTooShort { .. }),
+        "expected ImageTooShort, got {err:?}"
+    );
 }
