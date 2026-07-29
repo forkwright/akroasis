@@ -256,6 +256,14 @@ pub struct OutboundConfig {
     pub ack_timeout_secs: u64,
     /// Default store-and-forward TTL, in seconds.
     pub store_forward_ttl_secs: u64,
+    /// How long a delivery record is retained after it reaches a terminal
+    /// state, and how long an unacknowledged record may stay active before it
+    /// is expired, in seconds.
+    ///
+    /// WHY: without this bound the delivery tracker grows monotonically on a
+    /// long-lived collector — terminal records are never released and records
+    /// for packets that are never acknowledged stay active forever (#244).
+    pub delivery_record_max_age_secs: u64,
 }
 
 impl Default for OutboundConfig {
@@ -265,6 +273,10 @@ impl Default for OutboundConfig {
             max_retries: 5,
             ack_timeout_secs: 30,
             store_forward_ttl_secs: 3600,
+            // WHY: longer than the store-and-forward TTL so a record outlives
+            // the delivery attempt it describes, and still bounded so the
+            // tracker cannot grow without limit.
+            delivery_record_max_age_secs: 7200,
         }
     }
 }
@@ -280,6 +292,12 @@ impl OutboundConfig {
     #[must_use]
     pub const fn store_forward_ttl(&self) -> Duration {
         Duration::from_secs(self.store_forward_ttl_secs)
+    }
+
+    /// Returns the delivery-record retention bound as a [`Duration`].
+    #[must_use]
+    pub const fn delivery_record_max_age(&self) -> Duration {
+        Duration::from_secs(self.delivery_record_max_age_secs)
     }
 }
 
@@ -562,6 +580,7 @@ neighbor_info_enabled = true
                 max_retries: 1,
                 ack_timeout_secs: 7,
                 store_forward_ttl_secs: 11,
+                delivery_record_max_age_secs: 13,
             },
             transport: TransportConfig {
                 tcp_connect_timeout_secs: 8,

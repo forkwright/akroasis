@@ -210,6 +210,10 @@ impl DeliveryTracker {
     }
 
     /// Remove completed (acknowledged, failed, expired) records older than `max_age`.
+    ///
+    /// WARNING: this only releases records that already reached a terminal
+    /// state. Call [`Self::expire_stale`] first, or a record for a packet that
+    /// is never acknowledged stays active and is retained forever (#244).
     pub fn prune_completed(&mut self, max_age: std::time::Duration) {
         let now = Instant::now();
         self.records.retain(|_, record| {
@@ -221,6 +225,33 @@ impl DeliveryTracker {
                 DeliveryStatus::Queued | DeliveryStatus::Sent { .. } => true,
             }
         });
+    }
+
+    /// Move records still active after `max_age` into [`DeliveryStatus::Expired`].
+    ///
+    /// Returns the packet ids that were expired.
+    ///
+    /// WHY: a `Queued` or `Sent` record only leaves the active set on an ACK, a
+    /// NAK, or retry exhaustion. A packet whose ACK never arrives and whose
+    /// outbound entry is already gone reaches none of those, so without a
+    /// wall-clock backstop it pins a record for the lifetime of the process
+    /// and `prune_completed` can never release it (#244).
+    pub fn expire_stale(&mut self, max_age: std::time::Duration) -> Vec<PacketId> {
+        let now = Instant::now();
+        let mut expired = Vec::new();
+        for (id, record) in &mut self.records {
+            let active = matches!(
+                record.status,
+                DeliveryStatus::Queued | DeliveryStatus::Sent { .. }
+            );
+            if active && now.duration_since(record.created) >= max_age {
+                record.status = DeliveryStatus::Expired;
+                let stats = self.dest_stats.entry(record.dest).or_default();
+                stats.failed += 1;
+                expired.push(*id);
+            }
+        }
+        expired
     }
 }
 
