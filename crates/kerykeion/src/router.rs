@@ -46,6 +46,8 @@ pub struct MeshRouter {
     ack_timeout: Duration,
     /// Default TTL for store-and-forward messages.
     sf_ttl_secs: u64,
+    /// Retention bound for delivery records, applied by [`MeshRouter::run_maintenance`].
+    record_max_age: Duration,
 }
 
 /// Options for a send operation.
@@ -108,6 +110,7 @@ impl MeshRouter {
             delivery,
             ack_timeout: config.ack_timeout(),
             sf_ttl_secs: config.store_forward_ttl_secs,
+            record_max_age: config.delivery_record_max_age(),
         }
     }
 
@@ -216,6 +219,31 @@ impl MeshRouter {
         }
 
         failed
+    }
+
+    /// Run every retention and TTL maintenance pass the router owns.
+    ///
+    /// Returns the packet ids of delivery records expired by the wall-clock
+    /// backstop.
+    ///
+    /// WHY: the delivery tracker, the store-and-forward queues and the outbound
+    /// queue each bound themselves through a method that nothing in production
+    /// called, so all three grew monotonically on a long-lived collector. One
+    /// entry point driven from the flush tick keeps them from drifting apart
+    /// again — adding a fourth structure means extending this method, not
+    /// remembering to wire another call site (#244).
+    ///
+    /// PERF: called once per flush tick. Each pass is a single retain over its
+    /// own map, so the cost is proportional to what is currently retained.
+    pub fn run_maintenance(&mut self) -> Vec<PacketId> {
+        // WHY: expire first. `prune_completed` only releases records already in
+        // a terminal state, so without this the records for packets that are
+        // never acknowledged would never become eligible.
+        let expired = self.delivery.expire_stale(self.record_max_age);
+        self.delivery.prune_completed(self.record_max_age);
+        self.store_forward.prune_expired(now_ms());
+        self.outbound.drain_expired();
+        expired
     }
 
     /// Flush stored messages for a node that just came online.
@@ -485,6 +513,67 @@ mod tests {
             ),
             "decoded payload must round-trip byte-identical, got {:?}",
             flushed.packet.payload_variant
+        );
+    }
+
+    /// The delivery tracker must not retain a record for a packet that is
+    /// never acknowledged (#244).
+    #[tokio::test(start_paused = true)]
+    async fn run_maintenance_expires_and_releases_unacknowledged_records() {
+        let mut router = make_router();
+        #[expect(clippy::unwrap_used, reason = "test-only")]
+        let id = router
+            .send(make_packet(60), true, &SendOptions::default())
+            .unwrap();
+        if let Some(msg) = router.next_to_send() {
+            router.track_sent(msg);
+        }
+        assert_eq!(router.delivery.tracked_count(), 1);
+
+        // Within the retention bound the record is still live and untouched.
+        tokio::time::advance(Duration::from_secs(60)).await;
+        assert!(
+            router.run_maintenance().is_empty(),
+            "a record inside its retention bound must not be expired"
+        );
+        assert_eq!(router.delivery.tracked_count(), 1);
+
+        // Past it, the record expires and is then released. Before the fix it
+        // stayed `Sent` forever, so `prune_completed` could never free it.
+        tokio::time::advance(
+            OutboundConfig::default().delivery_record_max_age() + Duration::from_secs(1),
+        )
+        .await;
+        assert_eq!(
+            router.run_maintenance(),
+            vec![id],
+            "an unacknowledged record past the retention bound must be expired"
+        );
+        assert_eq!(
+            router.delivery.tracked_count(),
+            0,
+            "expired records must be released in the same maintenance pass"
+        );
+    }
+
+    /// Store-and-forward TTL must be enforced without waiting for `drain_for`
+    /// on a destination that may never return (#244).
+    #[test]
+    fn run_maintenance_prunes_store_forward_without_drain_for() {
+        let mut router = make_router();
+        let opts = SendOptions {
+            ttl_secs: 0,
+            ..SendOptions::default()
+        };
+        #[expect(clippy::unwrap_used, reason = "test-only")]
+        router.send(make_packet(61), false, &opts).unwrap();
+        assert_eq!(router.store_forward.total_stored(), 1);
+
+        router.run_maintenance();
+        assert_eq!(
+            router.store_forward.total_stored(),
+            0,
+            "an elapsed-TTL message must be pruned by maintenance, not held until drain_for"
         );
     }
 

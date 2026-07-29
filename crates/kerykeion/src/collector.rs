@@ -536,6 +536,13 @@ where
                 let pending = {
                     let mut r = router.lock().await;
                     r.process_timeouts();
+                    let expired = r.run_maintenance();
+                    if !expired.is_empty() {
+                        tracing::debug!(
+                            count = expired.len(),
+                            "router flush: expired stale delivery records"
+                        );
+                    }
                     let mut packets = Vec::new();
                     while let Some(msg) = r.next_to_send() {
                         let packet = msg.packet.clone();
