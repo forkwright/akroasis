@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.18](https://github.com/forkwright/akroasis/compare/v0.1.17...v0.1.18) (2026-07-29)
+
+
+### Bug Fixes
+
+* **syntonia:** make EEPROM download/upload respect the variant's aux block ([#334](https://github.com/forkwright/akroasis/issues/334)) ([b63f0cb](https://github.com/forkwright/akroasis/commit/b63f0cb523dc33a897928d051944ce8eb0688645)), closes [#225](https://github.com/forkwright/akroasis/issues/225)
+
 ## [0.1.17](https://github.com/forkwright/akroasis/compare/v0.1.16...v0.1.17) (2026-07-29)
 
 
