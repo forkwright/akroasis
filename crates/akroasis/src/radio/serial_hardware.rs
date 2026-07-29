@@ -166,12 +166,12 @@ impl Session for BaofengProtocolSession {
         // WHY: UV-5R main memory is 0x0000–0x1800 in 64-byte blocks = 96 blocks.
         // With aux block (BF-F8HP) adds ~32 more blocks. We emit progress in 64-byte
         // increments; the caller's progress bar expects (done, total) block counts.
-        let mem_image = self
-            .protocol
-            .download_image()
-            .map_err(|e| RadioError::SerialTimeout {
-                port: format!("download failed: {e}"),
-            })?;
+        let mem_image =
+            self.protocol
+                .download_image(&self.config)
+                .map_err(|e| RadioError::SerialTimeout {
+                    port: format!("download failed: {e}"),
+                })?;
 
         // Signal completion to progress bar.
         on_block(128, 128);
@@ -181,7 +181,7 @@ impl Session for BaofengProtocolSession {
     fn upload_image(&mut self, data: &[u8], on_block: &dyn Fn(u16, u16)) -> Result<(), RadioError> {
         let image = MemoryImage::from_bytes(data.to_vec());
         self.protocol
-            .upload_image(&image, &mut |done, total| {
+            .upload_image(&self.config, &image, &mut |done, total| {
                 on_block(
                     u16::try_from(done).unwrap_or(u16::MAX),
                     u16::try_from(total).unwrap_or(u16::MAX),

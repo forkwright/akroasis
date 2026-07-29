@@ -231,6 +231,15 @@ pub enum ProtocolError {
         /// Number of attempts made.
         attempts: u8,
     },
+
+    /// The source image is shorter than the ranges this variant would write.
+    #[snafu(display("image covers {actual} bytes but this variant writes up to 0x{required:04X}"))]
+    ImageTooShort {
+        /// End of the highest range the variant would write.
+        required: usize,
+        /// Actual length of the supplied image.
+        actual: usize,
+    },
 }
 
 /// Specialized result type for protocol operations.
@@ -402,15 +411,28 @@ impl<P: SerialPort> Uv5rProtocol<P> {
 
     /// Download the full EEPROM image FROM the radio.
     ///
-    /// Reads the main block (0x0000–0x1800) in 64-byte chunks and the
-    /// auxiliary block (0x1E80–0x2000) in 16-byte chunks. A warm-up read at
-    /// 0x1E80 primes the aux region.
+    /// Reads the main block (0x0000–0x1800) in 64-byte chunks. Variants
+    /// declaring [`VariantConfig::has_aux_block`] additionally read the
+    /// auxiliary block (0x1E80–0x2000) in 16-byte chunks, preceded by a
+    /// warm-up read at 0x1E80 when [`VariantConfig::needs_aux_warmup`] is set.
+    ///
+    /// The returned image is sized to the region actually read, so a variant
+    /// without an aux block yields a 0x1800 image rather than one with a
+    /// zero-filled tail that reads as real EEPROM content.
     ///
     /// # Errors
     /// Returns [`ProtocolError::RetryExhausted`] if a block fails after all
     /// retries, or any underlying serial/protocol error.
-    pub fn download_image(&mut self) -> Result<MemoryImage> {
-        let image_size = usize::from(AUX_BLOCK_END);
+    pub fn download_image(&mut self, config: &VariantConfig) -> Result<MemoryImage> {
+        // WHY: mirrors `download_plan`, which is the variant-aware description
+        // of this same transfer. The driver reading a region the planner
+        // excludes means a plain UV-5R is issued aux reads its firmware does
+        // not answer, so the transfer fails or returns garbage.
+        let image_size = if config.has_aux_block {
+            usize::from(AUX_BLOCK_END)
+        } else {
+            usize::from(MAIN_BLOCK_END)
+        };
         let mut image = MemoryImage::new(image_size);
 
         // Main block: 64-byte reads.
@@ -421,12 +443,19 @@ impl<P: SerialPort> Uv5rProtocol<P> {
             addr = addr.wrapping_add(u16::from(READ_BLOCK_SIZE));
         }
 
+        if !config.has_aux_block {
+            return Ok(image);
+        }
+
         // Auxiliary block: 16-byte reads.
         // First read at AUX_BLOCK_START is a warm-up (data still stored).
-        let warmup = self.read_block_with_retry(AUX_BLOCK_START, AUX_READ_BLOCK_SIZE)?;
-        image.write_bytes(AUX_BLOCK_START, &warmup);
+        addr = AUX_BLOCK_START;
+        if config.needs_aux_warmup {
+            let warmup = self.read_block_with_retry(AUX_BLOCK_START, AUX_READ_BLOCK_SIZE)?;
+            image.write_bytes(AUX_BLOCK_START, &warmup);
+            addr = AUX_BLOCK_START + u16::from(AUX_READ_BLOCK_SIZE);
+        }
 
-        addr = AUX_BLOCK_START + u16::from(AUX_READ_BLOCK_SIZE);
         while addr < AUX_BLOCK_END {
             let data = self.read_block_with_retry(addr, AUX_READ_BLOCK_SIZE)?;
             image.write_bytes(addr, &data);
@@ -439,22 +468,47 @@ impl<P: SerialPort> Uv5rProtocol<P> {
     /// Upload an EEPROM image to the radio.
     ///
     /// Only writes to safe address ranges (skipping forbidden calibration
-    /// data). Writes in 16-byte blocks. Calls `progress(current, total)`
-    /// after each block.
+    /// data). Variants declaring [`VariantConfig::has_aux_block`] additionally
+    /// write the safe auxiliary ranges. Writes in 16-byte blocks. Calls
+    /// `progress(current, total)` after each block.
     ///
     /// # Errors
-    /// Returns [`ProtocolError::RetryExhausted`] if a block fails after all
-    /// retries, or any underlying serial/protocol error.
+    /// Returns [`ProtocolError::ImageTooShort`] if `image` does not cover every
+    /// range this variant would write, [`ProtocolError::RetryExhausted`] if a
+    /// block fails after all retries, or any underlying serial/protocol error.
     pub fn upload_image(
         &mut self,
+        config: &VariantConfig,
         image: &MemoryImage,
         progress: &mut dyn FnMut(usize, usize),
     ) -> Result<()> {
-        let ranges: Vec<(u16, u16)> = UPLOAD_RANGES_MAIN
+        // WHY: mirrors `upload_plan`. Writing the aux ranges on a variant with
+        // no aux block flashes a region the radio does not have.
+        let ranges: Vec<(u16, u16)> = if config.has_aux_block {
+            UPLOAD_RANGES_MAIN
+                .iter()
+                .chain(UPLOAD_RANGES_AUX.iter())
+                .copied()
+                .collect()
+        } else {
+            UPLOAD_RANGES_MAIN.to_vec()
+        };
+
+        // WHY: `MemoryImage::read_bytes` slices without a bounds check, so a
+        // short source image — a standard 0x1800 `.img` import is one — would
+        // panic mid-transfer with the radio already half-written. Refuse the
+        // whole upload up front instead, before any block is sent.
+        let required = ranges
             .iter()
-            .chain(UPLOAD_RANGES_AUX.iter())
-            .copied()
-            .collect();
+            .map(|&(_, end)| usize::from(end))
+            .max()
+            .unwrap_or(0);
+        if image.len() < required {
+            return Err(ProtocolError::ImageTooShort {
+                required,
+                actual: image.len(),
+            });
+        }
 
         // Count total blocks for progress reporting.
         let total_blocks: usize = ranges
