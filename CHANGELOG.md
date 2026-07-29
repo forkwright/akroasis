@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.15](https://github.com/forkwright/akroasis/compare/v0.1.14...v0.1.15) (2026-07-29)
+
+
+### Bug Fixes
+
+* **release:** keep Cargo.lock in lockstep with the workspace version ([#328](https://github.com/forkwright/akroasis/issues/328)) ([f8d7175](https://github.com/forkwright/akroasis/commit/f8d7175d96345cd824582c7006c6056fb938b3d4)), closes [#327](https://github.com/forkwright/akroasis/issues/327)
+
 ## [0.1.14](https://github.com/forkwright/akroasis/compare/v0.1.13...v0.1.14) (2026-07-28)
 
 
