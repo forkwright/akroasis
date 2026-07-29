@@ -176,6 +176,54 @@ fn merge_into_empty_self_copies_other() {
     assert_eq!(empty.count(), b.count());
 }
 
+#[test]
+fn observe_rejects_nan_and_does_not_poison_future_scores() {
+    let mut b = Baseline::new();
+    for v in (1..=20).map(f64::from) {
+        b.observe(v);
+    }
+    let mean_before = b.mean();
+    let count_before = b.count();
+
+    b.observe(f64::NAN);
+
+    // The NaN observation must be rejected outright, not merely tolerated.
+    assert_eq!(
+        b.count(),
+        count_before,
+        "NaN observation must not be counted"
+    );
+    assert_eq!(
+        b.mean(),
+        mean_before,
+        "NaN observation must not perturb the mean"
+    );
+    assert!(!b.mean().unwrap().is_nan());
+
+    // A subsequent, ordinary observation still scores sanely — the baseline
+    // is not permanently pinned to Anomalous(±∞).
+    assert_eq!(b.score(10.5), AnomalyScore::Normal);
+}
+
+#[test]
+fn observe_rejects_infinite_values() {
+    let mut b = Baseline::new();
+    for v in (1..=20).map(f64::from) {
+        b.observe(v);
+    }
+    let count_before = b.count();
+
+    b.observe(f64::INFINITY);
+    b.observe(f64::NEG_INFINITY);
+
+    assert_eq!(
+        b.count(),
+        count_before,
+        "infinite observations must not be counted"
+    );
+    assert!(b.mean().is_some_and(f64::is_finite));
+}
+
 // ── TimeWindowedBaseline tests ────────────────────────────────────────────
 
 #[test]

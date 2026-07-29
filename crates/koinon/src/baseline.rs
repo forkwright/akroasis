@@ -48,7 +48,17 @@ impl Baseline {
     }
 
     /// Incorporates a new observation using Welford's online update rule.
+    ///
+    /// A non-finite `value` (NaN or ±∞) is rejected and logged rather than
+    /// applied: Welford's update never recovers from a NaN `mean`/`m2`, so a
+    /// single bad observation would otherwise pin every future
+    /// [`Baseline::score`] call to `Anomalous(±∞)` permanently. Mirrors the
+    /// same guard on `topology.rs::update_link`.
     pub fn observe(&mut self, value: f64) {
+        if !value.is_finite() {
+            tracing::warn!(value, "rejecting non-finite baseline observation");
+            return;
+        }
         self.count += 1;
         let delta = value - self.mean;
         self.mean += delta / (self.count as f64); // SAFETY: u64→f64 precision loss only matters beyond 2^53 observations; statistical accumulation
