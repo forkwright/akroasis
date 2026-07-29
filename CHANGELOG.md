@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.16](https://github.com/forkwright/akroasis/compare/v0.1.15...v0.1.16) (2026-07-29)
+
+
+### Bug Fixes
+
+* **koinon,kerykeion:** guard non-finite baseline observations and cap over-capacity snapshots ([#330](https://github.com/forkwright/akroasis/issues/330)) ([4565908](https://github.com/forkwright/akroasis/commit/45659084c0b8554e78f1bba0bc96b3ec9882bc6c))
+
 ## [0.1.15](https://github.com/forkwright/akroasis/compare/v0.1.14...v0.1.15) (2026-07-29)
 
 
