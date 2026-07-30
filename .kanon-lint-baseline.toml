@@ -274,66 +274,6 @@ line = 482
 hash = "016035fd0887be2ed9c1d41200342155076e945454ac95fbcd579ad42072e79d"
 
 [[baseline.entry]]
-rule = "RUST/config-deny-unknown-fields"
-file = "crates/kerykeion/src/config.rs"
-line = 27
-hash = "e23cb6e73a71989c6e9c01170dea62ed7f329b3f8d22654e50dc30eacf552384"
-
-[[baseline.entry]]
-rule = "RUST/config-deny-unknown-fields"
-file = "crates/kerykeion/src/config.rs"
-line = 106
-hash = "78d24d0929797553f0f4f4a45acadd78ffa2105c163aa96a8351f2ba336bc127"
-
-[[baseline.entry]]
-rule = "RUST/config-deny-unknown-fields"
-file = "crates/kerykeion/src/config.rs"
-line = 128
-hash = "248682e91b041336faf78e667ac5da1a548ef9fd2c37de888340ce49ea6b616b"
-
-[[baseline.entry]]
-rule = "RUST/config-deny-unknown-fields"
-file = "crates/kerykeion/src/config.rs"
-line = 174
-hash = "ce9074283c89cec4033d0f13a23b14cfb428b38bc34fb27914e28270be0e3a2d"
-
-[[baseline.entry]]
-rule = "RUST/config-deny-unknown-fields"
-file = "crates/kerykeion/src/config.rs"
-line = 229
-hash = "122fae2cdb8d604d88125131a2b5eddb2e257e5258919a094dc9edc4a91733db"
-
-[[baseline.entry]]
-rule = "RUST/config-deny-unknown-fields"
-file = "crates/kerykeion/src/config.rs"
-line = 268
-hash = "41e612dd7fb9b95d564b6197046c69e25a4b0cf0caf478b81fb378960a9cd2a4"
-
-[[baseline.entry]]
-rule = "RUST/config-deny-unknown-fields"
-file = "crates/kerykeion/src/config.rs"
-line = 312
-hash = "619d7c83c8636069af210264a817d4d5651440ce2f75e623e8a39d5c12dd6a80"
-
-[[baseline.entry]]
-rule = "RUST/config-deny-unknown-fields"
-file = "crates/kerykeion/src/config.rs"
-line = 335
-hash = "b8552d62a844d85361e82f416348aeea43dee219d50b12a7365313b26c7698e4"
-
-[[baseline.entry]]
-rule = "RUST/config-deny-unknown-fields"
-file = "crates/kerykeion/src/config.rs"
-line = 357
-hash = "b5384b257499dddc22df4949252c29b27a6ec746bd3b7a5d57894c0e1f2ee869"
-
-[[baseline.entry]]
-rule = "RUST/config-deny-unknown-fields"
-file = "crates/kerykeion/src/config.rs"
-line = 382
-hash = "67f8165b62376e44487eadafc322f2a260cfb28c78919f067b98760df674a902"
-
-[[baseline.entry]]
 rule = "RUST/indexing-slicing"
 file = "crates/kerykeion/src/crypto.rs"
 line = 43
