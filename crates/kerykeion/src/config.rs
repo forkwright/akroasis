@@ -24,6 +24,7 @@ use crate::types::ChannelIndex;
 
 /// Top-level kerykeion configuration.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct MeshConfig {
     /// Transport connections to Meshtastic radios.
     #[serde(default)]
@@ -102,7 +103,7 @@ pub struct ChannelPsk {
 
 /// Store-and-forward server configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct StoreForwardConfig {
     /// Whether the store-and-forward feature is enabled on this node.
     pub enabled: bool,
@@ -124,7 +125,7 @@ impl Default for StoreForwardConfig {
 
 /// Topology maintenance configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct TopologyConfig {
     /// How often to request a traceroute, in seconds.
     pub traceroute_interval_secs: u64,

@@ -27,7 +27,7 @@ use crate::{
 /// support + `#[serde(default)]` lets operators and agents override
 /// a subset of fields via TOML without knowing the rest of the schema.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct SemainoConfig {
     /// Grid quantization factor. 10 000 ≈ 10 m resolution.
     pub grid_resolution: u32,
