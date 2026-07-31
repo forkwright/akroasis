@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.19](https://github.com/forkwright/akroasis/compare/v0.1.18...v0.1.19) (2026-07-31)
+
+
+### Bug Fixes
+
+* **syntonia:** add assertion messages and clear the dead bare-assert baseline family ([#339](https://github.com/forkwright/akroasis/issues/339)) ([2e15da5](https://github.com/forkwright/akroasis/commit/2e15da52e250eb1f5c98bc4cd8065a597bb78172)), closes [#261](https://github.com/forkwright/akroasis/issues/261)
+
 ## [0.1.18](https://github.com/forkwright/akroasis/compare/v0.1.17...v0.1.18) (2026-07-29)
 
 
