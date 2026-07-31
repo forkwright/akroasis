@@ -49,3 +49,27 @@ cargo clippy --workspace               # Lint (zero warnings)
 
 Conventional commits: `<type>(<scope>): <description>`. Scope is the crate name.
 Branch from `main`. Rebase before pushing. Squash merge.
+
+<!-- kanon:auto-start -->
+## Generated kanon context
+
+- Registry name: `akroasis`
+- Forge repo: `forkwright/akroasis`
+- Kanon prefix: `ak`
+- Config source: `workflow/kanon.toml [projects.akroasis]`
+- Standards source: `crates/basanos/standards/STANDARDS.md`
+- MCP routing catalog: `workflow/AGENTS-mcp-tools.md`
+
+Run `kanon docs sync --check --repo akroasis` to verify this generated
+section and `kanon docs sync --apply --repo akroasis` to refresh it.
+
+## Blast zone
+
+- Paths explicitly named by the rendered prompt, role, or template input.
+
+## Acceptance verifier
+
+```bash
+kanon gate
+```
+<!-- kanon:auto-end -->
