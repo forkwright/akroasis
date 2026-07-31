@@ -166,3 +166,28 @@ Names follow the project naming philosophy, where each name reveals its essentia
 ## Disclaimer
 
 This software is for research and educational purposes. See [DISCLAIMER.md](DISCLAIMER.md) for details on user responsibility, licensing, and legal considerations. The authors accept no responsibility for any specific use of this software.
+
+<!-- kanon:auto-start -->
+## Repository Metadata
+
+- Registry name: `akroasis`
+- Description: Kanon-managed forkwright repository `akroasis`.
+- Forge repo: `forkwright/akroasis`
+- Kanon prefix: `ak`
+- Config source: `workflow/kanon.toml [projects.akroasis]`
+- Planning state: `projects/akroasis/STATE.md`
+- Last state update: `not recorded`
+
+Run `kanon docs sync --check --repo akroasis` to verify this generated
+section and `kanon docs sync --apply --repo akroasis` to refresh it.
+
+## Blast zone
+
+- Paths explicitly named by the rendered prompt, role, or template input.
+
+## Acceptance verifier
+
+```bash
+kanon gate
+```
+<!-- kanon:auto-end -->
