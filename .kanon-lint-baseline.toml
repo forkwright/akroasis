@@ -718,262 +718,76 @@ line = 318
 hash = "c094aaf595475108e5824f55ddd24c0e8afe4ec5f9c00a9650fcf4e1627b0f10"
 
 [[baseline.entry]]
-rule = "RUST/bare-assert"
-file = "crates/syntonia/src/baofeng/variant.rs"
-line = 319
-hash = "8a40d5727b684435291907633696a452ba80ca083a800b6733134ac112ef6ec9"
-
-[[baseline.entry]]
 rule = "RUST/unwrap"
 file = "crates/syntonia/src/baofeng/variant.rs"
-line = 326
+line = 330
 hash = "c094aaf595475108e5824f55ddd24c0e8afe4ec5f9c00a9650fcf4e1627b0f10"
 
 [[baseline.entry]]
-rule = "RUST/bare-assert"
-file = "crates/syntonia/src/baofeng/variant.rs"
-line = 327
-hash = "8a40d5727b684435291907633696a452ba80ca083a800b6733134ac112ef6ec9"
-
-[[baseline.entry]]
 rule = "RUST/unwrap"
 file = "crates/syntonia/src/baofeng/variant.rs"
-line = 335
+line = 343
 hash = "c094aaf595475108e5824f55ddd24c0e8afe4ec5f9c00a9650fcf4e1627b0f10"
 
 [[baseline.entry]]
-rule = "RUST/bare-assert"
-file = "crates/syntonia/src/baofeng/variant.rs"
-line = 336
-hash = "8a40d5727b684435291907633696a452ba80ca083a800b6733134ac112ef6ec9"
-
-[[baseline.entry]]
 rule = "RUST/unwrap"
 file = "crates/syntonia/src/baofeng/variant.rs"
-line = 345
+line = 357
 hash = "c094aaf595475108e5824f55ddd24c0e8afe4ec5f9c00a9650fcf4e1627b0f10"
 
 [[baseline.entry]]
-rule = "RUST/bare-assert"
-file = "crates/syntonia/src/baofeng/variant.rs"
-line = 346
-hash = "7e74063cc42d1a76680e2ccd4d06ef81cde1650c2a8cefe4a13cfff33fd24c0b"
-
-[[baseline.entry]]
 rule = "RUST/unwrap"
 file = "crates/syntonia/src/baofeng/variant.rs"
-line = 354
+line = 370
 hash = "c094aaf595475108e5824f55ddd24c0e8afe4ec5f9c00a9650fcf4e1627b0f10"
 
 [[baseline.entry]]
-rule = "RUST/bare-assert"
-file = "crates/syntonia/src/baofeng/variant.rs"
-line = 355
-hash = "7e74063cc42d1a76680e2ccd4d06ef81cde1650c2a8cefe4a13cfff33fd24c0b"
-
-[[baseline.entry]]
 rule = "RUST/unwrap"
 file = "crates/syntonia/src/baofeng/variant.rs"
-line = 362
+line = 382
 hash = "c094aaf595475108e5824f55ddd24c0e8afe4ec5f9c00a9650fcf4e1627b0f10"
 
 [[baseline.entry]]
-rule = "RUST/bare-assert"
-file = "crates/syntonia/src/baofeng/variant.rs"
-line = 363
-hash = "7e74063cc42d1a76680e2ccd4d06ef81cde1650c2a8cefe4a13cfff33fd24c0b"
-
-[[baseline.entry]]
-rule = "RUST/bare-assert"
-file = "crates/syntonia/src/baofeng/variant.rs"
-line = 383
-hash = "82e2d02602b541a81f7204320c75e300f1fb6f39d5ad7563874b098876e92f87"
-
-[[baseline.entry]]
-rule = "RUST/bare-assert"
-file = "crates/syntonia/src/baofeng/variant.rs"
-line = 384
-hash = "0d4e5f305d5037c921999f90a079868e4cde916f76303aae87d83bf68f7ab5a9"
-
-[[baseline.entry]]
-rule = "RUST/bare-assert"
-file = "crates/syntonia/src/baofeng/variant.rs"
-line = 386
-hash = "f0c4c923f192332c2eb321f715419ea1c9d746438ed7983212dcef5bc9ab6c85"
-
-[[baseline.entry]]
-rule = "RUST/bare-assert"
-file = "crates/syntonia/src/baofeng/variant.rs"
-line = 392
-hash = "82e2d02602b541a81f7204320c75e300f1fb6f39d5ad7563874b098876e92f87"
-
-[[baseline.entry]]
-rule = "RUST/bare-assert"
-file = "crates/syntonia/src/baofeng/variant.rs"
-line = 393
-hash = "0d4e5f305d5037c921999f90a079868e4cde916f76303aae87d83bf68f7ab5a9"
-
-[[baseline.entry]]
-rule = "RUST/bare-assert"
-file = "crates/syntonia/src/baofeng/variant.rs"
-line = 394
-hash = "623acb6bae40a087d60a38c5fa6dc9cdc8ef96d68d2d351c6c3f0a5a5d7b067f"
-
-[[baseline.entry]]
 rule = "RUST/unwrap"
 file = "crates/syntonia/src/baofeng/variant.rs"
-line = 400
+line = 448
 hash = "38e9ab1ef1c4c968a33c6d58f8bf43fb6db8a12b934b60ba833877db2a2ad385"
 
 [[baseline.entry]]
-rule = "RUST/bare-assert"
-file = "crates/syntonia/src/baofeng/variant.rs"
-line = 401
-hash = "7ba330c5dc67ec0d1c2a5b9e50c59f594308ff07f0423ddc32f8c86d099bf543"
-
-[[baseline.entry]]
 rule = "RUST/unwrap"
 file = "crates/syntonia/src/baofeng/variant.rs"
-line = 402
+line = 454
 hash = "231bf6514a8e0f85b0c8066d0286a9b910e67ebe40a909f251d7a415779d01ce"
 
 [[baseline.entry]]
-rule = "RUST/bare-assert"
-file = "crates/syntonia/src/baofeng/variant.rs"
-line = 403
-hash = "49cdeb321eb086bf1e93ba7bbbb9a5eceab49cbe793e4aabe7f4677e21f6a949"
-
-[[baseline.entry]]
 rule = "RUST/unwrap"
 file = "crates/syntonia/src/baofeng/variant.rs"
-line = 410
+line = 466
 hash = "41c2164cbb32013c1ca3612dad96f68abff893b36751851009cecd8769abba8a"
 
 [[baseline.entry]]
-rule = "RUST/bare-assert"
-file = "crates/syntonia/src/baofeng/variant.rs"
-line = 411
-hash = "b57494707a3a1e2c2722980a4ca7a92f44e9abf9e1781948f610a9a5893ea96d"
-
-[[baseline.entry]]
-rule = "RUST/bare-assert"
-file = "crates/syntonia/src/baofeng/variant.rs"
-line = 418
-hash = "0ba4f2348046839d346a79f9a564c9d702e7600fb113bf72142d82d81053fdcc"
-
-[[baseline.entry]]
-rule = "RUST/bare-assert"
-file = "crates/syntonia/src/baofeng/variant.rs"
-line = 419
-hash = "594907db99377fa6032e504fd2036558b14f3a26ab5fc05210022e1dd3d48aec"
-
-[[baseline.entry]]
-rule = "RUST/bare-assert"
-file = "crates/syntonia/src/baofeng/variant.rs"
-line = 425
-hash = "2a14c3f17396e825d34f4adc97ebab46d47816903d89418b33baf6035fa5f7d5"
-
-[[baseline.entry]]
-rule = "RUST/bare-assert"
-file = "crates/syntonia/src/baofeng/variant.rs"
-line = 426
-hash = "52f1e7cbafea09bffd78f0989f585651d5457794d9acd9585a1f723866698314"
-
-[[baseline.entry]]
-rule = "RUST/bare-assert"
-file = "crates/syntonia/src/baofeng/variant.rs"
-line = 432
-hash = "0ba4f2348046839d346a79f9a564c9d702e7600fb113bf72142d82d81053fdcc"
-
-[[baseline.entry]]
-rule = "RUST/bare-assert"
-file = "crates/syntonia/src/baofeng/variant.rs"
-line = 433
-hash = "594907db99377fa6032e504fd2036558b14f3a26ab5fc05210022e1dd3d48aec"
-
-[[baseline.entry]]
-rule = "RUST/bare-assert"
-file = "crates/syntonia/src/baofeng/variant.rs"
-line = 434
-hash = "2b4aacec45ed139a2d69cd3fcf3d903832f3b39ae933e59e0c13eac35c4b42aa"
-
-[[baseline.entry]]
 rule = "RUST/unwrap"
 file = "crates/syntonia/src/baofeng/variant.rs"
-line = 440
+line = 518
 hash = "768ddb73b8a45e552aab286432b1359f724bd84afa0d7730d4c7f96fb81b1729"
 
 [[baseline.entry]]
-rule = "RUST/bare-assert"
+rule = "RUST/indexing-slicing"
 file = "crates/syntonia/src/baofeng/variant.rs"
-line = 441
-hash = "bb62c3e119c9d2c7ea589c560edc932de96a4a5e5828d5b7a3c2687359175934"
-
-[[baseline.entry]]
-rule = "RUST/bare-assert"
-file = "crates/syntonia/src/baofeng/variant.rs"
-line = 458
-hash = "0626f20170f347be01920b5925e64f33884c186e9f9ae83bc7eebe5b11f3f689"
-
-[[baseline.entry]]
-rule = "RUST/bare-assert"
-file = "crates/syntonia/src/baofeng/variant.rs"
-line = 459
-hash = "00626b7ea54b9ae26341f77da74be0109e696a71de72d00c52a7b435332c92ad"
-
-[[baseline.entry]]
-rule = "RUST/bare-assert"
-file = "crates/syntonia/src/baofeng/variant.rs"
-line = 464
-hash = "8e8d7f935dab7cdc4d1a1c8d336eb7ab59cba4d9db446ca8300bcf9b1e7aece4"
-
-[[baseline.entry]]
-rule = "RUST/bare-assert"
-file = "crates/syntonia/src/baofeng/variant.rs"
-line = 465
-hash = "0c7e704838ba3fb9a457184230be426be022401aae87f85e6cbc73c0dd66f43e"
+line = 559
+hash = "9004ad6f4ded6281c812fb843769186fab164301e0aa880e79e3ae32683bf79f"
 
 [[baseline.entry]]
 rule = "RUST/indexing-slicing"
 file = "crates/syntonia/src/baofeng/variant.rs"
-line = 465
-hash = "0c7e704838ba3fb9a457184230be426be022401aae87f85e6cbc73c0dd66f43e"
-
-[[baseline.entry]]
-rule = "RUST/bare-assert"
-file = "crates/syntonia/src/baofeng/variant.rs"
-line = 466
-hash = "f42b2cb757ae1e2643e0e397afc86d2371f6e953de554a13cbe9d7e311c6c694"
+line = 563
+hash = "ee55d690a5df013a28a7926eb2fd9e93c643acccb51c7b8a0e02162e6c338551"
 
 [[baseline.entry]]
 rule = "RUST/indexing-slicing"
 file = "crates/syntonia/src/baofeng/variant.rs"
-line = 466
-hash = "f42b2cb757ae1e2643e0e397afc86d2371f6e953de554a13cbe9d7e311c6c694"
-
-[[baseline.entry]]
-rule = "RUST/bare-assert"
-file = "crates/syntonia/src/baofeng/variant.rs"
-line = 467
-hash = "80d16f04190b8ea1927bb2a127d41ace988c6bb5282d51e01a58098f03308937"
-
-[[baseline.entry]]
-rule = "RUST/indexing-slicing"
-file = "crates/syntonia/src/baofeng/variant.rs"
-line = 467
-hash = "80d16f04190b8ea1927bb2a127d41ace988c6bb5282d51e01a58098f03308937"
-
-[[baseline.entry]]
-rule = "RUST/bare-assert"
-file = "crates/syntonia/src/baofeng/variant.rs"
-line = 478
-hash = "71335c3733396048bcd74191f9cd71084d4900d6fcd26e3ca06a81f281355ed6"
-
-[[baseline.entry]]
-rule = "RUST/bare-assert"
-file = "crates/syntonia/src/baofeng/variant.rs"
-line = 490
-hash = "60f47864faae784f0e41fbde70f1a1defc1596257ecde0bdf82de546d1404e71"
+line = 567
+hash = "4fc108ef055cdd08e2914f0128cae15715986c51b0d55ebc7dabc640175ec0ec"
 
 [[baseline.entry]]
 rule = "RUST/config-deny-unknown-fields"

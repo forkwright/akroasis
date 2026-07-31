@@ -316,7 +316,11 @@ mod tests {
     fn identify_bfb_firmware_as_uv5r() -> Result<(), &'static str> {
         let ident = RadioIdent::from_raw(b"BFB297\x00\x00").ok_or("8-byte literal must parse")?;
         let config = identify_variant(&ident).unwrap();
-        assert_eq!(config.variant, RadioVariant::Uv5r);
+        assert_eq!(
+            config.variant,
+            RadioVariant::Uv5r,
+            "BFB-prefixed firmware idents must resolve to the Uv5r variant"
+        );
         Ok(())
     }
 
@@ -324,7 +328,11 @@ mod tests {
     fn identify_bfs_firmware_as_uv5r() -> Result<(), &'static str> {
         let ident = RadioIdent::from_raw(b"BFS300\x00\x00").ok_or("8-byte literal must parse")?;
         let config = identify_variant(&ident).unwrap();
-        assert_eq!(config.variant, RadioVariant::Uv5r);
+        assert_eq!(
+            config.variant,
+            RadioVariant::Uv5r,
+            "BFS-prefixed firmware idents must resolve to the Uv5r variant"
+        );
         Ok(())
     }
 
@@ -333,7 +341,11 @@ mod tests {
         let ident =
             RadioIdent::from_raw(b"N5R-2\x00\x00\x00").ok_or("8-byte literal must parse")?;
         let config = identify_variant(&ident).unwrap();
-        assert_eq!(config.variant, RadioVariant::Uv5r);
+        assert_eq!(
+            config.variant,
+            RadioVariant::Uv5r,
+            "N5R-2 firmware idents must resolve to the Uv5r variant"
+        );
         Ok(())
     }
 
@@ -343,7 +355,11 @@ mod tests {
         // the full normalized ident, not the 6-char firmware_prefix field.
         let ident = RadioIdent::from_raw(b"BFP3V3 F").ok_or("8-byte literal must parse")?;
         let config = identify_variant(&ident).unwrap();
-        assert_eq!(config.variant, RadioVariant::BfF8hp);
+        assert_eq!(
+            config.variant,
+            RadioVariant::BfF8hp,
+            "BFP3V3 F firmware idents must resolve to the BfF8hp variant"
+        );
         Ok(())
     }
 
@@ -352,7 +368,11 @@ mod tests {
         let ident =
             RadioIdent::from_raw(b"N5R-3\x00\x00\x00").ok_or("8-byte literal must parse")?;
         let config = identify_variant(&ident).unwrap();
-        assert_eq!(config.variant, RadioVariant::BfF8hp);
+        assert_eq!(
+            config.variant,
+            RadioVariant::BfF8hp,
+            "N5R-3 firmware idents must resolve to the BfF8hp variant"
+        );
         Ok(())
     }
 
@@ -360,7 +380,11 @@ mod tests {
     fn identify_bft_firmware_as_f8hp() -> Result<(), &'static str> {
         let ident = RadioIdent::from_raw(b"BFT123\x00\x00").ok_or("8-byte literal must parse")?;
         let config = identify_variant(&ident).unwrap();
-        assert_eq!(config.variant, RadioVariant::BfF8hp);
+        assert_eq!(
+            config.variant,
+            RadioVariant::BfF8hp,
+            "BFT-prefixed firmware idents must resolve to the BfF8hp variant"
+        );
         Ok(())
     }
 
@@ -380,27 +404,59 @@ mod tests {
     #[test]
     fn uv5r_has_two_logical_power_levels() {
         let config = uv5r_config();
-        assert_eq!(config.power_from_bits(0), Some(PowerLevel::High));
-        assert_eq!(config.power_from_bits(1), Some(PowerLevel::Low));
+        assert_eq!(
+            config.power_from_bits(0),
+            Some(PowerLevel::High),
+            "UV-5R power bit 0 must decode to High"
+        );
+        assert_eq!(
+            config.power_from_bits(1),
+            Some(PowerLevel::Low),
+            "UV-5R power bit 1 must decode to Low"
+        );
         // WHY: bit 2 (Mid) maps to High — UV-5R has no mid setting
-        assert_eq!(config.power_from_bits(2), Some(PowerLevel::High));
+        assert_eq!(
+            config.power_from_bits(2),
+            Some(PowerLevel::High),
+            "UV-5R has no Mid setting, so power bit 2 must also decode to High"
+        );
     }
 
     #[test]
     fn f8hp_has_three_power_levels() {
         let config = bf_f8hp_config();
-        assert_eq!(config.power_from_bits(0), Some(PowerLevel::High));
-        assert_eq!(config.power_from_bits(1), Some(PowerLevel::Low));
-        assert_eq!(config.power_from_bits(2), Some(PowerLevel::Mid));
+        assert_eq!(
+            config.power_from_bits(0),
+            Some(PowerLevel::High),
+            "F8HP power bit 0 must decode to High"
+        );
+        assert_eq!(
+            config.power_from_bits(1),
+            Some(PowerLevel::Low),
+            "F8HP power bit 1 must decode to Low"
+        );
+        assert_eq!(
+            config.power_from_bits(2),
+            Some(PowerLevel::Mid),
+            "F8HP power bit 2 must decode to Mid, unlike the UV-5R which has no Mid setting"
+        );
     }
 
     #[test]
     fn uv5r_bits_from_power_roundtrips() {
         let config = uv5r_config();
         let bits = config.bits_from_power(PowerLevel::High).unwrap();
-        assert_eq!(config.power_from_bits(bits), Some(PowerLevel::High));
+        assert_eq!(
+            config.power_from_bits(bits),
+            Some(PowerLevel::High),
+            "encoding UV-5R High power to bits and decoding it back must yield High"
+        );
         let bits = config.bits_from_power(PowerLevel::Low).unwrap();
-        assert_eq!(config.power_from_bits(bits), Some(PowerLevel::Low));
+        assert_eq!(
+            config.power_from_bits(bits),
+            Some(PowerLevel::Low),
+            "encoding UV-5R Low power to bits and decoding it back must yield Low"
+        );
     }
 
     #[test]
@@ -408,37 +464,62 @@ mod tests {
         let config = bf_f8hp_config();
         for level in [PowerLevel::High, PowerLevel::Mid, PowerLevel::Low] {
             let bits = config.bits_from_power(level).unwrap();
-            assert_eq!(config.power_from_bits(bits), Some(level));
+            assert_eq!(
+                config.power_from_bits(bits),
+                Some(level),
+                "encoding F8HP {level:?} power to bits and decoding it back must yield {level:?}"
+            );
         }
     }
 
     #[test]
     fn f8hp_has_aux_block_and_warmup() {
         let config = bf_f8hp_config();
-        assert!(config.has_aux_block);
-        assert!(config.needs_aux_warmup);
+        assert!(config.has_aux_block, "F8HP variant must have an aux block");
+        assert!(
+            config.needs_aux_warmup,
+            "F8HP variant must require aux warmup"
+        );
     }
 
     #[test]
     fn uv5r_has_no_aux_block() {
         let config = uv5r_config();
-        assert!(!config.has_aux_block);
-        assert!(!config.needs_aux_warmup);
+        assert!(
+            !config.has_aux_block,
+            "UV-5R variant must not have an aux block"
+        );
+        assert!(
+            !config.needs_aux_warmup,
+            "UV-5R variant must not require aux warmup"
+        );
     }
 
     #[test]
     fn uv5rm_plus_assumed_same_as_f8hp_layout() {
         let config = uv5rm_plus_config();
-        assert!(config.has_aux_block);
-        assert!(config.needs_aux_warmup);
-        assert_eq!(config.magic, MAGIC_BF_F8HP);
+        assert!(
+            config.has_aux_block,
+            "UV-5RM Plus is assumed to share the F8HP's aux block"
+        );
+        assert!(
+            config.needs_aux_warmup,
+            "UV-5RM Plus is assumed to share the F8HP's aux warmup requirement"
+        );
+        assert_eq!(
+            config.magic, MAGIC_BF_F8HP,
+            "UV-5RM Plus is assumed to share the F8HP's magic bytes"
+        );
         // Higher wattage than F8HP
         let high = config
             .power_levels
             .iter()
             .find(|m| m.level == PowerLevel::High)
             .unwrap();
-        assert!((high.watts - 10.0).abs() < f32::EPSILON);
+        assert!(
+            (high.watts - 10.0).abs() < f32::EPSILON,
+            "UV-5RM Plus High power level must be 10 watts"
+        );
     }
 
     #[test]
@@ -455,16 +536,37 @@ mod tests {
     #[test]
     fn unknown_bits_returns_none() {
         let config = uv5r_config();
-        assert_eq!(config.power_from_bits(3), None);
-        assert_eq!(config.power_from_bits(255), None);
+        assert_eq!(
+            config.power_from_bits(3),
+            None,
+            "power bit pattern 3 is undefined and must decode to None"
+        );
+        assert_eq!(
+            config.power_from_bits(255),
+            None,
+            "power bit pattern 255 is undefined and must decode to None"
+        );
     }
 
     #[test]
     fn magic_sets_contains_all_three() {
-        assert_eq!(MAGIC_SETS.len(), 3);
-        assert_eq!(MAGIC_SETS[0], MAGIC_UV5R_291);
-        assert_eq!(MAGIC_SETS[1], MAGIC_BF_F8HP);
-        assert_eq!(MAGIC_SETS[2], MAGIC_UV5R_ORIG);
+        assert_eq!(
+            MAGIC_SETS.len(),
+            3,
+            "MAGIC_SETS must list exactly the three known magic byte sequences"
+        );
+        assert_eq!(
+            MAGIC_SETS[0], MAGIC_UV5R_291,
+            "MAGIC_SETS[0] must be the UV-5R 291 magic sequence"
+        );
+        assert_eq!(
+            MAGIC_SETS[1], MAGIC_BF_F8HP,
+            "MAGIC_SETS[1] must be the BF-F8HP magic sequence"
+        );
+        assert_eq!(
+            MAGIC_SETS[2], MAGIC_UV5R_ORIG,
+            "MAGIC_SETS[2] must be the original UV-5R magic sequence"
+        );
     }
 
     #[test]
@@ -475,7 +577,10 @@ mod tests {
             bf_f8hp_config(),
             uv5rm_plus_config(),
         ] {
-            assert_eq!(config.channel_count, 128);
+            assert_eq!(
+                config.channel_count, 128,
+                "every variant must report 128 channels"
+            );
         }
     }
 
@@ -487,7 +592,10 @@ mod tests {
             bf_f8hp_config(),
             uv5rm_plus_config(),
         ] {
-            assert_eq!(config.baud_rate, 9_600);
+            assert_eq!(
+                config.baud_rate, 9_600,
+                "every variant must communicate at 9600 baud"
+            );
         }
     }
 }
