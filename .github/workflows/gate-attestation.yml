@@ -29,9 +29,10 @@
 #
 # WHY(#335): --features syntonia/hardware-serial on check and nextest. The
 # feature is off by default, so before this every stage skipped
-# `baofeng::{protocol,detect,variant}` entirely and ran none of the 202 tests
-# that drive the serial link and flash radio EEPROM. libudev-dev was already
-# in system_packages below, so the hosted runner needs no new package.
+# `baofeng::{protocol,detect,variant}` entirely and ran none of the 85 tests
+# behind them -- the code that drives the serial link and flashes radio
+# EEPROM. libudev-dev was already in system_packages below, so the hosted
+# runner needs no new package.
 # The clippy stage is deliberately left without it — see NOTE(#264) in
 # .kanon-ci.toml.
 #

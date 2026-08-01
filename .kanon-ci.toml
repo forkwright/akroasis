@@ -18,11 +18,12 @@
 #
 # WHY(#335): `--features syntonia/hardware-serial` on the check and nextest
 # stages. That feature is off by default, so without it every stage compiled
-# none of `baofeng::{protocol,detect,variant}` and ran none of the 202 tests
-# in `protocol_tests.rs` — the suite that drives real serial hardware and
-# flashes radio EEPROM. The blindness was self-concealing: appending literal
-# garbage to a gated file still reported success, because the check was not
-# failing, it was not looking.
+# none of `baofeng::{protocol,detect,variant}` and ran none of the 85 tests
+# behind them — 48 in `protocol_tests.rs`, the suite that drives real serial
+# hardware and flashes radio EEPROM. Measured on 9880d66: workspace nextest
+# runs 850 tests without the feature and 935 with it. The blindness was
+# self-concealing: appending literal garbage to a gated file still reported
+# success, because the check was not failing, it was not looking.
 #
 # NOTE(#264): the clippy stage deliberately does NOT enable the feature yet.
 # Under it clippy reports 6 dead-code errors in `baofeng/detect.rs`, whose
