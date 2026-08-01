@@ -31,6 +31,17 @@ pub const MAGIC_BF_F8HP: [u8; 7] = [0x50, 0xBB, 0xFF, 0x20, 0x14, 0x04, 0x13];
 /// All magic byte sequences to try during auto-detection, in priority order.
 pub const MAGIC_SETS: &[[u8; 7]] = &[MAGIC_UV5R_291, MAGIC_BF_F8HP, MAGIC_UV5R_ORIG];
 
+/// Magic bytes `hardware::detect` sends when probing a serial port.
+///
+/// WARNING: this disagrees with [`MAGIC_UV5R_291`] in its last two bytes —
+/// `07 25` against `04 11` — and the two detection paths have always sent
+/// different sequences. Which one a UV-5R answers cannot be settled without
+/// the radio in hand, so both are recorded here, under the single owner
+/// `baofeng::constants` names, rather than left in two modules where the
+/// disagreement is invisible. Adjudicating them is kanon-external hardware
+/// work tracked on akroasis#233.
+pub(crate) const MAGIC_UV5R_PROBE: [u8; 7] = [0x50, 0xBB, 0xFF, 0x20, 0x12, 0x07, 0x25];
+
 // ── RadioVariant ─────────────────────────────────────────────────────────────
 
 /// Baofeng UV-5R family radio variant.
@@ -252,10 +263,27 @@ pub enum VariantError {
 // ── Firmware prefix matching ─────────────────────────────────────────────────
 
 /// Known firmware prefixes for the standard UV-5R.
-const UV5R_PREFIXES: &[&str] = &["BFB", "BFS", "N5R-2", "N5R2", "N5RV", "BTS", "D5R2", "B5R2"];
+pub(crate) const UV5R_PREFIXES: &[&str] =
+    &["BFB", "BFS", "N5R-2", "N5R2", "N5RV", "BTS", "D5R2", "B5R2"];
 
 /// Known firmware prefixes for the BF-F8HP.
-const BF_F8HP_PREFIXES: &[&str] = &["BFP3V3 F", "N5R-3", "N5R3", "F5R3", "BFT"];
+///
+/// WHY: `BFF` came from the second prefix table that `hardware::detect` used
+/// to carry. The two tables had drifted — this one never listed `BFF`, that
+/// one never listed `BFP3V3 F` — so a real BF-F8HP was unidentifiable to one
+/// path and a `BFF` radio to the other. This is the union, under the single
+/// owner named in `baofeng::constants`.
+pub(crate) const BF_F8HP_PREFIXES: &[&str] = &["BFP3V3 F", "N5R-3", "N5R3", "F5R3", "BFT", "BFF"];
+
+/// Known firmware prefixes for the UV-5RM Plus.
+///
+/// WARNING: [`identify_variant`] deliberately does not consult this table.
+/// The UV-5RM Plus may speak `UV17Pro` rather than the UV-5R clone protocol
+/// (see [`RadioVariant::Uv5rmPlus`]), so claiming the variant would hand a
+/// caller a [`VariantConfig`] it must not drive the radio with. It exists so
+/// `hardware::detect`, which only reports the model, has one owner to read
+/// from instead of a private copy.
+pub(crate) const UV5RM_PLUS_PREFIXES: &[&str] = &["BFU"];
 
 /// Identify the radio variant from its firmware ident bytes.
 ///

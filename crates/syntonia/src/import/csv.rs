@@ -24,12 +24,26 @@ pub enum ImportWarning {
         /// Field value.
         value: String,
     },
-    /// Frequency could not be parsed.
+    /// Frequency could not be parsed, or is outside the representable range.
     InvalidFrequency {
         /// CSV row number.
         row: usize,
         /// The invalid frequency string.
         freq: String,
+    },
+    /// Duplex offset could not be parsed, or is outside the representable range.
+    InvalidOffset {
+        /// CSV row number.
+        row: usize,
+        /// The invalid offset string.
+        offset: String,
+    },
+    /// Memory location (channel index) could not be parsed.
+    InvalidLocation {
+        /// CSV row number.
+        row: usize,
+        /// The invalid location string.
+        value: String,
     },
     /// Unrecognized tone mode string.
     UnknownToneMode {
@@ -122,14 +136,59 @@ fn col(record: &csv::StringRecord, idx: usize) -> &str {
     record.get(idx).unwrap_or("").trim()
 }
 
+/// Upper bound, in MHz, on a frequency or duplex offset accepted from CSV.
+///
+/// WHY: `mhz_to_hz` casts `mhz * 1_000_000` to `u64`, and an `as` cast
+/// saturates rather than wrapping — so an unbounded `1e300` in the Frequency
+/// column becomes `u64::MAX`, and the `rx + offset` addition in
+/// [`parse_duplex`] then overflows. 10 GHz is far above any amateur band the
+/// UV-5R family covers and is the bound `mhz_to_hz` already documents.
+const MAX_FREQ_MHZ: f64 = 10_000.0;
+
 fn mhz_to_hz(mhz: f64) -> u64 {
     #[expect(
         clippy::cast_sign_loss,
         clippy::cast_possible_truncation,
-        reason = "caller ensures mhz > 0 and mhz * 1_000_000 fits in u64 (far below 2^64 Hz)"
+        reason = "callers screen against MAX_FREQ_MHZ, so mhz * 1_000_000 fits in u64"
     )]
-    let hz = (mhz * 1_000_000.0) as u64; // SAFETY: caller ensures mhz>0 and <10GHz; *1e6 fits u64
+    // INVARIANT: every caller screens its input against `MAX_FREQ_MHZ` before
+    // calling, so `mhz * 1e6` is at most 1e10 and the cast is exact.
+    let hz = (mhz * 1_000_000.0) as u64;
     hz
+}
+
+/// Parse the Location column, warning rather than silently defaulting.
+///
+/// WHY: an unparseable Location used to become channel 0 with no trace, so a
+/// CSV whose first column had drifted imported every row onto the same slot.
+fn parse_location(location_str: &str, row: usize, warnings: &mut Vec<ImportWarning>) -> u16 {
+    location_str.parse().unwrap_or_else(|_| {
+        warnings.push(ImportWarning::InvalidLocation {
+            row,
+            value: location_str.to_string(),
+        });
+        0
+    })
+}
+
+/// Parse the Offset column into Hz, screening it against [`MAX_FREQ_MHZ`].
+///
+/// An empty column is the normal simplex case and yields zero silently.
+fn parse_offset_hz(offset_str: &str, row: usize, warnings: &mut Vec<ImportWarning>) -> u64 {
+    if offset_str.is_empty() {
+        return 0;
+    }
+
+    match offset_str.parse::<f64>() {
+        Ok(offset) if offset.abs() <= MAX_FREQ_MHZ => mhz_to_hz(offset.abs()),
+        _ => {
+            warnings.push(ImportWarning::InvalidOffset {
+                row,
+                offset: offset_str.to_string(),
+            });
+            0
+        }
+    }
 }
 
 fn parse_record(
@@ -144,7 +203,7 @@ fn parse_record(
     }
 
     let freq_mhz: f64 = match freq_str.parse() {
-        Ok(f) if f > 0.0 => f,
+        Ok(f) if f > 0.0 && f <= MAX_FREQ_MHZ => f,
         _ => {
             warnings.push(ImportWarning::InvalidFrequency {
                 row,
@@ -156,12 +215,11 @@ fn parse_record(
 
     let rx_freq = Frequency::hz(mhz_to_hz(freq_mhz));
 
-    let location: u16 = col(record, 0).parse().unwrap_or(0);
+    let location = parse_location(col(record, 0), row, warnings);
     let name = col(record, 1).to_string();
 
     let duplex = col(record, 3);
-    let offset_val: f64 = col(record, 4).parse().unwrap_or(0.0);
-    let offset_hz = mhz_to_hz(offset_val.abs());
+    let offset_hz = parse_offset_hz(col(record, 4), row, warnings);
 
     let (tx_freq, offset) = parse_duplex(duplex, rx_freq, offset_hz);
 
@@ -243,7 +301,10 @@ fn parse_duplex(
 ) -> (Option<Frequency>, FrequencyOffset) {
     match duplex {
         "+" => {
-            let tx = Frequency::hz(rx_freq.as_hz() + offset_hz);
+            // WHY: `MAX_FREQ_MHZ` already bounds both operands well below the
+            // u64 range, so this cannot saturate in practice — it is here so
+            // the arithmetic stays total if that bound is ever widened.
+            let tx = Frequency::hz(rx_freq.as_hz().saturating_add(offset_hz));
             (Some(tx), FrequencyOffset::Plus(Frequency::hz(offset_hz)))
         }
         "-" => {
@@ -371,6 +432,109 @@ Location,Name,Frequency,Duplex,Offset,Tone,rToneFreq,cToneFreq,DtcsCode,DtcsPola
 5,TSQL,146.520000,,0.000000,TSQL,88.5,100.0,023,NN,FM,5.00,,High,,,,,,
 6,MINUS,147.360000,-,0.600000,Tone,100.0,100.0,023,NN,FM,5.00,,High,,,,,,
 ";
+
+    /// A single data row with the given Location, Frequency and Offset.
+    fn one_row(location: &str, freq: &str, duplex: &str, offset: &str) -> String {
+        format!(
+            "Location,Name,Frequency,Duplex,Offset,Tone,rToneFreq,cToneFreq,DtcsCode,\
+             DtcsPolarity,Mode,TStep,Skip,Power,Comment,URCALL,RPT1CALL,RPT2CALL,DVCODE\n\
+             {location},CH,{freq},{duplex},{offset},,88.5,88.5,023,NN,FM,5.00,,High,,,,,,\n"
+        )
+    }
+
+    // ── Bounded frequency and offset ─────────────────────────────────────
+
+    // WHY: `mhz_to_hz` casts through `as u64`, which saturates rather than
+    // wrapping, so an unbounded frequency reached `parse_duplex` as
+    // `u64::MAX` and the `rx + offset` addition overflowed — a panic on a
+    // debug build, a wrong TX frequency on a release one.
+    #[test]
+    fn an_out_of_range_frequency_is_rejected_rather_than_saturating() {
+        let csv = one_row("0", "1e300", "+", "0.600000");
+        let (plan, warnings) = import_chirp_csv_reader(csv.as_bytes()).unwrap();
+
+        assert_eq!(plan.channel_count(), 0, "the row must not become a channel");
+        assert!(
+            warnings
+                .iter()
+                .any(|w| matches!(w, ImportWarning::InvalidFrequency { row: 2, .. })),
+            "expected an InvalidFrequency warning, got: {warnings:?}"
+        );
+    }
+
+    // WHY: the falsifying sibling — a frequency at the top of the accepted
+    // band must still import, so the bound rejects the impossible rather than
+    // the merely high.
+    #[test]
+    fn a_frequency_at_the_upper_bound_is_accepted() {
+        let csv = one_row("0", "10000.000000", "", "0.000000");
+        let (plan, warnings) = import_chirp_csv_reader(csv.as_bytes()).unwrap();
+
+        assert_eq!(plan.channel_count(), 1);
+        assert!(
+            !warnings
+                .iter()
+                .any(|w| matches!(w, ImportWarning::InvalidFrequency { .. })),
+            "unexpected warning: {warnings:?}"
+        );
+    }
+
+    #[test]
+    fn an_out_of_range_offset_is_reported_and_dropped() {
+        let csv = one_row("0", "146.520000", "+", "1e300");
+        let (plan, warnings) = import_chirp_csv_reader(csv.as_bytes()).unwrap();
+
+        assert_eq!(
+            plan.channel_count(),
+            1,
+            "the channel itself is still usable"
+        );
+        assert!(
+            warnings
+                .iter()
+                .any(|w| matches!(w, ImportWarning::InvalidOffset { row: 2, .. })),
+            "expected an InvalidOffset warning, got: {warnings:?}"
+        );
+
+        let channel = plan.channels.first().unwrap();
+        assert_eq!(channel.offset, FrequencyOffset::Plus(Frequency::hz(0)));
+        assert_eq!(channel.tx_freq, Some(Frequency::hz(146_520_000)));
+    }
+
+    // ── Location column ──────────────────────────────────────────────────
+
+    // WHY: an unparseable Location silently became channel 0, so a CSV whose
+    // first column had drifted imported every row on top of the same slot and
+    // the plan came back one channel long with no indication why.
+    #[test]
+    fn an_unparseable_location_is_reported_rather_than_defaulted_silently() {
+        let csv = one_row("not-a-number", "146.520000", "", "0.000000");
+        let (plan, warnings) = import_chirp_csv_reader(csv.as_bytes()).unwrap();
+
+        assert_eq!(plan.channel_count(), 1);
+        assert_eq!(plan.channels.first().unwrap().index, 0);
+        assert!(
+            warnings.iter().any(|w| matches!(
+                w,
+                ImportWarning::InvalidLocation { row: 2, value } if value == "not-a-number"
+            )),
+            "expected an InvalidLocation warning, got: {warnings:?}"
+        );
+    }
+
+    #[test]
+    fn a_valid_location_produces_no_warning() {
+        let csv = one_row("12", "146.520000", "", "0.000000");
+        let (plan, warnings) = import_chirp_csv_reader(csv.as_bytes()).unwrap();
+
+        assert_eq!(plan.channels.first().unwrap().index, 12);
+        assert!(
+            !warnings
+                .iter()
+                .any(|w| matches!(w, ImportWarning::InvalidLocation { .. })),
+            "unexpected warning: {warnings:?}"
+        );
+    }
 
     #[test]
     fn parse_fixture_csv() {
