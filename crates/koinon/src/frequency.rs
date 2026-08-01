@@ -19,21 +19,45 @@ impl Frequency {
     }
 
     /// Construct FROM kilohertz (1 kHz = 1 000 Hz).
+    ///
+    /// Saturates at [`u64::MAX`] hertz rather than wrapping.
     #[must_use]
     pub const fn khz(value: u64) -> Self {
-        Self(value * 1_000)
+        Self(value.saturating_mul(1_000))
     }
 
     /// Construct FROM megahertz (1 MHz = 1 000 000 Hz).
+    ///
+    /// Saturates at [`u64::MAX`] hertz rather than wrapping.
     #[must_use]
     pub const fn mhz(value: u64) -> Self {
-        Self(value * 1_000_000)
+        Self(value.saturating_mul(1_000_000))
     }
 
     /// Construct FROM gigahertz (1 GHz = 1 000 000 000 Hz).
+    ///
+    /// Saturates at [`u64::MAX`] hertz rather than wrapping.
     #[must_use]
     pub const fn ghz(value: u64) -> Self {
-        Self(value * 1_000_000_000)
+        Self(value.saturating_mul(1_000_000_000))
+    }
+
+    /// Add two frequencies, returning `None` on overflow.
+    #[must_use]
+    pub const fn checked_add(self, rhs: Self) -> Option<Self> {
+        match self.0.checked_add(rhs.0) {
+            Some(hz) => Some(Self(hz)),
+            None => None,
+        }
+    }
+
+    /// Subtract `rhs` FROM `self`, returning `None` if the result would be negative.
+    #[must_use]
+    pub const fn checked_sub(self, rhs: Self) -> Option<Self> {
+        match self.0.checked_sub(rhs.0) {
+            Some(hz) => Some(Self(hz)),
+            None => None,
+        }
     }
 
     /// Return the raw hertz value.
@@ -75,17 +99,22 @@ impl fmt::Display for Frequency {
     }
 }
 
+// WHY: Frequency is Deserialize, so self.0 is attacker-controlled up to u64::MAX.
+// Raw +/- panicked in debug and wrapped in release, turning a malformed plan into
+// a silently plausible frequency ~18 EHz away. Saturating keeps the operators
+// total and monotonic; callers that must detect the boundary use checked_add /
+// checked_sub.
 impl Add for Frequency {
     type Output = Self;
     fn add(self, rhs: Self) -> Self {
-        Self(self.0 + rhs.0)
+        Self(self.0.saturating_add(rhs.0))
     }
 }
 
 impl Sub for Frequency {
     type Output = Self;
     fn sub(self, rhs: Self) -> Self {
-        Self(self.0 - rhs.0)
+        Self(self.0.saturating_sub(rhs.0))
     }
 }
 
@@ -190,6 +219,57 @@ mod tests {
         assert!(
             mw_str.contains("GHz"),
             "2 GHz should display with GHz unit, got: {mw_str}"
+        );
+    }
+
+    #[test]
+    fn unit_constructors_saturate_instead_of_wrapping() {
+        // WHY: Frequency is Deserialize, so these took attacker-controlled u64.
+        // `value * 1_000_000` wrapped in release, turning a huge MHz value into a
+        // small, plausible-looking frequency.
+        assert_eq!(Frequency::ghz(u64::MAX).as_hz(), u64::MAX);
+        assert_eq!(Frequency::mhz(u64::MAX).as_hz(), u64::MAX);
+        assert_eq!(Frequency::khz(u64::MAX).as_hz(), u64::MAX);
+        // Ordinary values are unaffected.
+        assert_eq!(Frequency::mhz(146).as_hz(), 146_000_000);
+    }
+
+    #[test]
+    fn addition_saturates_rather_than_wrapping_past_u64_max() {
+        let high = Frequency::hz(u64::MAX);
+        assert_eq!((high + Frequency::hz(1)).as_hz(), u64::MAX);
+    }
+
+    #[test]
+    fn subtraction_saturates_at_zero_rather_than_wrapping_negative() {
+        // Wrapping here produced ~18 EHz from a simple ordering mistake.
+        let low = Frequency::hz(1_000);
+        assert_eq!((low - Frequency::hz(5_000)).as_hz(), 0);
+    }
+
+    #[test]
+    fn checked_arithmetic_reports_the_boundary() {
+        let high = Frequency::hz(u64::MAX);
+        assert!(high.checked_add(Frequency::hz(1)).is_none());
+        assert!(
+            Frequency::hz(1_000)
+                .checked_sub(Frequency::hz(5_000))
+                .is_none()
+        );
+
+        assert_eq!(
+            Frequency::hz(1_000)
+                .checked_add(Frequency::hz(500))
+                .unwrap()
+                .as_hz(),
+            1_500
+        );
+        assert_eq!(
+            Frequency::hz(1_000)
+                .checked_sub(Frequency::hz(400))
+                .unwrap()
+                .as_hz(),
+            600
         );
     }
 }
