@@ -14,7 +14,7 @@ use snafu::ResultExt;
 use crate::crypto::{self, decrypt, encrypt};
 use crate::error::{
     AlreadyExistsSnafu, EntryCryptoSnafu, EntryNotDeletableSnafu, EntryRevokedSnafu, IoSnafu,
-    SerializationSnafu, TamperLogSnafu, VaultError, WrongPassphraseSnafu,
+    NotInitializedSnafu, SerializationSnafu, TamperLogSnafu, VaultError, WrongPassphraseSnafu,
 };
 use crate::key::VaultKey;
 use crate::vault::{
@@ -178,11 +178,30 @@ impl Vault {
     ///
     /// # Errors
     ///
+    /// Returns [`VaultError::NotInitialized`] if no vault exists at `path`.
     /// Returns [`VaultError::WrongPassphrase`] if the passphrase is incorrect.
     /// Returns [`VaultError::Locked`] if another process holds the lock.
     /// Returns [`VaultError::InvalidHeader`] if the header is malformed.
     pub fn open(path: impl AsRef<Path>, passphrase: &[u8]) -> Result<Self, VaultError> {
         let path = path.as_ref();
+
+        // WHY: establish that a vault is present before anything touches the
+        // filesystem. Locking first used to create the vault directory and the
+        // lock file on a path that held no vault, after which `create` rejected
+        // that same path as `AlreadyExists` — so a mistyped path, or any read
+        // attempted before initialization, poisoned the path until someone
+        // cleaned it up by hand.
+        //
+        // This ordering also gives `acquire_lock` its precondition: the vault
+        // directory exists by the time it runs.
+        //
+        // Checking before locking introduces no race the old order avoided. If
+        // another process creates the vault in between, we lock and read it
+        // normally; if one removes it, the header read fails exactly as before.
+        if !path.join(HEADER_FILE).is_file() {
+            return NotInitializedSnafu { path }.fail();
+        }
+
         let lock = acquire_lock(path)?;
 
         let header_bytes = fs::read(path.join(HEADER_FILE)).context(IoSnafu { path })?;
@@ -515,12 +534,14 @@ impl std::fmt::Debug for Vault {
 }
 
 /// Acquires an advisory lock on the vault directory.
+///
+/// INVARIANT: `vault_path` already exists as a vault directory. `create`
+/// builds it before locking, and `open` refuses a path with no header before
+/// it gets here. The directory-creating call this function used to make was
+/// what let `open` leave artifacts on a non-existent vault, so the caller
+/// owns directory creation now and this function only ever locks.
 fn acquire_lock(vault_path: &Path) -> Result<File, VaultError> {
     let lock_path = vault_path.join(LOCK_FILE);
-
-    // WHY: create_owner_only_dir is idempotent and needed when called from
-    // open() before the lock file exists.
-    create_owner_only_dir(vault_path)?;
 
     let file = create_owner_only_file(&lock_path)?;
 
