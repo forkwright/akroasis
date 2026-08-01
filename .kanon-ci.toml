@@ -14,7 +14,23 @@
 #
 # Keep in sync with `crates/archeion/src/ci_config.rs::default_rust_gate`
 # when the upstream default changes — only the `--jobs` / `--test-threads`
-# flags should differ.
+# and `--features` flags should differ.
+#
+# WHY(#335): `--features syntonia/hardware-serial` on the check and nextest
+# stages. That feature is off by default, so without it every stage compiled
+# none of `baofeng::{protocol,detect,variant}` and ran none of the 202 tests
+# in `protocol_tests.rs` — the suite that drives real serial hardware and
+# flashes radio EEPROM. The blindness was self-concealing: appending literal
+# garbage to a gated file still reported success, because the check was not
+# failing, it was not looking.
+#
+# NOTE(#264): the clippy stage deliberately does NOT enable the feature yet.
+# Under it clippy reports 6 dead-code errors in `baofeng/detect.rs`, whose
+# resolution (export `auto_detect` as API, or drop the module) is a product
+# decision tracked by #264. Enabling it here before that call would force the
+# decision by lint pressure. `crates/syntonia/tests/gate_feature_coverage.rs`
+# holds the compile-and-test half of the invariant so it cannot regress while
+# #264 is open.
 
 [pipeline]
 stages = ["cargo fmt", "cargo check", "cargo clippy", "cargo nextest", "kanon lint"]
@@ -24,7 +40,7 @@ cmd = "cargo fmt --all -- --check"
 timeout_secs = 300
 
 [stages."cargo check"]
-cmd = "cargo check --workspace --all-targets --jobs 8"
+cmd = "cargo check --workspace --all-targets --features syntonia/hardware-serial --jobs 8"
 timeout_secs = 900
 
 [stages."cargo clippy"]
@@ -32,7 +48,7 @@ cmd = "cargo clippy --workspace --all-targets --jobs 8 -- -D warnings"
 timeout_secs = 900
 
 [stages."cargo nextest"]
-cmd = "cargo nextest run --workspace --build-jobs 8 --test-threads 8"
+cmd = "cargo nextest run --workspace --features syntonia/hardware-serial --build-jobs 8 --test-threads 8"
 # 2700s (45 min) accommodates the cold-compile path under the 8-thread cap.
 # Warm-cache runs complete in ~30s; the headroom only matters when the build
 # cache is cold (first run after daemon restart or cache eviction). See #109.
