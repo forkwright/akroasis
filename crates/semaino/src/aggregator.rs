@@ -183,6 +183,15 @@ impl SignalAggregator {
 
             let score = baseline.score(day_of_week, hour, feature);
 
+            // WHY(#232): the reported statistics must describe the same
+            // baseline the score was computed against. Read after observe(),
+            // they already include the outlier sample, so an operator judging
+            // the anomaly sees numbers the score never used — and the wider
+            // the outlier, the more it flatters its own baseline.
+            let (baseline_mean, baseline_stddev) = baseline
+                .bucket(day_of_week, hour)
+                .map_or((None, None), |bucket| (bucket.mean(), bucket.stddev()));
+
             // Only update the baseline after scoring to avoid contaminating it with
             // the outlier value we just detected.
             baseline.observe(day_of_week, hour, feature);
@@ -193,10 +202,6 @@ impl SignalAggregator {
             );
 
             if is_notable {
-                let (baseline_mean, baseline_stddev) = baseline
-                    .bucket(day_of_week, hour)
-                    .map_or((None, None), |bucket| (bucket.mean(), bucket.stddev()));
-
                 let aggregated = AggregatedSignal {
                     signal,
                     score,
@@ -279,6 +284,21 @@ mod tests {
                 bandwidth: Frequency::khz(25),
             }),
             Timestamp::now(),
+            None,
+        )
+    }
+
+    /// An RF signal stamped at a fixed instant, so every sample lands in one
+    /// temporal bucket regardless of when the test runs.
+    fn rf_signal_at(power_dbm: f64, millis: i64) -> GeoSignal {
+        GeoSignal::new(
+            SignalKind::Rf(RfDetail::Transmission {
+                frequency: Frequency::mhz(146),
+                power: Power::dbm(power_dbm),
+                modulation: "FM".into(),
+                bandwidth: Frequency::khz(25),
+            }),
+            Timestamp::from_unix_millis(millis).unwrap(),
             None,
         )
     }
@@ -481,5 +501,89 @@ mod tests {
             None,
         );
         assert_eq!(SignalAggregator::extract_feature(&sig), None);
+    }
+
+    #[tokio::test]
+    async fn reported_baseline_excludes_the_outlier_being_scored() {
+        // 2023-11-14T22:13:20Z — a fixed instant, so all 21 samples share one
+        // (day, hour) bucket no matter when the suite runs.
+        const BUCKET_MS: i64 = 1_700_000_000_000;
+        // Twenty warm-up samples at -50, -49, -48 repeating: offsets sum to 19
+        // across i in 0..20, so the baseline mean is -50 + 19/20.
+        const EXPECTED_MEAN: f64 = -49.05;
+
+        let (broadcast_tx, broadcast_rx) = broadcast::channel::<GeoSignal>(64);
+        let (agg_tx, mut agg_rx) = mpsc::channel::<AggregatedSignal>(64);
+
+        let mut aggregator = SignalAggregator::new();
+        let handle = tokio::spawn(async move {
+            aggregator.run(broadcast_rx, agg_tx).await;
+        });
+
+        for i in 0..20_i32 {
+            let power = -50.0 + f64::from(i % 3);
+            broadcast_tx.send(rf_signal_at(power, BUCKET_MS)).unwrap();
+        }
+
+        tokio::time::sleep(tokio::time::Duration::from_millis(20)).await; // kanon:ignore TESTING/sleep-in-test -- synchronises with the spawned aggregator task; a barrier would re-implement the channel's ready signal
+        while agg_rx.try_recv().is_ok() {}
+
+        broadcast_tx.send(rf_signal_at(50.0, BUCKET_MS)).unwrap();
+
+        let timed = tokio::time::timeout(tokio::time::Duration::from_millis(500), agg_rx.recv())
+            .await
+            .ok();
+        assert!(timed.is_some(), "timed out waiting for the anomaly");
+        let aggregated = timed.flatten();
+        assert!(
+            aggregated.is_some(),
+            "aggregator channel closed unexpectedly"
+        );
+        let aggregated = aggregated.unwrap();
+
+        let mean = aggregated.baseline_mean;
+        assert!(mean.is_some(), "the baseline holds 20 samples");
+        let mean = mean.unwrap();
+        // WHY(#232): folding the outlier in first would report
+        // (-49.05 * 20 + 50) / 21 ≈ -44.33 — the number the score was NOT
+        // computed against. The gap between the two is the whole finding.
+        assert!(
+            (mean - EXPECTED_MEAN).abs() < 1e-9,
+            "reported mean must predate the outlier: expected {EXPECTED_MEAN}, got {mean}"
+        );
+
+        drop(broadcast_tx);
+        handle.await.unwrap();
+    }
+
+    #[test]
+    fn day_hour_from_timestamp_maps_known_instants() {
+        // NOTE: the (0, 0) conversion fallback documented on
+        // day_hour_from_timestamp is unreachable through any public path —
+        // `koinon::Timestamp` only ever holds an already-valid jiff timestamp
+        // (`now()`, the validating `from_unix_millis`, or a Deserialize impl
+        // that delegates to jiff's own), so neither `from_millisecond` nor
+        // `in_tz("UTC")` can fail on a value obtained from one. It is
+        // therefore asserted here as the genuine Monday-00:00 bucket it is
+        // indistinguishable from, not as an error path.
+        let cases = [
+            // 2023-11-14T22:13:20Z — Tuesday.
+            (1_700_000_000_000_i64, (1_u8, 22_u8)),
+            // 1970-01-01T00:00:00Z — Thursday, the unix epoch.
+            (0, (3, 0)),
+            // 2024-01-01T00:00:00Z — Monday midnight: a real (0, 0).
+            (1_704_067_200_000, (0, 0)),
+            // 2023-12-31T00:00:00Z — Sunday, the end of the week wrap.
+            (1_703_980_800_000, (6, 0)),
+        ];
+
+        for (millis, expected) in cases {
+            let ts = Timestamp::from_unix_millis(millis).unwrap();
+            assert_eq!(
+                day_hour_from_timestamp(&ts),
+                expected,
+                "wrong bucket for unix millis {millis}"
+            );
+        }
     }
 }
