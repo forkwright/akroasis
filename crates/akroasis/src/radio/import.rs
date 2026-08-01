@@ -162,59 +162,63 @@ pub(crate) fn import_from_string(
 )]
 pub(crate) fn parse_chirp_csv(content: &str) -> Result<FrequencyPlan, RadioError> {
     let mut channels = Vec::new();
-    let mut lines = content.lines();
 
-    // Skip header
-    let _header = lines.next();
+    // WHY: CHIRP quotes any field containing a comma, a quote or a newline —
+    // `export::csv_escape` writes exactly that form — so splitting on ','
+    // misaligns every column after a quoted name and silently decodes the wrong
+    // frequency. RFC4180 decoding is the csv crate's job, not this parser's.
+    let mut reader = csv::ReaderBuilder::new()
+        .has_headers(true)
+        .flexible(true)
+        .trim(csv::Trim::All)
+        .from_reader(content.as_bytes());
 
-    for (line_num, line) in lines.enumerate() {
-        if line.trim().is_empty() {
+    for record in reader.records() {
+        // WHY: a quoted field may span newlines, so the record's own position is
+        // the only accurate line number; there is no line index to count.
+        let record = record.map_err(|source| RadioError::CsvParse {
+            line: csv_error_line(&source),
+            message: source.to_string(),
+        })?;
+
+        let line_num = record
+            .position()
+            .map_or(0, |p| usize::try_from(p.line()).unwrap_or(usize::MAX));
+
+        if record.iter().all(str::is_empty) {
             continue;
         }
 
-        let cols: Vec<&str> = line.split(',').collect();
+        let cols = &record;
         if cols.len() < 15 {
             return Err(RadioError::CsvParse {
-                line: line_num + 2,
+                line: line_num,
                 message: format!("expected at least 15 columns, got {}", cols.len()),
             });
         }
 
-        let index: u16 = cols
-            .first()
-            .copied()
-            .unwrap_or_default()
-            .trim()
-            .parse()
-            .map_err(|_| RadioError::CsvParse {
-                line: line_num + 2,
-                message: format!(
-                    "invalid location: '{}'",
-                    cols.first().copied().unwrap_or_default().trim()
-                ),
-            })?;
+        let index: u16 =
+            cols.get(0)
+                .unwrap_or_default()
+                .parse()
+                .map_err(|_| RadioError::CsvParse {
+                    line: line_num,
+                    message: format!("invalid location: '{}'", cols.get(0).unwrap_or_default()),
+                })?;
 
-        let name = cols
-            .get(1)
-            .copied()
-            .unwrap_or_default()
-            .trim()
-            .trim_matches('"')
-            .to_string();
+        // WHY: the reader already removed the surrounding quotes and undoubled
+        // any escaped ones, so trimming '"' here would corrupt a name whose own
+        // first or last character is a quote.
+        let name = cols.get(1).unwrap_or_default().to_string();
 
-        let rx_mhz: f64 = cols
-            .get(2)
-            .copied()
-            .unwrap_or_default()
-            .trim()
-            .parse()
-            .map_err(|_| RadioError::CsvParse {
-                line: line_num + 2,
-                message: format!(
-                    "invalid frequency: '{}'",
-                    cols.get(2).copied().unwrap_or_default().trim()
-                ),
-            })?;
+        let rx_mhz: f64 =
+            cols.get(2)
+                .unwrap_or_default()
+                .parse()
+                .map_err(|_| RadioError::CsvParse {
+                    line: line_num,
+                    message: format!("invalid frequency: '{}'", cols.get(2).unwrap_or_default()),
+                })?;
         #[expect(
             clippy::cast_possible_truncation,
             clippy::cast_sign_loss,
@@ -222,14 +226,8 @@ pub(crate) fn parse_chirp_csv(content: &str) -> Result<FrequencyPlan, RadioError
         )]
         let rx_freq = Frequency::hz((rx_mhz * 1_000_000.0).round() as u64);
 
-        let duplex = cols.get(3).copied().unwrap_or_default().trim();
-        let offset_mhz: f64 = cols
-            .get(4)
-            .copied()
-            .unwrap_or_default()
-            .trim()
-            .parse()
-            .unwrap_or(0.0);
+        let duplex = cols.get(3).unwrap_or_default();
+        let offset_mhz: f64 = cols.get(4).unwrap_or_default().parse().unwrap_or(0.0);
 
         #[expect(
             clippy::cast_possible_truncation,
@@ -249,7 +247,7 @@ pub(crate) fn parse_chirp_csv(content: &str) -> Result<FrequencyPlan, RadioError
                 let tx_hz = rx_hz
                     .checked_add(off_hz)
                     .ok_or_else(|| RadioError::CsvParse {
-                        line: line_num + 2,
+                        line: line_num,
                         message: format!("frequency offset overflow: {rx_freq} + {offset_freq}"),
                     })?;
                 (
@@ -261,7 +259,7 @@ pub(crate) fn parse_chirp_csv(content: &str) -> Result<FrequencyPlan, RadioError
                 let tx_hz = rx_hz
                     .checked_sub(off_hz)
                     .ok_or_else(|| RadioError::CsvParse {
-                        line: line_num + 2,
+                        line: line_num,
                         message: format!("frequency offset underflow: {rx_freq} - {offset_freq}"),
                     })?;
                 (
@@ -277,23 +275,23 @@ pub(crate) fn parse_chirp_csv(content: &str) -> Result<FrequencyPlan, RadioError
         };
 
         let tone = parse_chirp_tone(
-            cols.get(5).copied().unwrap_or_default().trim(),
-            cols.get(6).copied().unwrap_or_default().trim(),
-            cols.get(8).copied().unwrap_or_default().trim(),
-            cols.get(9).copied().unwrap_or_default().trim(),
+            cols.get(5).unwrap_or_default(),
+            cols.get(6).unwrap_or_default(),
+            cols.get(8).unwrap_or_default(),
+            cols.get(9).unwrap_or_default(),
         );
 
-        let bandwidth = match cols.get(11).map(|s| s.trim()) {
+        let bandwidth = match cols.get(11) {
             Some("NFM") => Bandwidth::Narrow,
             _ => Bandwidth::Wide,
         };
 
-        let scan = match cols.get(13).map(|s| s.trim()) {
+        let scan = match cols.get(13) {
             Some("S") => ScanMode::Skip,
             _ => ScanMode::Include,
         };
 
-        let power = match cols.get(14).map(|s| s.trim()) {
+        let power = match cols.get(14) {
             Some("Low") => PowerLevel::Low,
             Some("Mid") => PowerLevel::Mid,
             _ => PowerLevel::High,
@@ -319,6 +317,15 @@ pub(crate) fn parse_chirp_csv(content: &str) -> Result<FrequencyPlan, RadioError
         channels,
         created: None,
     })
+}
+
+/// Recovers the 1-based source line a CSV reader error occurred on.
+///
+/// Returns 0 when the reader could not attribute the failure to a position
+/// (an I/O fault rather than a malformed record).
+fn csv_error_line(err: &csv::Error) -> usize {
+    err.position()
+        .map_or(0, |p| usize::try_from(p.line()).unwrap_or(usize::MAX))
 }
 
 fn parse_chirp_tone(tone_mode: &str, r_tone: &str, dtcs_code: &str, dtcs_pol: &str) -> ToneMode {
@@ -452,6 +459,102 @@ Location,Name,Frequency,Duplex,Offset,Tone,rToneFreq,cToneFreq,DtcsCode,DtcsPola
         assert_eq!(imported.channels[0].index, 0);
         assert_eq!(imported.channels[0].name, "TEST");
         assert_eq!(imported.channels[0].rx_freq, plan.channels[0].rx_freq);
+    }
+
+    /// Builds a one-row CHIRP CSV whose Name column is `name`, quoted verbatim.
+    fn chirp_csv_with_quoted_name(name: &str) -> String {
+        format!(
+            "Location,Name,Frequency,Duplex,Offset,Tone,rToneFreq,cToneFreq,DtcsCode,\
+             DtcsPolarity,RxDtcsCode,Mode,TStep,Skip,Power,Comment,URCALL,RPT1CALL,RPT2CALL,DVCODE\n\
+             7,{name},146.520000,,0.000000,,88.5,88.5,023,NN,023,FM,5.00,,Low,,,,,\n"
+        )
+    }
+
+    #[test]
+    fn a_quoted_name_containing_a_comma_keeps_the_later_columns_aligned() {
+        // WHY: splitting on ',' turns this one row into 21 fields, so Frequency
+        // reads " North\"" and every column after it shifts by one.
+        let csv = chirp_csv_with_quoted_name("\"Repeater, North\"");
+
+        let plan = parse_chirp_csv(&csv).unwrap();
+
+        assert_eq!(plan.channels.len(), 1);
+        assert_eq!(plan.channels[0].name, "Repeater, North");
+        assert_eq!(plan.channels[0].rx_freq.as_hz(), 146_520_000);
+        // The Power column sits after the comma, so a shift would misread it.
+        assert_eq!(plan.channels[0].power, PowerLevel::Low);
+    }
+
+    #[test]
+    fn a_doubled_quote_in_a_name_is_undoubled_rather_than_stripped() {
+        // RFC4180 escapes an embedded '"' by doubling it; the old parser used
+        // trim_matches('"'), which neither undoubles nor survives interior quotes.
+        let csv = chirp_csv_with_quoted_name("\"MT \"\"HIGH\"\"\"");
+
+        let plan = parse_chirp_csv(&csv).unwrap();
+
+        assert_eq!(plan.channels[0].name, "MT \"HIGH\"");
+        assert_eq!(plan.channels[0].rx_freq.as_hz(), 146_520_000);
+    }
+
+    #[test]
+    fn exported_names_needing_quotes_reimport_unchanged() {
+        use crate::radio::export::export_chirp_csv;
+
+        // WHY: export::csv_escape already writes RFC4180 quoting, so every name
+        // here is one this crate itself emits — the roundtrip was broken against
+        // akroasis's OWN export, not just against foreign CHIRP files.
+        let tricky = ["Repeater, North", "MT \"HIGH\"", "A,B,C", "plain"];
+
+        let plan = FrequencyPlan {
+            name: "Roundtrip".to_string(),
+            radio_model: None,
+            channels: tricky
+                .iter()
+                .enumerate()
+                .map(|(i, name)| Channel {
+                    index: u16::try_from(i).unwrap(),
+                    name: (*name).to_string(),
+                    rx_freq: Frequency::hz(146_520_000),
+                    tx_freq: None,
+                    offset: syntonia::FrequencyOffset::None,
+                    tone: ToneMode::None,
+                    power: PowerLevel::High,
+                    bandwidth: Bandwidth::Wide,
+                    scan: ScanMode::Include,
+                    busy_lock: false,
+                })
+                .collect(),
+            created: None,
+        };
+
+        let imported = parse_chirp_csv(&export_chirp_csv(&plan)).unwrap();
+
+        assert_eq!(imported.channels.len(), tricky.len());
+        for (got, want) in imported.channels.iter().zip(tricky) {
+            assert_eq!(got.name, want);
+            assert_eq!(got.rx_freq.as_hz(), 146_520_000);
+        }
+    }
+
+    #[test]
+    fn a_quoted_embedded_newline_does_not_desynchronise_the_reported_line() {
+        // The bad row is the 4th physical line; a record counter would say 3.
+        let csv = "\
+Location,Name,Frequency,Duplex,Offset,Tone,rToneFreq,cToneFreq,DtcsCode,DtcsPolarity,RxDtcsCode,Mode,TStep,Skip,Power,Comment,URCALL,RPT1CALL,RPT2CALL,DVCODE
+0,\"two
+line\",146.520000,,0.000000,,88.5,88.5,023,NN,023,FM,5.00,,High,,,,,
+1,BAD,not-a-frequency,,0.000000,,88.5,88.5,023,NN,023,FM,5.00,,High,,,,,\n";
+
+        let err = parse_chirp_csv(csv).unwrap_err();
+
+        assert!(
+            matches!(err, RadioError::CsvParse { line: 4, .. }),
+            "expected CsvParse on physical line 4, got: {err:?}"
+        );
+        if let RadioError::CsvParse { message, .. } = err {
+            assert!(message.contains("not-a-frequency"), "got: {message}");
+        }
     }
 
     #[test]
