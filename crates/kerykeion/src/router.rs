@@ -291,11 +291,15 @@ mod tests {
     use super::*;
     use crate::config::StoreForwardConfig;
     use crate::delivery::DeliveryStatus;
-    use crate::proto::Data;
+    use crate::proto::{Data, routing};
 
     fn make_router() -> MeshRouter {
+        make_router_with_outbound(OutboundQueue::new())
+    }
+
+    fn make_router_with_outbound(outbound: OutboundQueue) -> MeshRouter {
         MeshRouter::new(
-            OutboundQueue::new(),
+            outbound,
             StoreForward::new(StoreForwardConfig {
                 enabled: true,
                 max_queue_per_dest: 16,
@@ -303,6 +307,14 @@ mod tests {
             }),
             DeliveryTracker::new(),
         )
+    }
+
+    /// Move the head of the pending queue into the inflight set, the way
+    /// `run_router_flush` does on each tick.
+    fn transmit_next(router: &mut MeshRouter) {
+        #[expect(clippy::unwrap_used, reason = "test-only: caller enqueued a message")]
+        let msg = router.next_to_send().unwrap();
+        router.track_sent(msg);
     }
 
     fn make_packet(id: u32) -> MeshPacket {
@@ -683,6 +695,76 @@ mod tests {
                 Some(DeliveryStatus::Failed { .. })
             ),
             "delivery must be marked Failed after retries exhausted"
+        );
+    }
+
+    #[test]
+    fn handle_nak_retries_while_attempts_remain() {
+        // WHY(#229): the retry half of handle_nak's branch. With one retry
+        // allowed, the first NAK must re-enqueue rather than fail — this is
+        // the arm that must NOT fire in the max-retries test below.
+        let mut router = make_router_with_outbound(OutboundQueue::with_config(&OutboundConfig {
+            max_retries: 1,
+            ..OutboundConfig::default()
+        }));
+        #[expect(clippy::unwrap_used, reason = "test-only")]
+        let id = router
+            .send(make_packet(70), true, &SendOptions::default())
+            .unwrap();
+        transmit_next(&mut router);
+
+        router.handle_nak(id, routing::Error::NoRoute);
+
+        assert_eq!(
+            router.outbound.pending_count(),
+            1,
+            "a retryable NAK must put the packet back on the pending queue"
+        );
+        assert!(
+            !matches!(
+                router.delivery.delivery_status(id),
+                Some(DeliveryStatus::Failed { .. })
+            ),
+            "a retryable NAK must not mark the delivery failed"
+        );
+    }
+
+    #[test]
+    fn handle_nak_after_max_retries_marks_delivery_failed() {
+        // WHY(#229): once retries are exhausted the NAK must map to
+        // DeliveryFailure::Nak carrying the reported routing error, not to
+        // MaxRetries — the failure reason is what tells an operator whether
+        // the mesh rejected the packet or simply never answered.
+        let mut router = make_router_with_outbound(OutboundQueue::with_config(&OutboundConfig {
+            max_retries: 1,
+            ..OutboundConfig::default()
+        }));
+        #[expect(clippy::unwrap_used, reason = "test-only")]
+        let id = router
+            .send(make_packet(71), true, &SendOptions::default())
+            .unwrap();
+
+        // First NAK consumes the single retry and re-enqueues the packet.
+        transmit_next(&mut router);
+        router.handle_nak(id, routing::Error::NoRoute);
+
+        // Retransmit, then NAK again — now retries == max_retries.
+        transmit_next(&mut router);
+        router.handle_nak(id, routing::Error::NoRoute);
+
+        assert!(
+            matches!(
+                router.delivery.delivery_status(id),
+                Some(DeliveryStatus::Failed {
+                    reason: DeliveryFailure::Nak(routing::Error::NoRoute)
+                })
+            ),
+            "an exhausted NAK must fail with the routing error it reported"
+        );
+        assert_eq!(
+            router.outbound.pending_count(),
+            0,
+            "the packet must not be re-enqueued once retries are exhausted"
         );
     }
 }

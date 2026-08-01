@@ -351,6 +351,62 @@ mod tests {
         }
     }
 
+    /// Mock that answers with a WRONG `config_complete_id` before sending the
+    /// `NodeInfo` and then the matching id.
+    struct MismatchMock {
+        step: u32,
+        config_id: Option<u32>,
+    }
+
+    impl MeshConnection for MismatchMock {
+        async fn send(&mut self, packet: ToRadio) -> Result<(), Error> {
+            if let Some(to_radio::PayloadVariant::WantConfigId(id)) = packet.payload_variant {
+                self.config_id = Some(id);
+            }
+            Ok(())
+        }
+
+        async fn recv(&mut self) -> Result<FromRadio, Error> {
+            self.step += 1;
+            match self.step {
+                1 => Ok(FromRadio {
+                    id: 1,
+                    payload_variant: Some(from_radio::PayloadVariant::MyInfo(MyNodeInfo {
+                        my_node_num: 0x2222,
+                    })),
+                }),
+                // WHY: a stale id from an earlier config dump — must be ignored.
+                2 => Ok(FromRadio {
+                    id: 2,
+                    payload_variant: Some(from_radio::PayloadVariant::ConfigCompleteId(
+                        self.config_id.unwrap_or(0).wrapping_add(1),
+                    )),
+                }),
+                3 => Ok(FromRadio {
+                    id: 3,
+                    payload_variant: Some(from_radio::PayloadVariant::NodeInfo(NodeInfo {
+                        num: 0x3333,
+                        ..Default::default()
+                    })),
+                }),
+                _ => Ok(FromRadio {
+                    id: 4,
+                    payload_variant: Some(from_radio::PayloadVariant::ConfigCompleteId(
+                        self.config_id.unwrap_or(0),
+                    )),
+                }),
+            }
+        }
+
+        fn is_connected(&self) -> bool {
+            true
+        }
+
+        async fn reconnect(&mut self) -> Result<(), Error> {
+            Ok(())
+        }
+    }
+
     // ── Tests ─────────────────────────────────────────────────────────────────
 
     #[tokio::test]
@@ -457,5 +513,110 @@ mod tests {
         let node = node_info_to_mesh_node(&ni);
 
         assert_eq!(node.hop_count, Some(3));
+    }
+
+    #[tokio::test]
+    async fn mismatched_config_complete_id_does_not_end_the_handshake() {
+        // WHY(#229): a ConfigCompleteId that does not match want_config_id is a
+        // stale reply from an earlier config dump. The loop must ignore it and
+        // keep reading, not break out with a half-populated result. The mock
+        // sends the wrong id first and the NodeInfo only afterwards, so a
+        // premature break loses that node and the assertion fails.
+        let mut db = NodeDb::new();
+        let mut conn = MismatchMock {
+            step: 0,
+            config_id: None,
+        };
+
+        #[expect(clippy::unwrap_used, reason = "test-only")]
+        let result = handshake(&mut conn, &mut db).await.unwrap();
+
+        assert_eq!(result.my_node_num.0, 0x2222);
+        assert_eq!(
+            result.known_nodes.len(),
+            1,
+            "the NodeInfo sent after the mismatched id must still be collected"
+        );
+    }
+
+    #[test]
+    fn node_info_converts_position_timestamps_and_snr() {
+        // WHY(#229): covers the scaling and proto3-sentinel rules in
+        // node_info_to_mesh_node together — lat/lon are integer degrees x 1e7,
+        // a zero altitude/last_heard/snr is "unset" rather than a real zero.
+        let ni = NodeInfo {
+            num: 0xABCD,
+            snr: 4.25,
+            last_heard: 1_700_000_000,
+            hops_away: 2,
+            user: Some(crate::proto::User {
+                id: "!abcd".into(),
+                long_name: "Long".into(),
+                short_name: "SHRT".into(),
+                macaddr: vec![],
+                hw_model: 9,
+                is_licensed: true,
+                role: 0,
+            }),
+            position: Some(crate::proto::Position {
+                latitude_i: 515_074_000,
+                longitude_i: -1_278_000,
+                altitude: 42,
+                time: 1_700_000_001,
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let node = node_info_to_mesh_node(&ni);
+
+        assert_eq!(node.num.0, 0xABCD);
+        assert_eq!(node.hop_count, Some(2));
+        assert_eq!(node.snr, Some(4.25));
+
+        #[expect(clippy::unwrap_used, reason = "test-only: constructed above")]
+        let position = node.position.unwrap();
+        assert!((position.latitude - 51.507_4).abs() < 1e-9);
+        assert!((position.longitude - -0.127_8).abs() < 1e-9);
+        assert_eq!(position.altitude, Some(42));
+        assert!(position.timestamp.is_some());
+
+        #[expect(clippy::unwrap_used, reason = "test-only: constructed above")]
+        let user = node.user.unwrap();
+        assert_eq!(user.short_name, "SHRT");
+        assert_eq!(user.hw_model, 9);
+        assert!(user.is_licensed);
+
+        #[expect(clippy::unwrap_used, reason = "test-only: nonzero last_heard")]
+        let last_heard = node.last_heard.unwrap();
+        assert_eq!(last_heard.as_second(), 1_700_000_000);
+    }
+
+    #[test]
+    fn node_info_proto3_zero_sentinels_map_to_none() {
+        // WHY(#229): the falsifiable half of the pair above — 0 means "unset"
+        // for snr, last_heard and altitude, so none of them may survive as a
+        // real reading.
+        let ni = NodeInfo {
+            num: 1,
+            snr: 0.0,
+            last_heard: 0,
+            position: Some(crate::proto::Position {
+                latitude_i: 0,
+                longitude_i: 0,
+                altitude: 0,
+                time: 0,
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let node = node_info_to_mesh_node(&ni);
+
+        assert_eq!(node.snr, None);
+        assert_eq!(node.last_heard, None);
+        #[expect(clippy::unwrap_used, reason = "test-only: constructed above")]
+        let position = node.position.unwrap();
+        assert_eq!(position.altitude, None);
     }
 }

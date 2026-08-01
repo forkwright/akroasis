@@ -2,6 +2,7 @@
 //! RUST/file-too-long 800-line threshold.
 
 use super::*;
+use crate::outbound::PendingMessage;
 use crate::proto::{Data, PortNum, mesh_packet};
 
 fn make_processor() -> PacketProcessor {
@@ -415,4 +416,222 @@ fn apply_nak_marks_failed_when_no_inflight() {
         delivery.delivery_status(id),
         Some(crate::delivery::DeliveryStatus::Failed { .. })
     ));
+}
+
+#[test]
+fn apply_nak_retries_while_the_packet_is_still_inflight() {
+    // WHY(#229): the sibling of apply_nak_marks_failed_when_no_inflight. When
+    // the packet IS inflight with retries remaining, the NAK must re-queue it
+    // and leave the delivery record un-failed — the retry arm of
+    // apply_routing_result, which no existing test reached.
+    let mut delivery = DeliveryTracker::new();
+    let mut outbound = OutboundQueue::new();
+    let id = PacketId(78);
+
+    delivery.track(id, 0x5678);
+    outbound.track_inflight(
+        PendingMessage {
+            packet: crate::proto::MeshPacket {
+                id: id.0,
+                ..Default::default()
+            },
+            created: tokio::time::Instant::now(),
+            ttl: std::time::Duration::from_secs(60),
+            priority: crate::proto::mesh_packet::Priority::Default,
+            retries: 0,
+        },
+        std::time::Duration::from_secs(30),
+    );
+    delivery.mark_sent(id);
+
+    let result = RoutingResult::Nak {
+        request_id: id,
+        error: routing::Error::NoRoute,
+    };
+    RoutingProcessor::apply_routing_result(&result, &mut delivery, &mut outbound);
+
+    assert_eq!(
+        outbound.pending_count(),
+        1,
+        "a retryable NAK must re-queue the packet"
+    );
+    assert_eq!(outbound.inflight_count(), 0);
+    assert!(
+        !matches!(
+            delivery.delivery_status(id),
+            Some(crate::delivery::DeliveryStatus::Failed { .. })
+        ),
+        "a retryable NAK must not mark the delivery failed"
+    );
+}
+
+#[test]
+fn malformed_payloads_are_dropped_without_panicking() {
+    // WHY(#229): every decode site on the OTA path is fed attacker-influenced
+    // bytes. A malformed payload must be logged and skipped, never unwrapped —
+    // so each handler returns no events and leaves the node database clean.
+    let mut proc = make_processor();
+    // A leading tag byte of 0xFF is not a valid protobuf field header, so
+    // prost rejects it for every message type below.
+    let garbage = vec![0xFF_u8, 0xFF, 0xFF, 0xFF];
+
+    for portnum in [
+        portnum::NODEINFO_APP,
+        portnum::POSITION_APP,
+        portnum::TELEMETRY_APP,
+        portnum::NEIGHBORINFO_APP,
+        portnum::TRACEROUTE_APP,
+    ] {
+        let packet = make_mesh_packet(0xBAD0, portnum, garbage.clone());
+        let events = proc.process_mesh_packet(&packet);
+
+        assert!(
+            events.is_empty(),
+            "portnum {portnum} produced events from a malformed payload"
+        );
+    }
+
+    // Passive learning still records the sender; only the decoded payload is
+    // discarded.
+    #[expect(clippy::unwrap_used, reason = "test-only: passive learning inserts it")]
+    let node = proc.node_db().get(NodeNum(0xBAD0)).unwrap();
+    assert!(node.user.is_none(), "no user info may survive a bad decode");
+    assert!(node.position.is_none());
+}
+
+#[test]
+fn repeat_nodeinfo_for_a_known_node_emits_no_rediscovery() {
+    // WHY(#229): NodeDiscovered drives downstream alerting, so a periodic
+    // NODEINFO refresh from an already-known node must not re-announce it.
+    // The is_new test keys on whether user info was already present.
+    let mut proc = make_processor();
+    let user = crate::proto::User {
+        id: "!feedface".into(),
+        long_name: "Repeat Node".into(),
+        short_name: "RPT".into(),
+        macaddr: vec![],
+        hw_model: 9,
+        is_licensed: false,
+        role: 0,
+    };
+    let mut payload = Vec::new();
+    user.encode(&mut payload).unwrap();
+
+    let first = proc.process_mesh_packet(&make_mesh_packet(
+        0xFEED,
+        portnum::NODEINFO_APP,
+        payload.clone(),
+    ));
+    assert!(
+        first
+            .iter()
+            .any(|e| matches!(e, MeshEvent::NodeDiscovered { .. })),
+        "the first NODEINFO must announce the node"
+    );
+
+    let second =
+        proc.process_mesh_packet(&make_mesh_packet(0xFEED, portnum::NODEINFO_APP, payload));
+    assert!(
+        !second
+            .iter()
+            .any(|e| matches!(e, MeshEvent::NodeDiscovered { .. })),
+        "a repeat NODEINFO must not re-announce a known node"
+    );
+}
+
+#[test]
+fn traceroute_inserts_the_reverse_path_links() {
+    // WHY(#229): the `back`/`snr_back` half of handle_traceroute runs only
+    // when `back` is non-empty, and inserts links without emitting events —
+    // so nothing but the topology shows it ran.
+    let mut proc = make_processor();
+    let route = crate::proto::RouteDiscovery {
+        route: vec![0x20],
+        snr_towards: vec![40, 32],
+        back: vec![0x20],
+        snr_back: vec![24, 16],
+    };
+    let mut payload = Vec::new();
+    route.encode(&mut payload).unwrap();
+
+    let mut packet = make_mesh_packet(0x10, portnum::TRACEROUTE_APP, payload);
+    packet.to = 0x30;
+
+    proc.process_mesh_packet(&packet);
+
+    // Links are directed. The forward path lays 0x10 → 0x20 → 0x30; the
+    // reverse path lays 0x30 → 0x20 → 0x10. So the 0x20 → 0x10 edge exists
+    // only if the reverse loop ran, and its SNR comes from snr_back.
+    let topology = proc.topology();
+    assert!(topology.contains_node(NodeNum(0x10)));
+    assert!(topology.contains_node(NodeNum(0x20)));
+    assert!(topology.contains_node(NodeNum(0x30)));
+
+    let neighbours = topology.neighbors(NodeNum(0x20));
+    assert_eq!(
+        neighbours.len(),
+        2,
+        "the middle hop must have an outgoing link on each path"
+    );
+
+    #[expect(clippy::unwrap_used, reason = "test-only: asserted present above")]
+    let to_origin = neighbours
+        .iter()
+        .find(|(n, _)| *n == NodeNum(0x10))
+        .unwrap()
+        .1;
+    // snr_back[1] = 16 is the 0x20 → 0x10 leg of the reverse path.
+    assert!(
+        (to_origin.snr - 16.0).abs() < f32::EPSILON,
+        "the reverse leg must carry its snr_back reading, got {}",
+        to_origin.snr
+    );
+}
+
+#[test]
+fn traceroute_without_a_reverse_path_leaves_the_forward_snr() {
+    // WHY(#229): the falsifiable half — with `back` empty the reverse loop is
+    // skipped, so the forward SNR survives. Without this the assertion above
+    // could pass on any code that merely wrote some SNR.
+    let mut proc = make_processor();
+    let route = crate::proto::RouteDiscovery {
+        route: vec![0x20],
+        snr_towards: vec![40, 32],
+        back: vec![],
+        snr_back: vec![],
+    };
+    let mut payload = Vec::new();
+    route.encode(&mut payload).unwrap();
+
+    let mut packet = make_mesh_packet(0x10, portnum::TRACEROUTE_APP, payload);
+    packet.to = 0x30;
+
+    proc.process_mesh_packet(&packet);
+
+    let neighbours = proc.topology().neighbors(NodeNum(0x20));
+    assert!(
+        !neighbours.iter().any(|(n, _)| *n == NodeNum(0x10)),
+        "with no reverse path the 0x20 → 0x10 edge must not exist"
+    );
+    assert_eq!(
+        neighbours.len(),
+        1,
+        "only the forward 0x20 → 0x30 leg may be present"
+    );
+
+    // The forward path itself is unaffected: 0x10 → 0x20 still carries
+    // snr_towards[0].
+    #[expect(clippy::unwrap_used, reason = "test-only: forward path links it")]
+    let forward = proc
+        .topology()
+        .neighbors(NodeNum(0x10))
+        .iter()
+        .find(|(n, _)| *n == NodeNum(0x20))
+        .unwrap()
+        .1
+        .snr;
+    assert!(
+        (forward - 40.0).abs() < f32::EPSILON,
+        "the forward leg must carry snr_towards, got {forward}"
+    );
 }
