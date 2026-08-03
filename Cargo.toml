@@ -67,11 +67,6 @@ zeroize = { version = "1", features = ["derive"] }
 rand_core = { version = "0.6", features = ["getrandom"] }
 subtle = "2"
 
-# Post-quantum hybrid KEM — standalone fleet crate.
-# WHY: extracted from akroasis crates/sphragis to forkwright/sphragis for
-# cross-repo access. preview-pq gated; unaudited until cryptographic review.
-sphragis = { git = "https://github.com/forkwright/sphragis", tag = "v0.1.1", features = ["preview-pq"] }
-
 # Hashing
 blake3 = "1"
 
@@ -135,3 +130,13 @@ tower-http = { version = "0.7", features = ["cors", "trace"] }
 # Testing
 proptest = "1"
 nix = { version = "0.31.2", features = ["pty"] }
+
+# Post-quantum hybrid KEM — standalone fleet crate.
+# WHY: extracted from akroasis crates/sphragis to forkwright/sphragis for
+# cross-repo access. preview-pq gated; unaudited until cryptographic review.
+# WHY the expanded form: the inline table exceeded the 80-column limit
+# (TOML.md#formatting), and a multi-line inline table needs TOML 1.1.
+[workspace.dependencies.sphragis]
+git = "https://github.com/forkwright/sphragis"
+tag = "v0.1.1"
+features = ["preview-pq"]
