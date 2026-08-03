@@ -635,3 +635,78 @@ fn traceroute_without_a_reverse_path_leaves_the_forward_snr() {
         "the forward leg must carry snr_towards, got {forward}"
     );
 }
+
+// ── akroasis#229: a signal is located at its subject, not the packet sender ──
+
+fn node_at(num: u32, latitude: f64, longitude: f64) -> MeshNode {
+    MeshNode {
+        num: NodeNum(num),
+        user: None,
+        position: Some(crate::node_db::NodePosition {
+            latitude,
+            longitude,
+            altitude: None,
+            timestamp: None,
+        }),
+        metrics: None,
+        last_heard: None,
+        snr: None,
+        hop_count: None,
+    }
+}
+
+#[tokio::test]
+async fn neighborinfo_signal_is_located_at_the_reporter_not_the_packet_sender() {
+    // WHY: NEIGHBORINFO carries its reporter id in the payload, so a relayed
+    // report describes links the relay is not an endpoint of. Locating every
+    // signal at the packet sender puts those links at the relay's coordinates.
+    let (tx, mut rx) = broadcast::channel(64);
+    let mut node_db = NodeDb::new();
+    node_db.set_my_node(NodeNum(0xAAAA));
+    node_db.insert(node_at(0x1111, 10.0, 10.0)); // the relay that transmitted
+    node_db.insert(node_at(0x2222, 50.0, 60.0)); // the node the report is about
+    let mut proc = PacketProcessor::new(node_db, MeshTopology::new(), tx);
+
+    let ni = NeighborInfo {
+        node_id: 0x2222,
+        last_sent_by_id: 0,
+        node_broadcast_interval_secs: 0,
+        neighbors: vec![Neighbor {
+            node_id: 0x3333,
+            snr: 4.0,
+        }],
+    };
+    let mut payload = Vec::new();
+    ni.encode(&mut payload).unwrap();
+
+    let packet = make_mesh_packet(0x1111, portnum::NEIGHBORINFO_APP, payload);
+    let events = proc.process_mesh_packet(&packet);
+    assert_eq!(events.len(), 1, "one neighbor should yield one event");
+
+    let signal = rx.recv().await.unwrap();
+    #[expect(clippy::expect_used, reason = "test-only")]
+    let coords = signal
+        .location
+        .expect("topology signal should carry the reporter's position");
+    assert!(
+        (coords.latitude - 50.0).abs() < f64::EPSILON
+            && (coords.longitude - 60.0).abs() < f64::EPSILON,
+        "signal should be located at reporter 0x2222 (50, 60), got ({}, {})",
+        coords.latitude,
+        coords.longitude
+    );
+}
+
+#[tokio::test]
+async fn partition_events_carry_no_subject_and_no_location() {
+    // WHY: the partition events describe a set of nodes rather than one, so
+    // there is no single position to attribute them to.
+    let detected = MeshEvent::PartitionDetected {
+        components: vec![vec![NodeNum(1)], vec![NodeNum(2)]],
+    };
+    let healed = MeshEvent::PartitionHealed {
+        reunited_nodes: vec![NodeNum(1)],
+    };
+    assert!(detected.subject().is_none());
+    assert!(healed.subject().is_none());
+}

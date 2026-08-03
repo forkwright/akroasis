@@ -47,6 +47,14 @@ name: Gate Attestation
 on:
   pull_request:
     branches: [main]
+  # WHY a push trigger and not just pull_request: a squash merge does not
+  # carry the source commits' trailers, so no commit on main has a
+  # Gate-Passed trailer -- check-trailer finds none and routes to
+  # full-gate-build, which is the job that actually compiles the workspace.
+  # Without this nothing ever builds main, and the first PR to inherit a
+  # merged break is what discovers it (forkwright/theatron#235).
+  push:
+    branches: [main]
 
 permissions:
   contents: read

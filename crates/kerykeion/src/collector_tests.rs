@@ -4,6 +4,7 @@
 use tracing::Instrument as _;
 
 use super::*;
+use crate::SendOptions;
 use crate::config::{ConnectionConfig, MeshConfig, StoreForwardConfig, TopologyConfig};
 
 fn make_config(connections: Vec<ConnectionConfig>) -> MeshConfig {
@@ -542,4 +543,124 @@ async fn dispatch_routing_ignores_non_routing_packet() {
         "non-routing packet must not create a delivery record"
     );
     drop(router);
+}
+
+// ── akroasis#229: total connection failure must be reported, not swallowed ──
+
+#[tokio::test]
+async fn connect_and_handshake_errors_when_every_connection_fails() {
+    // WHY: returning Ok with an empty connection set spawns the whole
+    // background task set against no radio. The collector then runs
+    // indefinitely observing nothing while reporting success, which is
+    // indistinguishable from a mesh that is merely quiet.
+    let c = MeshCollector::new(make_config(vec![ConnectionConfig::Serial {
+        port: "/dev/nonexistent_device_xyz".into(),
+        baud: 115_200,
+    }]));
+
+    let result = c.connect_and_handshake().await;
+
+    assert!(
+        matches!(result, Err(Error::HandshakeFailed { .. })),
+        "all-connections-failed should surface as Error::HandshakeFailed"
+    );
+}
+
+#[tokio::test]
+async fn connect_and_handshake_stays_ok_with_no_connections_configured() {
+    // WHY: an empty connection list is a valid configuration, not a failure  -
+    // this is what `run_exits_with_no_connections` depends on.
+    let c = MeshCollector::new(make_config(vec![]));
+    let result = c.connect_and_handshake().await;
+    assert!(result.is_ok(), "no configured connections is not a failure");
+}
+
+// ── akroasis#229: the inflight ACK timeout starts after the transmit ──────
+
+/// Connection whose `send()` parks until released, so the test can observe
+/// router state during the transmit.
+struct GatedSendConn {
+    entered: Arc<tokio::sync::Notify>,
+    release: Arc<tokio::sync::Notify>,
+}
+
+impl crate::connection::MeshConnection for GatedSendConn {
+    async fn send(&mut self, _: crate::proto::ToRadio) -> Result<(), Error> {
+        self.entered.notify_one();
+        self.release.notified().await;
+        Ok(())
+    }
+    async fn recv(&mut self) -> Result<FromRadio, Error> {
+        std::future::pending().await
+    }
+    fn is_connected(&self) -> bool {
+        true
+    }
+    async fn reconnect(&mut self) -> Result<(), Error> {
+        Ok(())
+    }
+}
+
+#[tokio::test]
+async fn router_flush_starts_ack_timeout_after_transmit() {
+    // WHY: track_sent starts the inflight ACK timeout. Starting it before the
+    // transmit charges the radio's send latency and any wait on the connection
+    // lock against the peer's time to ACK, so a slow link retries messages
+    // that were never actually late.
+    let router = Arc::new(Mutex::new(MeshRouter::new(
+        OutboundQueue::new(),
+        StoreForward::new(StoreForwardConfig::default()),
+        DeliveryTracker::new(),
+    )));
+    #[expect(clippy::unwrap_used, reason = "test-only")]
+    router
+        .lock()
+        .await
+        .send(
+            make_outbound_packet(42, 0x2222),
+            true,
+            &SendOptions::default(),
+        )
+        .unwrap();
+
+    let entered = Arc::new(tokio::sync::Notify::new());
+    let release = Arc::new(tokio::sync::Notify::new());
+    let conn = Arc::new(Mutex::new(GatedSendConn {
+        entered: Arc::clone(&entered),
+        release: Arc::clone(&release),
+    }));
+
+    let token = CancellationToken::new();
+    let flush_router = Arc::clone(&router);
+    let task_token = token.clone();
+    let handle = tokio::spawn(async move {
+        run_router_flush(flush_router, conn, Duration::from_millis(10), task_token).await
+    });
+
+    // Park inside send(): the packet has left the queue but is not on air yet.
+    entered.notified().await;
+    assert_eq!(
+        router.lock().await.outbound.inflight_count(),
+        0,
+        "the ACK timeout must not be running while the transmit is still in flight"
+    );
+
+    release.notify_one();
+
+    // The transmit has now returned, so the message becomes inflight.
+    let mut inflight = 0;
+    for _ in 0..100 {
+        inflight = router.lock().await.outbound.inflight_count();
+        if inflight == 1 {
+            break;
+        }
+        tokio::task::yield_now().await;
+    }
+    assert_eq!(
+        inflight, 1,
+        "message should be inflight once the send returns"
+    );
+
+    token.cancel();
+    handle.abort();
 }

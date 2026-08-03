@@ -23,6 +23,7 @@ hardware-serial = ["syntonia/hardware-serial"]
 [dependencies]
 clap = { workspace = true }
 comfy-table = "7"
+csv = { workspace = true }
 dialoguer = "0.11"
 figment = { workspace = true }
 indicatif = "0.17"

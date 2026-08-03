@@ -332,6 +332,138 @@ mod tests {
         image
     }
 
+    /// Write a raw 16-byte channel record straight into the image.
+    ///
+    /// WHY: `encode_channel` is the inverse of the function under test, so a
+    /// test that builds its fixture with it can only show the two agree — not
+    /// that either matches the EEPROM layout. These tests assert decode
+    /// against hand-built bytes instead.
+    fn write_raw_channel(
+        image: &mut MemoryImage,
+        index: u8,
+        rx_hz: u64,
+        tx_hz: Option<u64>,
+        byte14: u8,
+        byte15: u8,
+    ) {
+        let mut ch = [0xFFu8; 16];
+        ch[0..4].copy_from_slice(&bcd::lbcd4_encode(rx_hz).unwrap());
+        match tx_hz {
+            Some(hz) => ch[4..8].copy_from_slice(&bcd::lbcd4_encode(hz).unwrap()),
+            None => ch[4..8].copy_from_slice(&[0xFF; 4]),
+        }
+        // Tone slots: 0x0000 in both is "no tone".
+        ch[8..12].copy_from_slice(&[0x00; 4]);
+        ch[14] = byte14;
+        ch[15] = byte15;
+        image.write_bytes(CHANNEL_BASE + u16::from(index) * CHANNEL_STRIDE, &ch);
+    }
+
+    /// Byte-15 flag bits, per the UV-5R channel record.
+    const FLAG_WIDE: u8 = 0x40;
+    const FLAG_SCAN_INCLUDE: u8 = 0x04;
+    const FLAG_BUSY_LOCK: u8 = 0x08;
+
+    fn decode_raw(byte14: u8, byte15: u8) -> Channel {
+        let mut image = MemoryImage::new(0x1800);
+        write_raw_channel(
+            &mut image,
+            3,
+            146_520_000,
+            Some(146_520_000),
+            byte14,
+            byte15,
+        );
+        decode_channel(&image, 3).unwrap().unwrap()
+    }
+
+    // ── byte 15: bandwidth, scan, busy lock ──────────────────────────────
+
+    #[test]
+    fn decode_reads_narrow_bandwidth_when_the_wide_bit_is_clear() {
+        assert_eq!(decode_raw(0, 0).bandwidth, Bandwidth::Narrow);
+        assert_eq!(decode_raw(0, FLAG_WIDE).bandwidth, Bandwidth::Wide);
+    }
+
+    #[test]
+    fn decode_reads_skip_scan_when_the_include_bit_is_clear() {
+        assert_eq!(decode_raw(0, 0).scan, ScanMode::Skip);
+        assert_eq!(decode_raw(0, FLAG_SCAN_INCLUDE).scan, ScanMode::Include);
+    }
+
+    #[test]
+    fn decode_reads_busy_lock_from_its_own_bit() {
+        assert!(!decode_raw(0, 0).busy_lock);
+        assert!(decode_raw(0, FLAG_BUSY_LOCK).busy_lock);
+    }
+
+    // WHY: the three flags share byte 15, so a mask that is too wide reads one
+    // as another. Setting all three at once catches that; the tests above,
+    // each setting a single bit, cannot.
+    #[test]
+    fn decode_reads_the_byte_fifteen_flags_independently() {
+        let ch = decode_raw(0, FLAG_WIDE | FLAG_SCAN_INCLUDE | FLAG_BUSY_LOCK);
+        assert_eq!(ch.bandwidth, Bandwidth::Wide);
+        assert_eq!(ch.scan, ScanMode::Include);
+        assert!(ch.busy_lock);
+    }
+
+    // ── byte 14: power ───────────────────────────────────────────────────
+
+    #[test]
+    fn decode_reads_each_power_level_from_byte_fourteen() {
+        assert_eq!(decode_raw(0, FLAG_WIDE).power, PowerLevel::High);
+        assert_eq!(decode_raw(1, FLAG_WIDE).power, PowerLevel::Low);
+        assert_eq!(decode_raw(2, FLAG_WIDE).power, PowerLevel::Mid);
+    }
+
+    // WHY: only the low two bits carry power; the rest of byte 14 is other
+    // per-channel state, so a decoder reading the whole byte misreads every
+    // channel that has any of it set.
+    #[test]
+    fn decode_ignores_the_high_bits_of_byte_fourteen() {
+        assert_eq!(decode_raw(0xFC, FLAG_WIDE).power, PowerLevel::High);
+        assert_eq!(decode_raw(0xFD, FLAG_WIDE).power, PowerLevel::Low);
+        assert_eq!(decode_raw(0xFE, FLAG_WIDE).power, PowerLevel::Mid);
+    }
+
+    // ── TX/RX pair: derived offset ───────────────────────────────────────
+
+    #[test]
+    fn decode_derives_a_minus_offset_when_tx_is_below_rx() {
+        let mut image = MemoryImage::new(0x1800);
+        write_raw_channel(&mut image, 0, 147_060_000, Some(146_460_000), 0, FLAG_WIDE);
+        let ch = decode_channel(&image, 0).unwrap().unwrap();
+        assert_eq!(ch.tx_freq, Some(Frequency::hz(146_460_000)));
+        assert_eq!(ch.offset, FrequencyOffset::Minus(Frequency::hz(600_000)));
+    }
+
+    #[test]
+    fn decode_derives_a_plus_offset_when_tx_is_above_rx() {
+        let mut image = MemoryImage::new(0x1800);
+        write_raw_channel(&mut image, 0, 147_060_000, Some(147_660_000), 0, FLAG_WIDE);
+        let ch = decode_channel(&image, 0).unwrap().unwrap();
+        assert_eq!(ch.offset, FrequencyOffset::Plus(Frequency::hz(600_000)));
+    }
+
+    #[test]
+    fn decode_reports_no_offset_when_tx_equals_rx() {
+        let mut image = MemoryImage::new(0x1800);
+        write_raw_channel(&mut image, 0, 147_060_000, Some(147_060_000), 0, FLAG_WIDE);
+        let ch = decode_channel(&image, 0).unwrap().unwrap();
+        assert_eq!(ch.tx_freq, Some(Frequency::hz(147_060_000)));
+        assert_eq!(ch.offset, FrequencyOffset::None);
+    }
+
+    #[test]
+    fn decode_reports_a_receive_only_channel_when_tx_is_unprogrammed() {
+        let mut image = MemoryImage::new(0x1800);
+        write_raw_channel(&mut image, 0, 147_060_000, None, 0, FLAG_WIDE);
+        let ch = decode_channel(&image, 0).unwrap().unwrap();
+        assert_eq!(ch.tx_freq, None);
+        assert_eq!(ch.offset, FrequencyOffset::None);
+    }
+
     #[test]
     fn decode_simplex_channel() {
         let image = make_test_image();

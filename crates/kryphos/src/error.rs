@@ -62,6 +62,17 @@ pub enum VaultError {
         path: std::path::PathBuf,
     },
 
+    /// No vault has been initialized at this path.
+    ///
+    /// Distinct from [`VaultError::Io`]: absence is the expected outcome of
+    /// opening a path before `create`, not a filesystem failure, and callers
+    /// branch on it to offer initialization.
+    #[snafu(display("no vault initialized at {path}", path = path.display()))]
+    NotInitialized {
+        /// Path that holds no vault.
+        path: std::path::PathBuf,
+    },
+
     /// The storage backend (fjall) returned an error.
     #[snafu(display("storage backend error: {message}"))]
     StorageBackend {

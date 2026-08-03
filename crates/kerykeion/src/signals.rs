@@ -85,6 +85,29 @@ pub enum MeshEvent {
     },
 }
 
+impl MeshEvent {
+    /// The node this event is about, when it names exactly one.
+    ///
+    /// This is the node whose position locates the emitted signal. It is not
+    /// the packet sender: `NEIGHBORINFO` carries a reporter id in its payload,
+    /// so a relayed report describes links the relay is not an endpoint of.
+    ///
+    /// Returns `None` for the partition events, which describe a set of nodes
+    /// rather than one; their conversions carry no location either.
+    #[must_use]
+    pub const fn subject(&self) -> Option<NodeNum> {
+        match self {
+            Self::NodeDiscovered { node, .. }
+            | Self::NodeOffline { node }
+            | Self::PositionUpdate { node, .. }
+            | Self::GatewayStatusChange { node, .. }
+            | Self::TelemetryUpdate { node, .. } => Some(*node),
+            Self::TopologyChange { from, .. } | Self::LinkDegraded { from, .. } => Some(*from),
+            Self::PartitionDetected { .. } | Self::PartitionHealed { .. } => None,
+        }
+    }
+}
+
 /// Convert a [`MeshEvent`] to a [`GeoSignal`] using the closest matching [`MeshDetail`] variant.
 ///
 /// Events that lack a direct `MeshDetail` mapping use `MeshDetail::NodeSeen` with
