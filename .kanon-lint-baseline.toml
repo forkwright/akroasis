@@ -322,12 +322,6 @@ line = 259
 hash = "635566a5376aca1bf92ec855cbe96b69003a02f89b19a6dbdc822d59e580ed34"
 
 [[baseline.entry]]
-rule = "RUST/config-deny-unknown-fields"
-file = "crates/koinon/src/tamper_log.rs"
-line = 64
-hash = "ab6fa7ce2a569a6a8354104318c49f7ae1f5b147a2c0685363a8b09356549fe2"
-
-[[baseline.entry]]
 rule = "RUST/no-debug-derive-on-public-types"
 file = "crates/koinon/src/tamper_log.rs"
 line = 150
@@ -398,12 +392,6 @@ rule = "TOPOLOGY/shallow-struct"
 file = "crates/semaino/src/alert.rs"
 line = 73
 hash = "4e5ef5104b47dd039767e8e2d6ef6699ade3e36c5770ac0a821dea0561c1c0b2"
-
-[[baseline.entry]]
-rule = "RUST/config-deny-unknown-fields"
-file = "crates/semaino/src/pipeline.rs"
-line = 31
-hash = "262ca345a0b206c9528ef353f9371d7575f0ea817b276dfb2226b0af5b1a6045"
 
 [[baseline.entry]]
 rule = "RUST/no-silent-result-swallow"
@@ -518,24 +506,6 @@ rule = "TOPOLOGY/shallow-struct"
 file = "crates/syntonia/src/baofeng/variant.rs"
 line = 66
 hash = "2df5f344710c8c41cfdc1db5db970823dbe71b1d8257e9ed33213093e61f2cfb"
-
-[[baseline.entry]]
-rule = "RUST/config-deny-unknown-fields"
-file = "crates/syntonia/src/config.rs"
-line = 27
-hash = "410fb7612200122375fc747129a01ede3e4590c80fff90c532f233ee62cc9596"
-
-[[baseline.entry]]
-rule = "RUST/config-deny-unknown-fields"
-file = "crates/syntonia/src/config.rs"
-line = 92
-hash = "25a7ddf94b9a455321aa2e3cead3023ca7a56f8e1a40556160913a7cca11cf4c"
-
-[[baseline.entry]]
-rule = "RUST/config-deny-unknown-fields"
-file = "crates/syntonia/src/config.rs"
-line = 119
-hash = "6c9bedf9cc6694a9f8539534da5451fe5217da127b552849c472e6ea2d81d3d9"
 
 [[baseline.entry]]
 rule = "TOPOLOGY/shallow-struct"
