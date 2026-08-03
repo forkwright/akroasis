@@ -1,11 +1,14 @@
 //! Radio detection via serial port probing.
 
-use std::io::{Read, Write};
+use std::io::{self, Read, Write};
 use std::time::Duration;
 
 use koinon::RadioKind;
 use snafu::{ResultExt, Snafu};
 
+use crate::baofeng::variant::{
+    BF_F8HP_PREFIXES, MAGIC_UV5R_PROBE, UV5R_PREFIXES, UV5RM_PLUS_PREFIXES,
+};
 use crate::hardware::cables::{CableChip, classify_cable};
 use crate::hardware::usb::{ScanError, UsbCable, scan_usb_cables};
 
@@ -106,29 +109,42 @@ struct MagicSequence {
 // WHY: Baofeng radios enter programming mode via a specific magic byte handshake.
 // Different radio families use different magic sequences.
 const MAGIC_SEQUENCES: &[MagicSequence] = &[MagicSequence {
-    magic: &[0x50, 0xBB, 0xFF, 0x20, 0x12, 0x07, 0x25],
+    magic: &MAGIC_UV5R_PROBE,
     parse: parse_uv5r_ident,
 }];
 
 fn parse_uv5r_ident(ident: &[u8]) -> Option<VariantConfig> {
-    let prefix = ident.get(..3)?;
-    match prefix {
-        b"BFB" => Some(VariantConfig {
-            kind: RadioKind::BaofengUv5r,
-            baud_rate: BAUD_RATE,
-            memory_size: 0x1808,
-        }),
-        b"BFF" => Some(VariantConfig {
-            kind: RadioKind::BaofengBfF8hp,
-            baud_rate: BAUD_RATE,
-            memory_size: 0x1808,
-        }),
-        b"BFU" => Some(VariantConfig {
-            kind: RadioKind::BaofengUv5rmPlus,
-            baud_rate: BAUD_RATE,
-            memory_size: 0x1808,
-        }),
-        _ => None,
+    // WHY: the firmware-prefix tables are owned by `baofeng::variant`. This
+    // module used to keep a private three-letter copy which had drifted from
+    // it, so a BF-F8HP answering `BFP3V3 F` — the prefix the owning table
+    // lists first — was reported as no radio at all.
+    let kind = classify_ident(ident)?;
+    Some(VariantConfig {
+        kind,
+        baud_rate: BAUD_RATE,
+        memory_size: 0x1808,
+    })
+}
+
+/// Match an ident response against the owning prefix tables, most specific
+/// family first.
+fn classify_ident(ident: &[u8]) -> Option<RadioKind> {
+    let matches = |table: &[&str]| {
+        table
+            .iter()
+            .any(|prefix| ident.starts_with(prefix.as_bytes()))
+    };
+
+    // WHY: ordered as `baofeng::variant::identify_variant` orders them, so the
+    // two paths cannot disagree about a prefix listed in more than one table.
+    if matches(BF_F8HP_PREFIXES) {
+        Some(RadioKind::BaofengBfF8hp)
+    } else if matches(UV5R_PREFIXES) {
+        Some(RadioKind::BaofengUv5r)
+    } else if matches(UV5RM_PLUS_PREFIXES) {
+        Some(RadioKind::BaofengUv5rmPlus)
+    } else {
+        None
     }
 }
 
@@ -157,35 +173,76 @@ impl RadioProber for DefaultProber {
                 port: port_path.to_string(),
             })?;
 
-        for seq in MAGIC_SEQUENCES {
-            if let Some(result) = try_magic_sequence(&mut *port, seq) {
-                return Ok(Some(result));
-            }
-        }
-        Ok(None)
+        probe_port(&mut *port, port_path)
     }
 }
 
+/// Try every magic sequence against an already-open port.
+///
+/// # Errors
+///
+/// Returns [`DetectError::SerialIo`] if the port itself fails; a port that
+/// merely stays silent yields `Ok(None)`.
+fn probe_port(
+    port: &mut (impl Read + Write + ?Sized),
+    port_path: &str,
+) -> Result<Option<(VariantConfig, RadioIdent)>, DetectError> {
+    for seq in MAGIC_SEQUENCES {
+        match try_magic_sequence(&mut *port, seq) {
+            Ok(Some(result)) => return Ok(Some(result)),
+            Ok(None) => {}
+            Err(err) if is_silence(&err) => {}
+            Err(err) => {
+                return Err(err).context(SerialIoSnafu {
+                    port: port_path.to_string(),
+                });
+            }
+        }
+    }
+    Ok(None)
+}
+
+/// Whether an I/O error means the radio said nothing, as opposed to the port
+/// itself failing.
+///
+/// WHY: a probe that swallows every I/O error reports a permission-denied or
+/// disconnected port as "no radio on this cable", which sends the operator
+/// looking for a radio fault. Only silence — a read that times out, or a port
+/// that closes mid-handshake — means "not this variant, try the next".
+fn is_silence(err: &io::Error) -> bool {
+    matches!(
+        err.kind(),
+        io::ErrorKind::TimedOut | io::ErrorKind::UnexpectedEof | io::ErrorKind::WouldBlock
+    )
+}
+
+/// Run one magic-sequence handshake.
+///
+/// `Ok(None)` means the radio answered but is not this variant; `Err` is a
+/// port-level I/O failure, which the caller separates from silence via
+/// [`is_silence`].
 fn try_magic_sequence(
     port: &mut (impl Read + Write + ?Sized),
     seq: &MagicSequence,
-) -> Option<(VariantConfig, RadioIdent)> {
-    port.write_all(seq.magic).ok()?;
+) -> io::Result<Option<(VariantConfig, RadioIdent)>> {
+    port.write_all(seq.magic)?;
 
     let mut ack = [0u8; 1];
-    port.read_exact(&mut ack).ok()?;
+    port.read_exact(&mut ack)?;
     if ack.first().copied().unwrap_or_default() != ACK {
-        return None;
+        return Ok(None);
     }
 
-    port.write_all(&[IDENT_REQUEST]).ok()?;
+    port.write_all(&[IDENT_REQUEST])?;
 
     let mut ident_buf = [0u8; IDENT_LENGTH];
-    port.read_exact(&mut ident_buf).ok()?;
+    port.read_exact(&mut ident_buf)?;
 
     let _ = port.write_all(&[ACK]);
 
-    let variant = (seq.parse)(&ident_buf)?;
+    let Some(variant) = (seq.parse)(&ident_buf) else {
+        return Ok(None);
+    };
     let firmware = String::from_utf8_lossy(&ident_buf)
         .trim_end_matches('\0')
         .to_string();
@@ -193,7 +250,7 @@ fn try_magic_sequence(
         firmware,
         raw_response: ident_buf.to_vec(),
     };
-    Some((variant, ident))
+    Ok(Some((variant, ident)))
 }
 
 // ── Public API ───────────────────────────────────────────────────────────────
@@ -388,12 +445,32 @@ mod tests {
 
     // ── Magic sequence tests ─────────────────────────────────────────────
 
+    /// Serial port that fails every read with a fixed error kind.
+    struct FailingSerial {
+        kind: std::io::ErrorKind,
+    }
+
+    impl Read for FailingSerial {
+        fn read(&mut self, _buf: &mut [u8]) -> std::io::Result<usize> {
+            Err(std::io::Error::new(self.kind, "mock port failure"))
+        }
+    }
+
+    impl Write for FailingSerial {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            Ok(buf.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
     #[test]
     fn try_magic_returns_variant_on_valid_uv5r_response() {
         let response = [&[ACK][..], b"BFB297\x00\x00"].concat();
         let mut port = MockSerial::new(response);
 
-        let result = try_magic_sequence(&mut port, MAGIC_SEQUENCES.first().unwrap());
+        let result = try_magic_sequence(&mut port, MAGIC_SEQUENCES.first().unwrap()).unwrap();
         assert!(result.is_some());
 
         let (variant, ident) = result.unwrap();
@@ -406,7 +483,7 @@ mod tests {
         let response = [&[ACK][..], b"BFF800\x00\x00"].concat();
         let mut port = MockSerial::new(response);
 
-        let result = try_magic_sequence(&mut port, MAGIC_SEQUENCES.first().unwrap());
+        let result = try_magic_sequence(&mut port, MAGIC_SEQUENCES.first().unwrap()).unwrap();
         assert!(result.is_some());
         assert_eq!(result.unwrap().0.kind, RadioKind::BaofengBfF8hp);
     }
@@ -415,20 +492,65 @@ mod tests {
     fn try_magic_returns_none_on_no_ack() {
         let response = vec![0xFF]; // Not an ACK
         let mut port = MockSerial::new(response);
-        assert!(try_magic_sequence(&mut port, MAGIC_SEQUENCES.first().unwrap()).is_none());
+        let result = try_magic_sequence(&mut port, MAGIC_SEQUENCES.first().unwrap()).unwrap();
+        assert!(result.is_none());
     }
 
     #[test]
-    fn try_magic_returns_none_on_empty_response() {
+    fn try_magic_treats_empty_response_as_silence() {
         let mut port = MockSerial::new(vec![]);
-        assert!(try_magic_sequence(&mut port, MAGIC_SEQUENCES.first().unwrap()).is_none());
+        let err = try_magic_sequence(&mut port, MAGIC_SEQUENCES.first().unwrap()).unwrap_err();
+        assert!(
+            is_silence(&err),
+            "empty read should read as silence: {err:?}"
+        );
     }
 
     #[test]
     fn try_magic_returns_none_for_unrecognized_ident() {
         let response = [&[ACK][..], b"ZZZ999\x00\x00"].concat();
         let mut port = MockSerial::new(response);
-        assert!(try_magic_sequence(&mut port, MAGIC_SEQUENCES.first().unwrap()).is_none());
+        let result = try_magic_sequence(&mut port, MAGIC_SEQUENCES.first().unwrap()).unwrap();
+        assert!(result.is_none());
+    }
+
+    // ── Prefix-table alignment ───────────────────────────────────────────
+
+    // WHY: `BFP3V3 F` is the prefix `baofeng::variant::BF_F8HP_PREFIXES` lists
+    // first for the BF-F8HP. The private three-letter table this module used
+    // to carry did not contain it, so a real F8HP probed as no radio at all.
+    #[test]
+    fn f8hp_ident_from_the_owning_table_is_classified() {
+        assert_eq!(
+            classify_ident(b"BFP3V3 F").unwrap(),
+            RadioKind::BaofengBfF8hp
+        );
+        assert_eq!(
+            classify_ident(b"N5R-3\x00\x00\x00").unwrap(),
+            RadioKind::BaofengBfF8hp
+        );
+        assert_eq!(
+            classify_ident(b"BFT297\x00\x00").unwrap(),
+            RadioKind::BaofengBfF8hp
+        );
+    }
+
+    // WHY: the falsifying sibling — a UV-5R prefix must not be swept into the
+    // F8HP arm by the wider table.
+    #[test]
+    fn uv5r_idents_from_the_owning_table_stay_uv5r() {
+        assert_eq!(
+            classify_ident(b"BFB297\x00\x00").unwrap(),
+            RadioKind::BaofengUv5r
+        );
+        assert_eq!(
+            classify_ident(b"BTS123\x00\x00").unwrap(),
+            RadioKind::BaofengUv5r
+        );
+        assert_eq!(
+            classify_ident(b"N5R-2\x00\x00\x00").unwrap(),
+            RadioKind::BaofengUv5r
+        );
     }
 
     #[test]
@@ -439,6 +561,40 @@ mod tests {
         assert!(parse_uv5r_ident(b"ZZZ000\x00\x00").is_none());
         assert!(parse_uv5r_ident(b"BF").is_none());
         assert!(parse_uv5r_ident(b"").is_none());
+    }
+
+    // ── Probe failure classification ─────────────────────────────────────
+
+    // WHY: the pair. A port that fails to read is a port fault and must
+    // surface; a port that stays silent is a cable with no radio on it and
+    // must not. Before this split both arrived as `None`.
+    #[test]
+    fn probe_reports_a_port_level_io_failure() {
+        let mut port = FailingSerial {
+            kind: std::io::ErrorKind::PermissionDenied,
+        };
+        let err = probe_port(&mut port, "/dev/ttyUSB0").unwrap_err();
+        assert!(
+            matches!(err, DetectError::SerialIo { .. }),
+            "expected SerialIo, got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn probe_reports_a_silent_port_as_no_radio() {
+        let mut port = FailingSerial {
+            kind: std::io::ErrorKind::TimedOut,
+        };
+        let result = probe_port(&mut port, "/dev/ttyUSB0").unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn probe_returns_the_radio_when_one_answers() {
+        let response = [&[ACK][..], b"BFP3V3 F"].concat();
+        let mut port = MockSerial::new(response);
+        let (variant, _) = probe_port(&mut port, "/dev/ttyUSB0").unwrap().unwrap();
+        assert_eq!(variant.kind, RadioKind::BaofengBfF8hp);
     }
 
     // ── Detection integration tests (mocked) ────────────────────────────

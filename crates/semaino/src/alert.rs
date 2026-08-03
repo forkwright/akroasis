@@ -121,13 +121,29 @@ impl AlertSink for TracingSink { // kanon:ignore ARCHITECTURE/trait-impl-colocat
 // AlertPipeline
 // ---------------------------------------------------------------------------
 
+/// Smallest suppression-map size worth sweeping.
+///
+/// Below this the sweep costs more than the entries it could reclaim, and a
+/// quiet deployment never reaches it.
+const MIN_PRUNE_THRESHOLD: usize = 64;
+
 /// Deduplicates and classifies [`AggregatedSignal`]s into [`Alert`]s.
 ///
 /// Maintains a suppression map keyed by [`AlertFingerprint`]. A new alert is
 /// only emitted when its fingerprint has not been seen within `suppression_window`.
 pub struct AlertPipeline {
     /// `fingerprint → last emission timestamp (unix ms)`.
+    ///
+    /// INVARIANT: holds only entries inside `suppression_window_ms`, up to the
+    /// slack allowed by `prune_threshold`. Entries older than the window are
+    /// reclaimed rather than retained for the process lifetime — see
+    /// `prune_expired`.
     suppression: HashMap<AlertFingerprint, i64>,
+    /// Entry count at which `suppression` is swept for expired entries.
+    ///
+    /// Re-derived as twice the post-sweep size, so sweeping costs O(1)
+    /// amortized per emission instead of O(len) on every one.
+    prune_threshold: usize,
     /// How long (ms) to suppress repeated fingerprints.
     suppression_window_ms: i64,
     /// Grid quantization factor, matching the convergence engine's resolution.
@@ -152,6 +168,7 @@ impl AlertPipeline {
     pub fn new(suppression_window_secs: u64, grid_resolution: u32) -> Self {
         Self {
             suppression: HashMap::new(),
+            prune_threshold: MIN_PRUNE_THRESHOLD,
             #[expect(
                 clippy::cast_possible_wrap,
                 reason = "suppression_window_secs comes from config; realistic values are seconds, not close to u64::MAX / 1_000, so wrap is not a concern"
@@ -165,6 +182,38 @@ impl AlertPipeline {
     /// Register an additional [`AlertSink`].
     pub fn add_sink(&mut self, sink: impl AlertSink + 'static) {
         self.sinks.push(Box::new(sink));
+    }
+
+    /// Drop suppression entries that have aged out of the window.
+    ///
+    /// WHY(#222): every emission inserted a fingerprint and nothing ever
+    /// removed one. The fingerprint embeds a grid cell quantized from the
+    /// signal's location, which for OTA mesh position frames is supplied by
+    /// the sender, so the key space is unbounded and the map grew for the life
+    /// of the daemon — a reliable memory-exhaustion path for an adversary who
+    /// simply varies coordinates.
+    ///
+    /// Sweeping is semantically invisible: an entry older than the window
+    /// cannot suppress anything, because [`Self::process`] already falls
+    /// through to emit whenever `now_ms - last >= suppression_window_ms`.
+    /// Removing it therefore changes footprint, never alerting behaviour.
+    ///
+    /// PERF: sweeping on every emission would be O(len) per alert, which under
+    /// the same flood this defends against is itself quadratic. Sweeping only
+    /// once the map reaches `prune_threshold`, then re-deriving that threshold
+    /// as twice the surviving size, amortizes the cost to O(1) per emission.
+    fn prune_expired(&mut self, now_ms: i64) {
+        if self.suppression.len() < self.prune_threshold {
+            return;
+        }
+        let window_ms = self.suppression_window_ms;
+        self.suppression
+            .retain(|_, &mut last| now_ms.saturating_sub(last) < window_ms);
+        self.prune_threshold = self
+            .suppression
+            .len()
+            .saturating_mul(2)
+            .max(MIN_PRUNE_THRESHOLD);
     }
 
     /// Process one [`AggregatedSignal`] and optional [`Convergence`].
@@ -200,6 +249,7 @@ impl AlertPipeline {
         }
 
         // Record emission timestamp before routing.
+        self.prune_expired(now_ms);
         self.suppression.insert(fingerprint, now_ms);
 
         let summary = build_summary(&aggregated.signal.kind, &severity, convergence);
@@ -474,6 +524,67 @@ mod tests {
         // Second call passes because window is 0 ms.
         let second = pipeline.process(&agg, None);
         assert!(second.is_some(), "alert should pass after window expires");
+    }
+
+    #[test]
+    fn suppression_map_is_bounded_under_distinct_attacker_cells() {
+        // WHY(#222): the fingerprint embeds a grid cell quantized from the
+        // signal's location, which an OTA sender chooses. Before pruning, N
+        // spoofed coordinates left N entries that were never reclaimed, so the
+        // daemon leaked memory for as long as it ran.
+        //
+        // A zero-length suppression window expires every entry the instant it
+        // is recorded, which makes the sweep observable without controlling the
+        // clock.
+        let mut pipeline = AlertPipeline::new(0, 100);
+
+        let flood = 5_000;
+        for i in 0..flood {
+            // 0.01° steps at resolution 100 land in a distinct cell each time.
+            let lon = f64::from(i).mul_add(0.01, -70.0);
+            let coords = Coordinates::new(40.0, lon, None).unwrap();
+            let aggregated = rf_aggregated_at(AnomalyScore::Anomalous(4.0), coords);
+            assert!(
+                pipeline.process(&aggregated, None).is_some(),
+                "a zero window must not suppress, or the flood never populates the map"
+            );
+        }
+
+        assert!(
+            pipeline.suppression.len() <= MIN_PRUNE_THRESHOLD,
+            "suppression map holds {} entries after {flood} distinct cells; it must \
+             stay bounded by the sweep threshold ({MIN_PRUNE_THRESHOLD}) rather than \
+             growing with the number of coordinates an attacker supplies",
+            pipeline.suppression.len()
+        );
+    }
+
+    #[test]
+    fn pruning_does_not_weaken_suppression_inside_the_window() {
+        // A live entry must survive a sweep triggered by unrelated cells, or
+        // the fix would trade a memory leak for an alert storm.
+        let mut pipeline = AlertPipeline::new(3_600, 100);
+
+        let target = Coordinates::new(51.5, -0.1, None).unwrap();
+        let first = rf_aggregated_at(AnomalyScore::Anomalous(4.0), target);
+        assert!(
+            pipeline.process(&first, None).is_some(),
+            "first alert emits"
+        );
+
+        // Drive the map past the sweep threshold with other cells.
+        for i in 0..512 {
+            let lon = f64::from(i).mul_add(0.01, -70.0);
+            let coords = Coordinates::new(40.0, lon, None).unwrap();
+            let aggregated = rf_aggregated_at(AnomalyScore::Anomalous(4.0), coords);
+            pipeline.process(&aggregated, None);
+        }
+
+        let repeat = rf_aggregated_at(AnomalyScore::Anomalous(4.0), target);
+        assert!(
+            pipeline.process(&repeat, None).is_none(),
+            "the original fingerprint is still inside its window and must stay suppressed"
+        );
     }
 
     #[test]

@@ -24,6 +24,7 @@ use crate::types::ChannelIndex;
 
 /// Top-level kerykeion configuration.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct MeshConfig {
     /// Transport connections to Meshtastic radios.
     #[serde(default)]
@@ -102,7 +103,7 @@ pub struct ChannelPsk {
 
 /// Store-and-forward server configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct StoreForwardConfig {
     /// Whether the store-and-forward feature is enabled on this node.
     pub enabled: bool,
@@ -124,7 +125,7 @@ impl Default for StoreForwardConfig {
 
 /// Topology maintenance configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct TopologyConfig {
     /// How often to request a traceroute, in seconds.
     pub traceroute_interval_secs: u64,
@@ -191,7 +192,7 @@ impl Default for TopologyConfig {
 /// ticks. None of these values affect the Meshtastic wire protocol — they
 /// only shape when and how locally-tracked state transitions happen.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct BridgeConfig {
     /// Interval between background gateway health-check ticks, in seconds.
     pub health_check_interval_secs: u64,
@@ -246,7 +247,7 @@ impl BridgeConfig {
 /// for an ACK before retrying, how many retries are attempted, and how long
 /// store-and-forward holds a message before discarding it.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct OutboundConfig {
     /// Maximum number of concurrent inflight (awaiting-ACK) messages.
     pub max_inflight: usize,
@@ -303,7 +304,7 @@ impl OutboundConfig {
 
 /// Transport (TCP + serial) connect and reconnect tuning.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct TransportConfig {
     /// TCP `connect()` timeout in seconds.
     pub tcp_connect_timeout_secs: u64,
@@ -347,7 +348,7 @@ impl TransportConfig {
 
 /// Config-dump handshake tuning.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct HandshakeConfig {
     /// Maximum time to wait for a complete config dump from the radio,
     /// in seconds.
@@ -370,7 +371,7 @@ impl HandshakeConfig {
 
 /// Keepalive heartbeat tuning.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct HeartbeatConfig {
     /// Interval between heartbeat transmissions, in seconds.
     pub interval_secs: u64,
@@ -392,7 +393,7 @@ impl HeartbeatConfig {
 
 /// Collector background-task tuning.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct CollectorConfig {
     /// Interval between router-flush ticks (drains outbound queue and
     /// processes timeouts), in seconds.
@@ -417,7 +418,7 @@ impl CollectorConfig {
 
 /// Default values for [`crate::message::MessageBuilder`] output packets.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct MessageConfig {
     /// Default hop limit for outbound packets. Clamped to
     /// [`crate::types::MAX_HOP_LIMIT`] at build time — the protocol maximum
@@ -468,6 +469,59 @@ neighbor_info_enabled = true
         assert_eq!(cfg.channel_psk.len(), 1);
         assert!(!cfg.store_forward.enabled);
         assert!(cfg.topology.neighbor_info_enabled);
+    }
+
+    // WHY: every config struct is `#[serde(default)]`, so before
+    // `deny_unknown_fields` a mistyped key was silently dropped and the
+    // default applied — the operator saw a running node with tuning they
+    // never asked for and no diagnostic anywhere. These assert the typo is
+    // now a load-time error naming the offending key.
+    #[test]
+    fn mistyped_key_in_sub_config_is_rejected() {
+        let typo = r"
+[topology]
+stale_node_timeout_sec = 7200
+";
+        #[expect(
+            clippy::expect_used,
+            reason = "test-only: a successful parse here is the defect under test"
+        )]
+        let error = toml::from_str::<MeshConfig>(typo)
+            .expect_err("a mistyped sub-config key must not deserialize");
+        let rendered = error.to_string();
+        assert!(
+            rendered.contains("stale_node_timeout_sec"),
+            "error must name the unknown key, got: {rendered}"
+        );
+    }
+
+    #[test]
+    fn mistyped_key_at_top_level_is_rejected() {
+        let typo = r"
+[topologgy]
+stale_node_timeout_secs = 7200
+";
+        #[expect(
+            clippy::expect_used,
+            reason = "test-only: a successful parse here is the defect under test"
+        )]
+        let error = toml::from_str::<MeshConfig>(typo)
+            .expect_err("a mistyped top-level section must not deserialize");
+        assert!(
+            error.to_string().contains("topologgy"),
+            "error must name the unknown section, got: {error}"
+        );
+    }
+
+    #[test]
+    fn correctly_spelled_keys_still_deserialize() {
+        #[expect(
+            clippy::expect_used,
+            reason = "test-only: SAMPLE_TOML is a known-valid fixture"
+        )]
+        let cfg = toml::from_str::<MeshConfig>(SAMPLE_TOML)
+            .expect("the sample config must remain loadable under deny_unknown_fields");
+        assert_eq!(cfg.topology.stale_node_timeout_secs, 7200);
     }
 
     #[test]

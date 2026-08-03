@@ -23,7 +23,7 @@ use serde::{Deserialize, Serialize};
 /// `#[serde(default)]` lets TOML files specify only the values that
 /// actually need to deviate from the default.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct BaofengTimingConfig {
     /// Delay between individual magic bytes during programming-mode entry,
     /// in milliseconds. Too short and some cables drop bytes; too long and
@@ -88,7 +88,7 @@ impl BaofengTimingConfig {
 /// ports are unconnected; higher values are needed for slower cable /
 /// radio combinations.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct HardwareProbeConfig {
     /// Timeout applied to the serial port during an individual probe
     /// attempt, in milliseconds.
@@ -116,6 +116,7 @@ impl HardwareProbeConfig {
 /// Aggregates the per-subsystem configs so callers can accept a single
 /// `&SyntoniaConfig` and thread it down.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SyntoniaConfig {
     /// Baofeng programming timing + retries.
     #[serde(default)]
