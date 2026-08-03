@@ -224,12 +224,19 @@ pub enum ProtocolError {
     },
 
     /// All retry attempts for a block operation have been exhausted.
-    #[snafu(display("block operation at 0x{addr:04X} failed after {attempts} attempts"))]
+    ///
+    /// Carries the error from the final attempt: a transfer that gave up
+    /// because the radio timed out and one that gave up because every reply
+    /// header was wrong need different fixes, and the count alone tells the
+    /// operator neither.
+    #[snafu(display("block operation at 0x{addr:04X} failed after {attempts} attempts: {source}"))]
     RetryExhausted {
         /// The address of the failed block.
         addr: u16,
         /// Number of attempts made.
         attempts: u8,
+        /// The error from the last attempt.
+        source: Box<Self>,
     },
 
     /// The source image is shorter than the ranges this variant would write.
@@ -548,49 +555,47 @@ impl<P: SerialPort> Uv5rProtocol<P> {
 
     /// Read a block with up to `MAX_RETRIES` attempts.
     fn read_block_with_retry(&mut self, addr: u16, len: u8) -> Result<Vec<u8>> {
-        for attempt in 1..=MAX_RETRIES {
+        let mut attempt: u8 = 1;
+        let last_err = loop {
             match self.read_block(addr, len) {
                 Ok(data) => return Ok(data),
-                Err(_) if attempt < MAX_RETRIES => {
+                Err(err) if attempt >= MAX_RETRIES => break err,
+                Err(_) => {
+                    attempt = attempt.saturating_add(1);
                     thread::sleep(POST_ACK_DELAY);
                 }
-                Err(_) => {
-                    return Err(ProtocolError::RetryExhausted {
-                        addr,
-                        attempts: MAX_RETRIES,
-                    });
-                }
             }
-        }
+        };
+
         Err(ProtocolError::RetryExhausted {
             addr,
             attempts: MAX_RETRIES,
+            source: Box::new(last_err),
         })
     }
 
     /// Write a block with up to `MAX_RETRIES` attempts.
     fn write_block_with_retry(&mut self, addr: u16, data: &[u8]) -> Result<()> {
-        for attempt in 1..=MAX_RETRIES {
+        let mut attempt: u8 = 1;
+        let last_err = loop {
             match self.write_block(addr, data) {
                 Ok(()) => return Ok(()),
                 // Forbidden address is not retryable.
                 Err(ProtocolError::ForbiddenAddress { .. }) => {
                     return Err(ProtocolError::ForbiddenAddress { addr });
                 }
-                Err(_) if attempt < MAX_RETRIES => {
+                Err(err) if attempt >= MAX_RETRIES => break err,
+                Err(_) => {
+                    attempt = attempt.saturating_add(1);
                     thread::sleep(POST_ACK_DELAY);
                 }
-                Err(_) => {
-                    return Err(ProtocolError::RetryExhausted {
-                        addr,
-                        attempts: MAX_RETRIES,
-                    });
-                }
             }
-        }
+        };
+
         Err(ProtocolError::RetryExhausted {
             addr,
             attempts: MAX_RETRIES,
+            source: Box::new(last_err),
         })
     }
 
@@ -647,6 +652,7 @@ fn is_forbidden(addr: u16, len: usize) -> bool {
     clippy::expect_used,
     clippy::indexing_slicing,
     clippy::missing_docs_in_private_items,
+    clippy::panic,
     reason = "test code: panics and unwraps acceptable in assertions"
 )]
 #[path = "protocol_tests.rs"]
