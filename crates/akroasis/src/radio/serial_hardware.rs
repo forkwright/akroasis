@@ -105,14 +105,32 @@ impl BaofengProtocolSession {
         // Try every magic sequence in priority order (UV5R-291, BF-F8HP, UV5R-orig).
         let ident = {
             let mut found = None;
-            for magic in MAGIC_SETS {
-                if protocol.enter_programming_mode(magic).is_ok() {
-                    match protocol.identify() {
-                        Ok(id) => {
-                            found = Some(id);
-                            break;
-                        }
-                        Err(_) => continue,
+            for (attempt, magic) in MAGIC_SETS.iter().enumerate() {
+                // WHY: every probe failure here used to be discarded, so a radio
+                // that answered wrongly and a port that never answered produced
+                // the same bare timeout. Trace each rejection so the operator can
+                // tell "wrong magic set" from "nothing on the wire".
+                if let Err(e) = protocol.enter_programming_mode(magic) {
+                    tracing::debug!(
+                        port = port_path,
+                        attempt,
+                        error = %e,
+                        "magic sequence rejected entering programming mode"
+                    );
+                    continue;
+                }
+                match protocol.identify() {
+                    Ok(id) => {
+                        found = Some(id);
+                        break;
+                    }
+                    Err(e) => {
+                        tracing::debug!(
+                            port = port_path,
+                            attempt,
+                            error = %e,
+                            "radio entered programming mode but did not identify"
+                        );
                     }
                 }
             }
@@ -121,13 +139,21 @@ impl BaofengProtocolSession {
             })?
         };
 
-        // Map the raw ident bytes to a VariantConfig.
-        let config = identify_variant(&ident).map_err(|_| RadioError::WrongBaudRate {
+        // WHY: the radio DID answer to get here, so the baud rate is right. The
+        // ident simply names a variant this build does not know — reporting that
+        // as WrongBaudRate sent the operator to the cable-and-protocol checklist
+        // and threw away the ident bytes needed to add the variant.
+        let config = identify_variant(&ident).map_err(|source| RadioError::UnrecognizedRadio {
             port: port_path.to_string(),
+            message: source.to_string(),
         })?;
 
-        let variant = variant_from_config(&config).ok_or(RadioError::WrongBaudRate {
+        let variant = variant_from_config(&config).ok_or_else(|| RadioError::UnrecognizedRadio {
             port: port_path.to_string(),
+            message: format!(
+                "syntonia identified variant {:?}, which this build does not map to a CLI variant",
+                config.variant
+            ),
         })?;
 
         Ok(Self {

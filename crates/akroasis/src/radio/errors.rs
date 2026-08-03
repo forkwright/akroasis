@@ -88,6 +88,12 @@ pub enum RadioError {
         source: syntonia::hardware::DetectError,
     },
 
+    #[cfg(feature = "hardware-serial")] // kanon:ignore RUST/feature-gate-check -- declared in akroasis/Cargo.toml [features]
+    #[snafu(display(
+        "Radio answered on {port} but its firmware ident was not recognized: {message}"
+    ))]
+    UnrecognizedRadio { port: String, message: String },
+
     #[snafu(display("I/O error: {source}"))]
     Io { source: std::io::Error },
 }
