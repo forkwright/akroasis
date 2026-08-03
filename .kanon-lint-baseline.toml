@@ -196,24 +196,6 @@ line = 383
 hash = "bf306ffa19e0898259628da1f361f4eb4ae5c88aad26958e332195a046bc5ce6"
 
 [[baseline.entry]]
-rule = "RUST/config-deny-unknown-fields"
-file = "crates/kerykeion/src/config.rs"
-line = 27
-hash = "e23cb6e73a71989c6e9c01170dea62ed7f329b3f8d22654e50dc30eacf552384"
-
-[[baseline.entry]]
-rule = "RUST/config-deny-unknown-fields"
-file = "crates/kerykeion/src/config.rs"
-line = 106
-hash = "78d24d0929797553f0f4f4a45acadd78ffa2105c163aa96a8351f2ba336bc127"
-
-[[baseline.entry]]
-rule = "RUST/config-deny-unknown-fields"
-file = "crates/kerykeion/src/config.rs"
-line = 128
-hash = "248682e91b041336faf78e667ac5da1a548ef9fd2c37de888340ce49ea6b616b"
-
-[[baseline.entry]]
 rule = "RUST/indexing-slicing"
 file = "crates/kerykeion/src/crypto.rs"
 line = 43
