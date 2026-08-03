@@ -13,7 +13,12 @@ pub enum Datum {
 }
 
 /// A geographic point with optional altitude.
+// WHY: the fields are pub, so a derived Deserialize rebuilt the struct field by
+// field and skipped new()'s range check entirely — a plan file could carry
+// latitude 900.0 or a NaN altitude straight into haversine_distance_m. Every
+// deserialized value now goes through the same validation as new().
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "CoordinatesRepr")]
 pub struct Coordinates {
     /// Latitude in decimal degrees, range \[-90, 90\].
     pub latitude: f64,
@@ -41,6 +46,36 @@ pub enum CoordinatesError {
         /// The offending value.
         value: f64,
     },
+    /// Altitude was NaN or infinite.
+    #[snafu(display("altitude {value} is not finite"))]
+    AltitudeNotFinite {
+        /// The offending value.
+        value: f64,
+    },
+}
+
+/// Wire form of [`Coordinates`], validated on the way in.
+///
+/// WHY: `try_from` needs a shape serde can build without validation; this is it.
+/// It must stay field-identical to `Coordinates`.
+#[derive(Deserialize)]
+struct CoordinatesRepr {
+    latitude: f64,
+    longitude: f64,
+    #[serde(default)]
+    altitude: Option<f64>,
+    #[serde(default)]
+    datum: Datum,
+}
+
+impl TryFrom<CoordinatesRepr> for Coordinates {
+    type Error = CoordinatesError;
+
+    fn try_from(repr: CoordinatesRepr) -> Result<Self, Self::Error> {
+        let mut coords = Self::new(repr.latitude, repr.longitude, repr.altitude)?;
+        coords.datum = repr.datum;
+        Ok(coords)
+    }
 }
 
 impl Coordinates {
@@ -50,6 +85,10 @@ impl Coordinates {
     ///
     /// Returns [`CoordinatesError::LatitudeOutOfRange`] if `latitude` is not in `[-90, 90]`.
     /// Returns [`CoordinatesError::LongitudeOutOfRange`] if `longitude` is not in `[-180, 180]`.
+    /// Returns [`CoordinatesError::AltitudeNotFinite`] if `altitude` is present and not finite.
+    ///
+    /// NaN latitude or longitude is rejected: `RangeInclusive::contains` is false
+    /// for NaN, so the range checks below fail closed.
     pub fn new(
         latitude: f64,
         longitude: f64,
@@ -60,6 +99,11 @@ impl Coordinates {
         }
         if !(-180.0..=180.0).contains(&longitude) {
             return Err(CoordinatesError::LongitudeOutOfRange { value: longitude });
+        }
+        if let Some(alt) = altitude
+            && !alt.is_finite()
+        {
+            return Err(CoordinatesError::AltitudeNotFinite { value: alt });
         }
         Ok(Self {
             latitude,
@@ -173,5 +217,45 @@ mod tests {
             (a_to_b - b_to_a).abs() < 1e-6,
             "dist(A,B)={a_to_b} ≠ dist(B,A)={b_to_a}"
         );
+    }
+
+    #[test]
+    fn deserializing_coordinates_cannot_bypass_the_range_check() {
+        // WHY: the fields are pub and the derived Deserialize rebuilt the struct
+        // field by field, so a plan file could carry latitude 900 straight into
+        // haversine_distance_m and produce a silently meaningless distance.
+        let bad_lat = serde_json::from_str::<Coordinates>(
+            r#"{"latitude":900.0,"longitude":0.0,"altitude":null,"datum":"Wgs84"}"#,
+        );
+        assert!(bad_lat.is_err(), "latitude 900 deserialized: {bad_lat:?}");
+
+        let bad_lon = serde_json::from_str::<Coordinates>(
+            r#"{"latitude":0.0,"longitude":-400.0,"altitude":null,"datum":"Wgs84"}"#,
+        );
+        assert!(bad_lon.is_err(), "longitude -400 deserialized: {bad_lon:?}");
+    }
+
+    #[test]
+    fn a_valid_coordinate_still_round_trips_through_serde() {
+        // The guard above must not reject legitimate values.
+        let original = Coordinates::new(51.5, -0.12, Some(35.0)).unwrap();
+        let json = serde_json::to_string(&original).unwrap();
+        let back: Coordinates = serde_json::from_str(&json).unwrap();
+        assert_eq!(original, back);
+    }
+
+    #[test]
+    fn a_non_finite_altitude_is_rejected() {
+        assert!(Coordinates::new(0.0, 0.0, Some(f64::NAN)).is_err());
+        assert!(Coordinates::new(0.0, 0.0, Some(f64::INFINITY)).is_err());
+        assert!(Coordinates::new(0.0, 0.0, Some(35.0)).is_ok());
+        assert!(Coordinates::new(0.0, 0.0, None).is_ok());
+    }
+
+    #[test]
+    fn a_nan_latitude_or_longitude_is_rejected() {
+        // RangeInclusive::contains is false for NaN, so the checks fail closed.
+        assert!(Coordinates::new(f64::NAN, 0.0, None).is_err());
+        assert!(Coordinates::new(0.0, f64::NAN, None).is_err());
     }
 }

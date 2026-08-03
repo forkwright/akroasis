@@ -445,3 +445,35 @@ fn signal_kind_osint_serde_roundtrip() {
     let back: SignalKind = serde_json::from_str(&json).unwrap();
     assert_eq!(kind, back);
 }
+
+#[test]
+fn confidence_maps_nan_to_zero_rather_than_storing_it() {
+    // WHY: NaN compares false against both bounds, so the ordered if/else chain
+    // fell through to the `else` arm and stored NaN unclamped. Every downstream
+    // comparison against that value then silently answered false.
+    let c = Confidence::new(f32::NAN);
+
+    assert!(!c.as_f32().is_nan(), "NaN survived construction");
+    assert!((c.as_f32() - 0.0).abs() < f32::EPSILON);
+}
+
+#[test]
+fn confidence_clamps_values_outside_the_unit_interval() {
+    assert!((Confidence::new(-3.0).as_f32() - 0.0).abs() < f32::EPSILON);
+    assert!((Confidence::new(7.5).as_f32() - 1.0).abs() < f32::EPSILON);
+    assert!((Confidence::new(0.25).as_f32() - 0.25).abs() < f32::EPSILON);
+}
+
+#[test]
+fn deserializing_a_confidence_cannot_bypass_the_clamp() {
+    // WHY: the derived Deserialize rebuilt the private tuple field directly, so
+    // a stored 5.0 or NaN entered the type without passing new().
+    let out_of_range: Confidence = serde_json::from_str("5.0").unwrap();
+    assert!((out_of_range.as_f32() - 1.0).abs() < f32::EPSILON);
+
+    let negative: Confidence = serde_json::from_str("-2.0").unwrap();
+    assert!((negative.as_f32() - 0.0).abs() < f32::EPSILON);
+    // NOTE: JSON has no NaN literal, so the NaN path is covered by
+    // confidence_maps_nan_to_zero_rather_than_storing_it against new(), which
+    // #[serde(from = "f32")] now routes every deserialized value through.
+}

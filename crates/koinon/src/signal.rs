@@ -263,18 +263,33 @@ pub enum SignalKind {
 /// Values passed to [`Confidence::new`] outside this range are silently
 /// clamped rather than rejected, preventing panics on out-of-range input
 /// from imprecise sensors or computation.
+// WHY: the tuple field is private but Deserialize reconstructed it directly, so
+// a serialized 5.0 or NaN entered the type without passing new()'s clamp. Going
+// through From<f32> makes the clamp the only way in.
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[serde(from = "f32")]
 pub struct Confidence(f32);
+
+impl From<f32> for Confidence {
+    fn from(value: f32) -> Self {
+        Self::new(value)
+    }
+}
 
 impl Confidence {
     /// Construct a [`Confidence`], clamping `value` to \[0.0, 1.0\].
     ///
-    /// Values below 0.0 become 0.0; values above 1.0 become 1.0.
+    /// Values below 0.0 become 0.0; values above 1.0 become 1.0. NaN becomes
+    /// 0.0 — an unusable measurement is treated as no confidence, not as
+    /// certainty.
     #[must_use]
     pub const fn new(value: f32) -> Self {
         // WHY: clamp() is a const fn since Rust 1.83; clamping avoids returning
         // an error type for a simple bounds check on a scalar field.
-        let clamped = if value < 0.0 {
+        // WARNING: NaN compares false against BOTH bounds, so the ordered
+        // if/else chain fell through to the `else` arm and stored NaN unclamped.
+        // Test it first, and fail closed at 0.0.
+        let clamped = if value.is_nan() || value < 0.0 {
             0.0_f32
         } else if value > 1.0 {
             1.0_f32

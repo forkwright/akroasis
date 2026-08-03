@@ -647,17 +647,38 @@ fn large_metadata_no_truncation() {
 }
 
 #[test]
-fn id_types_usable_in_entry_kinds() {
+fn id_types_survive_a_round_trip_through_entry_kinds() {
+    // WHY: this only constructed the two kinds and dropped them with `let _`,
+    // so it asserted nothing and passed even if the ids were silently replaced.
+    // Assert the ids come back out of a full encode/decode instead.
     let sid = SignalId::from_ulid(Ulid::generate());
     let eid = EntityId::from_ulid(Ulid::generate());
-    let _ = LogEntryKind::SignalObserved {
-        signal_id: sid,
-        kind_tag: CompactString::from("t"),
-    };
-    let _ = LogEntryKind::EntityCreated {
-        entity_id: eid,
-        kind_tag: CompactString::from("t"),
-    };
+
+    for (kind, label) in [
+        (
+            LogEntryKind::SignalObserved {
+                signal_id: sid,
+                kind_tag: CompactString::from("t"),
+            },
+            "signal",
+        ),
+        (
+            LogEntryKind::EntityCreated {
+                entity_id: eid,
+                kind_tag: CompactString::from("t"),
+            },
+            "entity",
+        ),
+    ] {
+        let entry = LogEntry {
+            sequence: 0,
+            timestamp_ms: 0,
+            kind,
+        };
+        let (wire, _) = encode_entry(&entry, &[0u8; 32], &test_key()).unwrap();
+        let (decoded, _) = decode_entry(&wire).unwrap();
+        assert_eq!(entry, decoded, "{label} id did not survive the round trip");
+    }
 }
 
 #[test]

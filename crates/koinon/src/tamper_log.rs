@@ -38,6 +38,11 @@ use crate::{EntityId, SignalId};
 #[path = "tamper_log_seal.rs"]
 mod seal;
 
+#[path = "tamper_log_rotation.rs"]
+mod rotation;
+
+use rotation::rotation_path;
+
 pub use seal::{CHAIN_KEY_LEN, ChainKey};
 
 /// Maximum allowed entry payload size (16 MiB).
@@ -223,6 +228,8 @@ pub struct LogEntry {
 /// # Errors
 ///
 /// Returns [`TamperLogError::CborEncode`] if serialization fails.
+/// Returns [`TamperLogError::EntryTooLarge`] if the CBOR payload exceeds
+/// [`MAX_ENTRY_BYTES`], which is the same bound the decoder enforces.
 pub fn encode_entry(
     entry: &LogEntry,
     prev_hash: &[u8; 32],
@@ -231,12 +238,25 @@ pub fn encode_entry(
     let mut cbor_bytes: Vec<u8> = Vec::new();
     ciborium::into_writer(entry, &mut cbor_bytes).context(CborEncodeSnafu)?;
 
+    // WHY: decode_entry and verify_chain both reject payload_len > MAX_ENTRY_BYTES,
+    // but nothing enforced it here — the SAFETY note below asserted a validation
+    // that did not exist. An oversized entry was written happily and then made the
+    // whole log unverifiable; past 4 GiB the `as u32` cast also truncated the
+    // length prefix, corrupting every following entry's framing.
+    let payload_len = cbor_bytes.len() as u64; // SAFETY: usize->u64 is lossless on all supported targets
+    if payload_len > MAX_ENTRY_BYTES {
+        return Err(TamperLogError::EntryTooLarge {
+            size: payload_len,
+            max: MAX_ENTRY_BYTES,
+        });
+    }
+
     let mut hasher = blake3::Hasher::new_keyed(chain_key.as_bytes());
     hasher.update(&cbor_bytes);
     hasher.update(prev_hash);
     let hash: [u8; 32] = hasher.finalize().into();
 
-    let len = cbor_bytes.len() as u32; // SAFETY: CBOR payload size validated <= MAX_ENTRY_BYTES (16 MiB), fits u32
+    let len = cbor_bytes.len() as u32; // SAFETY: checked above against MAX_ENTRY_BYTES (16 MiB), so it fits u32
     let mut wire = Vec::with_capacity(4 + cbor_bytes.len() + 32);
     wire.extend_from_slice(&len.to_le_bytes());
     wire.extend_from_slice(&cbor_bytes);
@@ -710,7 +730,7 @@ impl TamperLog {
     fn rotate(&mut self) -> Result<(), TamperLogError> {
         self.writer.flush().context(IoSnafu { path: &self.path })?;
 
-        let n = Self::next_rotation_number(&self.path);
+        let n = rotation::next_rotation_number(&self.path)?;
         let rotated = rotation_path(&self.path, n);
 
         std::fs::rename(&self.path, &rotated).context(IoSnafu { path: &self.path })?;
@@ -731,52 +751,6 @@ impl TamperLog {
 
         Ok(())
     }
-
-    /// Scans sibling files to find the next rotation number.
-    fn next_rotation_number(path: &Path) -> u32 {
-        let stem = log_stem(path);
-        let dir = path.parent().unwrap_or_else(|| Path::new("."));
-
-        let mut max_n: u32 = 0;
-        if let Ok(entries) = std::fs::read_dir(dir) {
-            for entry in entries.flatten() {
-                let name = entry.file_name();
-                let name = name.to_string_lossy();
-                if let Some(n) = parse_rotation_number(&name, &stem) {
-                    if n > max_n {
-                        max_n = n;
-                    }
-                }
-            }
-        }
-        max_n + 1
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Rotation helpers
-// ---------------------------------------------------------------------------
-
-/// Returns the stem of a log path, e.g. `"audit"` FROM `"audit.log"`.
-fn log_stem(path: &Path) -> String {
-    path.file_stem()
-        .map(|s| s.to_string_lossy().into_owned())
-        .unwrap_or_default()
-}
-
-/// Builds `{dir}/{stem}.{n}.log`.
-fn rotation_path(path: &Path, n: u32) -> PathBuf {
-    let dir = path.parent().unwrap_or_else(|| Path::new("."));
-    let stem = log_stem(path);
-    dir.join(format!("{stem}.{n}.log"))
-}
-
-/// Parses `{stem}.{n}.log` → `Some(n)`, returns `None` otherwise.
-fn parse_rotation_number(name: &str, stem: &str) -> Option<u32> {
-    let prefix = format!("{stem}.");
-    let suffix = ".log";
-    let inner = name.strip_prefix(&prefix)?.strip_suffix(suffix)?;
-    inner.parse::<u32>().ok()
 }
 
 // ---------------------------------------------------------------------------
@@ -791,3 +765,11 @@ fn parse_rotation_number(name: &str, stem: &str) -> Option<u32> {
 )]
 #[path = "tamper_log_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[expect(
+    clippy::unwrap_used,
+    reason = "test code: panics and unwraps acceptable in assertions"
+)]
+#[path = "tamper_log_codec_tests.rs"]
+mod codec_tests;
