@@ -707,4 +707,79 @@ mod tests {
         let bridge = GatewayBridge::with_config(cfg);
         assert_eq!(bridge.config().failover_cooldown_secs, 7);
     }
+
+    /// Drives the bridge to the one state in which `ensure_active` actually
+    /// consults the cooldown: no active gateway, a healthy candidate
+    /// available, and `last_failover` freshly stamped.
+    ///
+    /// WHY: `record_health_failure` calls `failover()` directly when the
+    /// ACTIVE gateway drops, bypassing the cooldown entirely — so a
+    /// two-gateway setup never reaches the guard. Taking the sole gateway
+    /// offline instead drives `active` to `None` and stamps `last_failover`;
+    /// the replacement is only registered afterwards.
+    fn bridge_needing_reselection(cfg: BridgeConfig) -> GatewayBridge {
+        let mut bridge = GatewayBridge::with_config(cfg);
+        bridge.add_gateway(NodeNum(1), 1);
+
+        bridge.ensure_active();
+        assert_eq!(
+            bridge.active(),
+            Some(NodeNum(1)),
+            "the only healthy gateway must be chosen first"
+        );
+
+        for _ in 0..bridge.config().offline_check_threshold {
+            bridge.record_health_failure(NodeNum(1));
+        }
+        assert_eq!(
+            bridge.active(),
+            None,
+            "losing the sole gateway must leave the bridge with none active"
+        );
+
+        bridge.add_gateway(NodeNum(2), 2);
+        let _ = bridge.drain_events();
+        bridge
+    }
+
+    #[test]
+    fn ensure_active_suppresses_a_second_failover_inside_the_cooldown() {
+        // WHY(#229): the cooldown exists to stop a flapping gateway from
+        // driving continuous failover churn. last_failover was stamped when
+        // the sole gateway dropped, so adopting the replacement must wait even
+        // though a healthy candidate is now available.
+        let mut bridge = bridge_needing_reselection(BridgeConfig::default());
+
+        bridge.ensure_active();
+
+        assert_eq!(
+            bridge.active(),
+            None,
+            "inside the cooldown no new gateway may be adopted"
+        );
+        assert!(
+            bridge.drain_events().is_empty(),
+            "a suppressed failover must emit no event"
+        );
+    }
+
+    #[test]
+    fn ensure_active_fails_over_when_the_cooldown_is_zero() {
+        // WHY(#229): the falsifiable half — same sequence, cooldown of zero.
+        // `elapsed() < 0` can never hold, so the guard falls through and the
+        // failover proceeds. Without this the test above would also pass if
+        // ensure_active simply never adopted a gateway at all.
+        let mut bridge = bridge_needing_reselection(BridgeConfig {
+            failover_cooldown_secs: 0,
+            ..BridgeConfig::default()
+        });
+
+        bridge.ensure_active();
+
+        assert_eq!(
+            bridge.active(),
+            Some(NodeNum(2)),
+            "with no cooldown the bridge must adopt the healthy gateway"
+        );
+    }
 }

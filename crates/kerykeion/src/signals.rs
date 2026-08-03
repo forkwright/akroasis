@@ -386,4 +386,117 @@ mod tests {
         let signal = mesh_event_to_signal(&event, None);
         assert!(signal.metadata.contains_key("to_node"));
     }
+
+    #[test]
+    fn invalid_position_falls_back_to_node_seen() {
+        // WHY(#229): a latitude outside [-90, 90] makes `Coordinates::new`
+        // fail, and the fallback arm must still emit a signal rather than
+        // dropping the event. The valid-coordinate case is covered by
+        // `position_update_produces_position_signal`, so this pair fires on
+        // exactly the branch under test.
+        let event = MeshEvent::PositionUpdate {
+            node: NodeNum(7),
+            lat: 91.0,
+            lon: 0.0,
+            alt: None,
+        };
+
+        let signal = mesh_event_to_signal(&event, None);
+
+        assert!(
+            matches!(
+                signal.kind,
+                SignalKind::Mesh(MeshDetail::NodeSeen { node_id: 7, .. })
+            ),
+            "invalid coordinates must fall back to NodeSeen, not Position"
+        );
+        assert_eq!(
+            signal.metadata.get("event"),
+            Some(&serde_json::json!("invalid_position"))
+        );
+        assert!(
+            signal.location.is_none(),
+            "no position was passed, so the signal carries no location"
+        );
+    }
+
+    #[test]
+    fn link_degraded_carries_both_snr_readings() {
+        let event = MeshEvent::LinkDegraded {
+            from: NodeNum(1),
+            to: NodeNum(2),
+            old_snr: 10.0,
+            new_snr: 2.0,
+        };
+
+        let signal = mesh_event_to_signal(&event, None);
+
+        // WHY(#229): the signal reports the DEGRADED (new) SNR; the previous
+        // reading is preserved only as metadata.
+        assert!(matches!(
+            signal.kind,
+            SignalKind::Mesh(MeshDetail::NodeSeen {
+                node_id: 1,
+                snr,
+                ..
+            }) if (snr - 2.0).abs() < f32::EPSILON
+        ));
+        assert_eq!(
+            signal.metadata.get("event"),
+            Some(&serde_json::json!("link_degraded"))
+        );
+        assert_eq!(
+            signal.metadata.get("to_node"),
+            Some(&serde_json::json!(2_u32))
+        );
+        assert_eq!(
+            signal.metadata.get("old_snr"),
+            Some(&serde_json::json!(10.0_f32))
+        );
+    }
+
+    #[test]
+    fn partition_healed_lists_the_reunited_nodes() {
+        let event = MeshEvent::PartitionHealed {
+            reunited_nodes: vec![NodeNum(4), NodeNum(5)],
+        };
+
+        let signal = mesh_event_to_signal(&event, None);
+
+        assert_eq!(
+            signal.metadata.get("event"),
+            Some(&serde_json::json!("partition_healed"))
+        );
+        assert_eq!(
+            signal.metadata.get("reunited_nodes"),
+            Some(&serde_json::json!([4_u32, 5_u32]))
+        );
+        assert!(
+            signal.location.is_none(),
+            "a partition event is not located at a single node"
+        );
+    }
+
+    #[test]
+    fn gateway_status_change_records_the_new_role() {
+        let event = MeshEvent::GatewayStatusChange {
+            node: NodeNum(9),
+            is_gateway: true,
+        };
+
+        let signal = mesh_event_to_signal(&event, None);
+
+        assert!(matches!(
+            signal.kind,
+            SignalKind::Mesh(MeshDetail::NodeSeen { node_id: 9, .. })
+        ));
+        assert_eq!(
+            signal.metadata.get("event"),
+            Some(&serde_json::json!("gateway_status"))
+        );
+        assert_eq!(
+            signal.metadata.get("is_gateway"),
+            Some(&serde_json::json!(true))
+        );
+    }
 }

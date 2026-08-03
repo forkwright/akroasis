@@ -205,6 +205,100 @@ async fn router_flush_cancels_cleanly() {
     assert!(result.is_ok(), "router flush should cancel cleanly");
 }
 
+#[tokio::test(start_paused = true)]
+async fn router_flush_tick_drains_the_queue_and_sends() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    use crate::proto::FromRadio;
+
+    // WHY(#229): counts what reached the radio, so the test observes the
+    // drain/send half of the tick arm rather than only its cancellation
+    // path (which `router_flush_cancels_cleanly` already covers).
+    struct CountingConn(Arc<AtomicUsize>);
+    impl crate::connection::MeshConnection for CountingConn {
+        async fn send(&mut self, _: crate::proto::ToRadio) -> Result<(), Error> {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        }
+        async fn recv(&mut self) -> Result<FromRadio, Error> {
+            std::future::pending().await
+        }
+        fn is_connected(&self) -> bool {
+            true
+        }
+        async fn reconnect(&mut self) -> Result<(), Error> {
+            Ok(())
+        }
+    }
+
+    let router = Arc::new(Mutex::new(MeshRouter::new(
+        OutboundQueue::new(),
+        StoreForward::new(StoreForwardConfig::default()),
+        DeliveryTracker::new(),
+    )));
+
+    // Two reachable packets, so the `while let Some(msg)` drain loop has to
+    // run more than once inside a single tick.
+    {
+        let mut r = router.lock().await;
+        for id in [1_u32, 2] {
+            // A reachable send only enqueues, so it cannot fail; the result is
+            // asserted rather than unwrapped.
+            let sent = r.send(
+                crate::proto::MeshPacket {
+                    id,
+                    to: 0xBBBB,
+                    ..Default::default()
+                },
+                true,
+                &crate::router::SendOptions::default(),
+            );
+            assert!(sent.is_ok(), "a reachable send must enqueue");
+        }
+        assert_eq!(r.outbound.pending_count(), 2);
+        drop(r);
+    }
+
+    let sent = Arc::new(AtomicUsize::new(0));
+    let conn = Arc::new(Mutex::new(CountingConn(Arc::clone(&sent))));
+    let token = CancellationToken::new();
+
+    let flush_router = Arc::clone(&router);
+    let task_token = token.clone();
+    let handle = tokio::spawn(
+        async move {
+            run_router_flush(flush_router, conn, Duration::from_millis(100), task_token).await
+        }
+        .instrument(tracing::info_span!("spawned_task")),
+    );
+
+    // The first tick of a tokio interval fires immediately; advance past a
+    // second one so the drain has certainly run.
+    tokio::time::advance(Duration::from_millis(150)).await;
+    tokio::task::yield_now().await;
+
+    token.cancel();
+    #[expect(clippy::unwrap_used, reason = "test-only")]
+    let result = handle.await.unwrap();
+    assert!(result.is_ok(), "router flush should cancel cleanly");
+
+    assert_eq!(
+        sent.load(Ordering::SeqCst),
+        2,
+        "both queued packets must reach the radio"
+    );
+
+    let r = router.lock().await;
+    let (pending, inflight) = (r.outbound.pending_count(), r.outbound.inflight_count());
+    drop(r);
+
+    assert_eq!(pending, 0, "the queue must be drained");
+    assert_eq!(
+        inflight, 2,
+        "drained packets must be tracked as inflight, awaiting ACK"
+    );
+}
+
 // ── akroasis#190: recv_yielding must not starve send-side tasks ──────
 
 /// Mock connection whose `recv()` never resolves, reproducing a quiet mesh.
