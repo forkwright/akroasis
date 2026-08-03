@@ -19,7 +19,7 @@ use crate::config::MeshConfig;
 use crate::connection::MeshConnection;
 use crate::delivery::DeliveryTracker;
 use crate::discovery::run_discovery;
-use crate::error::Error;
+use crate::error::{Error, HandshakeFailedSnafu};
 use crate::handshake;
 use crate::heartbeat;
 use crate::node_db::NodeDb;
@@ -213,8 +213,10 @@ impl MeshCollector {
 
     /// Connects to all configured transports and performs handshakes.
     ///
-    /// Returns `Ok` with the list of active connections, which may be empty
-    /// if all connections fail.
+    /// # Errors
+    ///
+    /// Returns [`Error::HandshakeFailed`] if connections are configured but
+    /// none of them reached a completed handshake.
     async fn connect_and_handshake(&self) -> Result<Vec<Arc<Mutex<ConnectionHandle>>>, Error> {
         let mut connections: Vec<ConnectionHandle> = Vec::new();
         for conn_cfg in &self.config.connections {
@@ -231,8 +233,15 @@ impl MeshCollector {
 
         let mut active: Vec<Arc<Mutex<ConnectionHandle>>> = Vec::new();
         for mut conn in connections {
-            let mut db = self.node_db.lock().await;
-            match handshake::handshake_with_config(&mut conn, &mut db, &self.config.handshake).await
+            // WHY: the handshake awaits a full config dump from the radio, which
+            // is unbounded network time. Holding the shared node_db across it
+            // stalls every other task that needs the DB for exactly that long.
+            // The handshake only needs somewhere to accumulate, and
+            // `HandshakeResult` already carries everything it wrote, so give it
+            // a scratch DB and merge under a short lock afterwards.
+            let mut scratch = NodeDb::new();
+            match handshake::handshake_with_config(&mut conn, &mut scratch, &self.config.handshake)
+                .await
             {
                 Ok(result) => {
                     tracing::info!(
@@ -241,14 +250,33 @@ impl MeshCollector {
                         channels = result.channels.len(),
                         "handshake complete"
                     );
+                    let mut db = self.node_db.lock().await;
+                    db.set_my_node(result.my_node_num);
+                    for node in result.known_nodes {
+                        db.insert(node);
+                    }
                     drop(db);
                     active.push(Arc::new(Mutex::new(conn)));
                 }
                 Err(e) => {
-                    drop(db);
                     tracing::warn!(error = %e, "handshake failed, skipping connection");
                 }
             }
+        }
+
+        // WHY: with connections configured and none active, every transport or
+        // handshake failed. Returning Ok here spawns the whole background task
+        // set against no radio: the collector then runs indefinitely observing
+        // nothing while reporting success, which is indistinguishable from a
+        // quiet mesh. Fail instead so the caller can retry or surface it.
+        if active.is_empty() && !self.config.connections.is_empty() {
+            return HandshakeFailedSnafu {
+                detail: format!(
+                    "all {} configured connections failed to connect or handshake",
+                    self.config.connections.len()
+                ),
+            }
+            .fail();
         }
 
         Ok(active)
@@ -543,23 +571,29 @@ where
                             "router flush: expired stale delivery records"
                         );
                     }
-                    let mut packets = Vec::new();
+                    let mut msgs = Vec::new();
                     while let Some(msg) = r.next_to_send() {
-                        let packet = msg.packet.clone();
-                        r.track_sent(msg);
-                        packets.push(packet);
+                        msgs.push(msg);
                     }
                     drop(r);
-                    packets
+                    msgs
                 };
 
-                for packet in pending {
+                for msg in pending {
                     let to_radio = ToRadio {
-                        payload_variant: Some(to_radio::PayloadVariant::Packet(packet)),
+                        payload_variant: Some(to_radio::PayloadVariant::Packet(msg.packet.clone())),
                     };
                     if let Err(e) = conn.lock().await.send(to_radio).await {
                         tracing::warn!(error = %e, "router flush: send error");
                     }
+                    // WHY: track_sent starts the inflight ACK timeout. Starting
+                    // it before the transmit charges the radio's send latency
+                    // and any wait on the connection lock against the peer's
+                    // time to ACK, so a slow link retries messages that were
+                    // never actually late. Tracked even after a send error, so
+                    // the existing timeout/retry path owns the failure rather
+                    // than the message being dropped here.
+                    router.lock().await.track_sent(msg);
                 }
             }
         }

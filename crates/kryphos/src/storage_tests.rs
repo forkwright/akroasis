@@ -561,3 +561,59 @@ fn create_restricts_lock_file_to_owner_on_unix() {
 
     drop(vault);
 }
+
+#[test]
+fn open_on_a_missing_vault_leaves_the_path_untouched() {
+    // Regression for forkwright/akroasis#286: `open` acquired the lock
+    // before checking for a header, and `acquire_lock` created the vault
+    // directory plus the lock file. A `list`/`get` before initialization —
+    // or one mistyped path — therefore poisoned the path against `create`.
+    let dir = tempfile::tempdir().unwrap();
+    let vault_path = dir.path().join("never-initialized");
+
+    let result = Vault::open(&vault_path, TEST_PASSPHRASE);
+
+    assert!(
+        matches!(result, Err(VaultError::NotInitialized { .. })),
+        "opening a path with no vault must report typed absence, got: {result:?}"
+    );
+    assert!(
+        !vault_path.exists(),
+        "a failed open must not create the vault directory"
+    );
+}
+
+#[test]
+fn create_succeeds_after_a_failed_open_at_the_same_path() {
+    // The acceptance condition of forkwright/akroasis#286: the failed open
+    // must leave the path usable for the initialization it preceded.
+    let dir = tempfile::tempdir().unwrap();
+    let vault_path = dir.path().join("open-then-create");
+
+    let failed = Vault::open(&vault_path, TEST_PASSPHRASE);
+    assert!(failed.is_err(), "vault does not exist yet");
+
+    let created = Vault::create(&vault_path, TEST_PASSPHRASE);
+    assert!(
+        created.is_ok(),
+        "create must succeed at a path a failed open touched, got: {created:?}"
+    );
+    assert_eq!(created.unwrap().path(), vault_path);
+}
+
+#[test]
+fn open_reports_absence_rather_than_io_failure_for_a_bare_directory() {
+    // A directory with no header is not a vault. Callers branch on
+    // `NotInitialized` to offer initialization, so this must not surface as
+    // a generic I/O error.
+    let dir = tempfile::tempdir().unwrap();
+    let vault_path = dir.path().join("empty-dir");
+    std::fs::create_dir(&vault_path).unwrap();
+
+    let result = Vault::open(&vault_path, TEST_PASSPHRASE);
+
+    assert!(
+        matches!(result, Err(VaultError::NotInitialized { .. })),
+        "a headerless directory must report typed absence, got: {result:?}"
+    );
+}

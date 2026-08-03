@@ -54,6 +54,21 @@ pub enum ImgImportError {
 /// Returns `ImgImportError` if the file cannot be read, has an unsupported
 /// size, or contains invalid channel data.
 pub fn import_img(path: &Path) -> Result<FrequencyPlan, ImgImportError> {
+    // WHY: reject by size from the directory entry before allocating. A `.img`
+    // is a fixed-size EEPROM dump of a few kilobytes, so reading first and
+    // checking after let any file the user pointed at — a disk image, a core
+    // dump — be pulled into memory in full only to be rejected.
+    let metadata = std::fs::metadata(path).context(ReadFileSnafu {
+        path: path.to_path_buf(),
+    })?;
+    let size = usize::try_from(metadata.len()).unwrap_or(usize::MAX);
+    if size != UV5R_STANDARD_SIZE && size != UV5R_AUX_SIZE {
+        return Err(ImgImportError::UnsupportedImageSize { size });
+    }
+
+    // NOTE: `import_img_bytes` re-checks the length, so a file that changes
+    // size between the stat above and the read below is still rejected.
+
     let data = std::fs::read(path).context(ReadFileSnafu {
         path: path.to_path_buf(),
     })?;
@@ -128,6 +143,54 @@ mod tests {
         let mut data = vec![0u8; IDENT_HEADER_LEN];
         data.extend_from_slice(image.as_slice());
         data
+    }
+
+    // WHY: `import_img` used to read the file in full and check its length
+    // afterwards, so pointing it at a disk image or a core dump pulled the
+    // whole thing into memory only to reject it. The size now comes from the
+    // directory entry. A 64 MiB sparse file is large enough to be an obvious
+    // mistake and costs no disk to create; the property being fixed is that
+    // nothing of it is read, which the error alone cannot show — see the
+    // commit message for the differential.
+    #[test]
+    fn an_oversized_file_is_rejected_by_its_size_on_disk() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("huge.img");
+        let file = std::fs::File::create(&path).unwrap();
+        file.set_len(64 * 1024 * 1024).unwrap();
+        drop(file);
+
+        let err = import_img(&path).unwrap_err();
+        assert!(
+            matches!(
+                err,
+                ImgImportError::UnsupportedImageSize { size: 67_108_864 }
+            ),
+            "expected UnsupportedImageSize with the on-disk length, got: {err:?}"
+        );
+    }
+
+    // WHY: the falsifying sibling — a file of a supported size must still be
+    // read and decoded, so the stat is a gate rather than a refusal.
+    #[test]
+    fn a_supported_size_is_still_read_from_disk() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("uv5r.img");
+        std::fs::write(&path, make_img_bytes(0x1800)).unwrap();
+
+        let plan = import_img(&path).unwrap();
+        assert_eq!(plan.radio_model.as_deref(), Some("UV-5R"));
+        assert_eq!(plan.channel_count(), 1);
+    }
+
+    #[test]
+    fn a_missing_file_is_reported_as_a_read_failure() {
+        let dir = tempfile::tempdir().unwrap();
+        let err = import_img(&dir.path().join("absent.img")).unwrap_err();
+        assert!(
+            matches!(err, ImgImportError::ReadFile { .. }),
+            "expected ReadFile, got: {err:?}"
+        );
     }
 
     #[test]

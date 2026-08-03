@@ -439,13 +439,62 @@ fn read_block_retry_exhaustion_returns_error() {
 
     let mut proto = make_protocol(mock);
     let err = proto.read_block_with_retry(addr, len).unwrap_err();
-    assert!(matches!(
-        err,
-        ProtocolError::RetryExhausted {
-            addr: 0x0100,
-            attempts: 3
-        }
-    ));
+    let ProtocolError::RetryExhausted {
+        addr: failed_addr,
+        attempts,
+        source,
+    } = err
+    else {
+        panic!("expected RetryExhausted, got: {err:?}");
+    };
+    assert_eq!(failed_addr, 0x0100);
+    assert_eq!(attempts, 3);
+    assert!(
+        matches!(*source, ProtocolError::Timeout),
+        "a silent radio should exhaust retries on Timeout, got: {source:?}"
+    );
+}
+
+// WHY: the falsifying sibling to the test above. Both transfers give up after
+// the same three attempts, and before the cause was carried they produced
+// byte-identical errors — so "the radio never answered" and "the radio
+// answered with the wrong block" were indistinguishable to the operator.
+#[test]
+fn read_block_retry_exhaustion_carries_a_header_mismatch_cause() {
+    let mut mock = MockSerialPort::new();
+    let addr: u16 = 0x0100;
+    let len: u8 = 0x40;
+
+    // Three attempts, each answered with a header for the wrong address.
+    for _ in 0..3 {
+        mock.enqueue_response(&[CMD_READ_RESPONSE, 0xFF, 0xFF, len]);
+    }
+
+    let mut proto = make_protocol(mock);
+    let err = proto.read_block_with_retry(addr, len).unwrap_err();
+    let ProtocolError::RetryExhausted { source, .. } = err else {
+        panic!("expected RetryExhausted, got: {err:?}");
+    };
+    assert!(
+        matches!(*source, ProtocolError::BadResponseHeader { addr: 0x0100 }),
+        "expected the header mismatch to survive the retry loop, got: {source:?}"
+    );
+}
+
+#[test]
+fn write_block_retry_exhaustion_carries_its_cause() {
+    let mock = MockSerialPort::new();
+    let addr: u16 = 0x0100;
+
+    let mut proto = make_protocol(mock);
+    let err = proto.write_block_with_retry(addr, &[0u8; 16]).unwrap_err();
+    let ProtocolError::RetryExhausted { source, .. } = err else {
+        panic!("expected RetryExhausted, got: {err:?}");
+    };
+    assert!(
+        matches!(*source, ProtocolError::Timeout),
+        "expected the underlying timeout, got: {source:?}"
+    );
 }
 
 // -----------------------------------------------------------------------

@@ -27,7 +27,7 @@ use crate::{
 /// support + `#[serde(default)]` lets operators and agents override
 /// a subset of fields via TOML without knowing the rest of the schema.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct SemainoConfig {
     /// Grid quantization factor. 10 000 ≈ 10 m resolution.
     pub grid_resolution: u32,
@@ -199,8 +199,27 @@ impl SemainoPipeline {
             }
         }
 
-        // Drain any remaining aggregated signals.
-        drop(agg_rx);
+        // WHY(#232): this comment used to sit above a bare `drop(agg_rx)`,
+        // which promised a drain and performed a discard. The window is real:
+        // the loop above breaks as soon as signal_rx is closed and empty, and
+        // the fan task feeds inner_tx before signal_tx, so the aggregator can
+        // still be scoring queued signals at that point and emit afterwards.
+        //
+        // NOTE: measured, not assumed — no scenario tried (warm-up depth,
+        // escalating outliers, immediate close, multi-threaded runtime) ever
+        // lost an alert to the old code, because the biased select cannot
+        // break while agg_rx holds items and the aggregator finishes its
+        // backlog first in practice. This is therefore a correctness
+        // hardening that makes the comment true, not a fix for an observed
+        // loss.
+        //
+        // INVARIANT: this terminates. signal_rx closing means the fan task
+        // exited and dropped inner_tx; that closes the aggregator's receiver,
+        // so it returns and drops agg_tx — the only sender — and recv()
+        // yields None once the buffered alerts are drained.
+        while let Some(aggregated) = agg_rx.recv().await {
+            self.handle_aggregated(&aggregated);
+        }
 
         // Wait for background tasks to complete.
         if let Err(e) = fan_task.await {
@@ -425,5 +444,55 @@ mod tests {
 
         let result = classify(&AnomalyScore::Normal, None);
         assert!(result.is_none());
+    }
+
+    #[tokio::test]
+    async fn immediate_shutdown_still_delivers_every_anomaly() {
+        // WHY(#232): guards the shutdown drain. It does not reproduce a loss
+        // under the old `drop(agg_rx)` — see the NOTE at that site; no
+        // scenario tried did. What it does catch is a regression in the drain
+        // loop itself: the loop awaits a receiver whose only sender lives in a
+        // spawned task, so a future change that keeps an agg_tx clone alive in
+        // this scope would hang shutdown forever, and this test would time out
+        // rather than pass quietly.
+        const OUTLIERS: usize = 6;
+
+        let (tx, rx) = broadcast::channel::<GeoSignal>(1024);
+        let mut pipeline = SemainoPipeline::new(&SemainoConfig {
+            suppression_window_secs: 0, // no suppression: every anomaly must surface
+            min_convergence_domains: 1,
+            ..SemainoConfig::default()
+        });
+
+        let sink = CollectingSink::default();
+        let sink_data = Arc::clone(&sink.0);
+        pipeline.add_sink(sink);
+
+        let handle = tokio::spawn(async move {
+            pipeline.run(rx).await;
+        });
+
+        // Warm the baseline, then close the feed with the outliers still at
+        // the very end of the stream and no settling delay.
+        for i in 0..20_i32 {
+            tx.send(rf_signal(-50.0 + f64::from(i % 3))).unwrap();
+        }
+        // WHY: escalating magnitudes stay beyond 3 sigma as observing each one
+        // widens the baseline, so all six score anomalous rather than the
+        // baseline absorbing them after the first few.
+        let mut magnitude = 50.0_f64;
+        for _ in 0..OUTLIERS {
+            tx.send(rf_signal(magnitude)).unwrap();
+            magnitude *= 4.0;
+        }
+
+        drop(tx);
+        handle.await.unwrap();
+
+        let count = sink_data.lock().unwrap().len();
+        assert_eq!(
+            count, OUTLIERS,
+            "every anomaly must survive an immediate shutdown"
+        );
     }
 }

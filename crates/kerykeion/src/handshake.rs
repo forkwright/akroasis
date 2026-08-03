@@ -458,4 +458,47 @@ mod tests {
 
         assert_eq!(node.hop_count, Some(3));
     }
+
+    // ── akroasis#229: HandshakeResult must mirror every node_db write ─────
+
+    #[tokio::test]
+    async fn handshake_result_mirrors_every_node_db_write() {
+        // WHY: the collector runs the handshake against a scratch NodeDb and
+        // merges HandshakeResult into the shared one afterwards, so the shared
+        // lock is not held across the radio's config dump. That is equivalent
+        // only while the result carries everything the handshake writes  -  a
+        // write with no matching result field would be dropped by the merge.
+        let mut direct = NodeDb::new();
+        let mut conn = DynamicMock {
+            my_info_sent: false,
+            node_info_sent: false,
+            config_id: None,
+        };
+
+        #[expect(clippy::unwrap_used, reason = "test-only")]
+        let result = handshake(&mut conn, &mut direct).await.unwrap();
+
+        let mut merged = NodeDb::new();
+        merged.set_my_node(result.my_node_num);
+        for node in result.known_nodes {
+            merged.insert(node);
+        }
+
+        assert_eq!(
+            merged.my_node(),
+            direct.my_node(),
+            "merge must reproduce the local node number"
+        );
+        assert_eq!(
+            merged.len(),
+            direct.len(),
+            "merge must reproduce every node the handshake inserted"
+        );
+        for (num, node) in direct.iter() {
+            #[expect(clippy::expect_used, reason = "test-only")]
+            let mirrored = merged.get(*num).expect("node missing from merged DB");
+            assert_eq!(mirrored.num, node.num);
+            assert_eq!(mirrored.hop_count, node.hop_count);
+        }
+    }
 }

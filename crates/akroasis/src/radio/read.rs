@@ -62,7 +62,10 @@ pub(crate) fn print_channel_table(
             .map_or_else(|| ch.rx_freq.to_string(), |tx| format!("{tx}"));
 
         table.add_row(vec![
-            Cell::new(format!("{:03}", ch.index + 1)),
+            // WHY: index comes from untrusted CSV as a full-range u16, so `+ 1`
+            // on u16 panics in debug and wraps to 000 in release at index 65535;
+            // widening first keeps the display exact for every input.
+            Cell::new(format!("{:03}", u32::from(ch.index) + 1)),
             Cell::new(&ch.name),
             Cell::new(ch.rx_freq.to_string()),
             Cell::new(tx_display),
@@ -170,6 +173,24 @@ mod tests {
         let s = String::from_utf8(out).unwrap();
         assert!(s.contains("CALL"));
         assert!(s.contains("RPT-IN"));
+    }
+
+    #[test]
+    fn the_maximum_channel_index_displays_without_overflowing() {
+        // WHY: import parses Location straight into u16, so u16::MAX is reachable
+        // from a CSV file. `ch.index + 1` on u16 panicked in debug and wrapped to
+        // "000" in release — a silently wrong channel number.
+        let mut channels = sample_channels();
+        if let Some(first) = channels.first_mut() {
+            first.index = u16::MAX;
+        }
+        let refs: Vec<&Channel> = channels.iter().collect();
+
+        let mut out = Vec::new();
+        print_channel_table(&refs, &mut out).unwrap();
+
+        let s = String::from_utf8(out).unwrap();
+        assert!(s.contains("65536"), "expected the widened index, got:\n{s}");
     }
 
     #[test]

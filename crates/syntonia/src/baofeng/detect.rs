@@ -7,6 +7,7 @@
 
 use snafu::Snafu;
 
+use super::constants::{ACK, CMD_IDENT};
 use super::ident::RadioIdent;
 use super::variant::{MAGIC_SETS, VariantConfig, VariantError, identify_variant};
 
@@ -59,6 +60,13 @@ pub enum DetectError {
     #[snafu(display("timeout waiting for radio response"))]
     Timeout,
 
+    /// The radio answered the magic sequence with a byte other than `ACK`.
+    #[snafu(display("unexpected handshake byte: expected 0x{ACK:02X}, got 0x{got:02X}"))]
+    UnexpectedAck {
+        /// The byte the radio actually sent.
+        got: u8,
+    },
+
     /// All magic byte sequences failed  -  no radio detected.
     #[snafu(display(
         "no compatible radio detected after trying all magic sequences. \
@@ -91,6 +99,10 @@ pub enum DetectError {
 /// programming mode with each SET. On success, reads the firmware ident
 /// and returns the matched [`VariantConfig`].
 ///
+/// A magic set that times out, or that is answered with a byte other than
+/// [`ACK`], means "not this variant" and the next set is tried. Any other
+/// error aborts the scan.
+///
 /// # Errors
 ///
 /// - [`DetectError::NoRadioDetected`] if all magic sets fail (includes
@@ -105,7 +117,7 @@ pub(crate) fn auto_detect(
     for &magic in MAGIC_SETS {
         match try_magic(port, magic) {
             Ok((ident, config)) => return Ok((ident, config)),
-            Err(DetectError::Timeout) => {}
+            Err(DetectError::Timeout | DetectError::UnexpectedAck { .. }) => {}
             Err(other) => return Err(other),
         }
     }
@@ -122,15 +134,20 @@ fn try_magic(
     port.write_all(&magic)?;
     port.flush()?;
 
-    // Read ACK (single byte: 0x06)
+    // Read ACK (single byte)
     let mut ack = [0u8; 1];
     port.read_exact(&mut ack)?;
-    if ack.get(0).copied().unwrap_or_default() != 0x06 {
-        return TimeoutSnafu.fail();
+    let got = ack.first().copied().unwrap_or_default();
+    if got != ACK {
+        // WHY: a wrong byte is a radio that answered but speaks a different
+        // dialect; a timeout is silence. Both mean "try the next magic set",
+        // but reporting the first as the second sends the operator to the
+        // cable-and-power troubleshooting for a radio that is plainly awake.
+        return UnexpectedAckSnafu { got }.fail();
     }
 
-    // Send identify command (0x02)
-    port.write_all(&[0x02])?;
+    // Send identify command
+    port.write_all(&[CMD_IDENT])?;
     port.flush()?;
 
     // Read ident response: length byte + ident data
@@ -286,6 +303,39 @@ mod tests {
         queue_uv5r_handshake(&mut mock, b"BFB100\x00\x00");
         let (_, config) = auto_detect(&mut mock).unwrap();
         assert_eq!(config.variant, RadioVariant::Uv5r);
+    }
+
+    // WHY: a falsifiable pair. A radio that answers the magic sequence with
+    // the wrong byte is awake; a port that answers nothing is not. Both make
+    // `auto_detect` move to the next magic set, but reporting the first as a
+    // timeout sends the operator to the cable-and-power checklist for a radio
+    // that is plainly responding.
+    #[test]
+    fn wrong_handshake_byte_is_not_reported_as_a_timeout() {
+        let mut mock = MockSerial::new();
+        mock.queue_data(&[0xFF]);
+
+        let err = try_magic(&mut mock, MAGIC_SETS[0]).unwrap_err();
+        assert!(
+            matches!(err, DetectError::UnexpectedAck { got: 0xFF }),
+            "expected UnexpectedAck, got: {err:?}"
+        );
+        assert!(
+            err.to_string().contains("0xFF"),
+            "the byte should reach the operator, got: {err}"
+        );
+    }
+
+    #[test]
+    fn a_silent_port_is_reported_as_a_timeout() {
+        let mut mock = MockSerial::new();
+        mock.queue_timeout();
+
+        let err = try_magic(&mut mock, MAGIC_SETS[0]).unwrap_err();
+        assert!(
+            matches!(err, DetectError::Timeout),
+            "expected Timeout, got: {err:?}"
+        );
     }
 
     #[test]

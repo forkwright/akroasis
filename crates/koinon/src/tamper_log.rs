@@ -60,7 +60,7 @@ pub const DEFAULT_MAX_FILE_BYTES: u64 = 100 * 1024 * 1024;
 /// Currently controls rotation only; future additions (fsync policy,
 /// compression, retention) will land here.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct TamperLogConfig {
     /// Rotation threshold in bytes. When `bytes_written` exceeds this,
     /// the current file is renamed and a fresh log is opened.
