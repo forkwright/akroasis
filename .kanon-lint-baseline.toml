@@ -324,25 +324,25 @@ hash = "635566a5376aca1bf92ec855cbe96b69003a02f89b19a6dbdc822d59e580ed34"
 [[baseline.entry]]
 rule = "RUST/no-debug-derive-on-public-types"
 file = "crates/koinon/src/tamper_log.rs"
-line = 150
+line = 155
 hash = "50d045131e1a2f659ef9b7d91f23499570d3c0ff047998ea759d704128bf5265"
 
 [[baseline.entry]]
 rule = "RUST/no-result-unwrap-or-default"
 file = "crates/koinon/src/tamper_log.rs"
-line = 273
+line = 293
 hash = "8c45bee0afc5b671fa5c4e4691d11d232504f3a410456c18e3d22e94134777aa"
 
 [[baseline.entry]]
 rule = "TOPOLOGY/shallow-struct"
 file = "crates/koinon/src/tamper_log.rs"
-line = 330
+line = 350
 hash = "3a82e225fc3e3091c19d16433c344bc468c91f63799cc74461cdecc11ca44675"
 
 [[baseline.entry]]
 rule = "RUST/no-result-unwrap-or-default"
 file = "crates/koinon/src/tamper_log.rs"
-line = 384
+line = 404
 hash = "8c45bee0afc5b671fa5c4e4691d11d232504f3a410456c18e3d22e94134777aa"
 
 [[baseline.entry]]

@@ -484,4 +484,58 @@ mod tests {
             })
         ));
     }
+
+    #[test]
+    fn prune_completed_releases_only_terminal_records() {
+        // WHY(#229): the retention rule is state-keyed, not purely age-keyed.
+        // A zero max_age makes every record "too old", so whatever survives
+        // survives because of its STATE — which is exactly the rule under test.
+        let mut tracker = DeliveryTracker::new();
+
+        let queued = PacketId(1);
+        let sent = PacketId(2);
+        let acked = PacketId(3);
+        let failed = PacketId(4);
+        let expired = PacketId(5);
+        for id in [queued, sent, acked, failed, expired] {
+            tracker.track(id, 0x1234);
+        }
+        tracker.mark_sent(sent);
+        tracker.mark_acknowledged(acked, Some(1));
+        tracker.mark_failed(failed, DeliveryFailure::MaxRetries);
+        tracker.mark_expired(expired);
+
+        tracker.prune_completed(std::time::Duration::ZERO);
+
+        assert!(
+            tracker.delivery_status(queued).is_some(),
+            "a Queued record is still active and must be retained (#244)"
+        );
+        assert!(
+            tracker.delivery_status(sent).is_some(),
+            "a Sent record is still active and must be retained (#244)"
+        );
+        assert!(tracker.delivery_status(acked).is_none());
+        assert!(tracker.delivery_status(failed).is_none());
+        assert!(tracker.delivery_status(expired).is_none());
+        assert_eq!(tracker.tracked_count(), 2);
+    }
+
+    #[test]
+    fn prune_completed_retains_terminal_records_inside_max_age() {
+        // WHY(#229): the falsifiable half — with a max_age no record can have
+        // exceeded, the same terminal records that vanished above all survive,
+        // so the test above proves the age comparison and not merely the match.
+        let mut tracker = DeliveryTracker::new();
+        let acked = PacketId(10);
+        tracker.track(acked, 0x1234);
+        tracker.mark_acknowledged(acked, Some(1));
+
+        tracker.prune_completed(std::time::Duration::from_secs(3600));
+
+        assert!(
+            tracker.delivery_status(acked).is_some(),
+            "a freshly acknowledged record is younger than max_age"
+        );
+    }
 }

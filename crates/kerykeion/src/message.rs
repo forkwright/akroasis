@@ -403,4 +403,34 @@ mod tests {
             .unwrap();
         assert_eq!(pkt.id, 0xCAFE);
     }
+
+    #[test]
+    fn build_propagates_an_encryption_failure() {
+        // WHY(#229): a PSK that is neither empty (unencrypted channel) nor a
+        // 1..=10 channel index resolves to itself, so a 3-byte PSK reaches
+        // AES-CTR as an invalid key length. `build` must surface that as
+        // Error::Encryption rather than emitting an unencrypted packet.
+        let result = MessageBuilder::text(DEST, "test").build(FROM_NODE, &[0xAA, 0xBB, 0xCC]);
+
+        assert!(
+            matches!(result, Err(Error::Encryption { .. })),
+            "an invalid PSK length must fail the build, got {result:?}"
+        );
+    }
+
+    #[test]
+    fn build_with_a_valid_psk_encrypts_rather_than_failing() {
+        // WHY(#229): the falsifiable half — a 16-byte PSK is a valid AES key,
+        // so the same path must succeed and produce an Encrypted variant.
+        // Without this the test above would pass even if `build` always failed.
+        #[expect(clippy::unwrap_used, reason = "test-only")]
+        let pkt = MessageBuilder::text(DEST, "test")
+            .build(FROM_NODE, &[0x11; 16])
+            .unwrap();
+
+        assert!(matches!(
+            pkt.payload_variant,
+            Some(mesh_packet::PayloadVariant::Encrypted(_))
+        ));
+    }
 }
