@@ -16,6 +16,18 @@ use crate::types::NodeNum;
 
 // Historical default (30.0) now lives in [`TopologyConfig::default`].
 
+/// Maximum nodes accepted from a persisted topology snapshot.
+///
+// WHY: `load_from_bytes` allocates one graph node per entry from a file that
+// may be truncated, corrupt or attacker-written. A Meshtastic node DB holds low
+// hundreds of nodes, so this ceiling is far above any real mesh while still
+// bounding the allocation. Exceeding it is recoverable: passive learning
+// re-observes live links, so a truncated restore self-heals.
+const MAX_SNAPSHOT_NODES: usize = 4096;
+
+/// Maximum links accepted from a persisted topology snapshot.
+const MAX_SNAPSHOT_LINKS: usize = 16384;
+
 /// Directed edge weight representing radio link quality between two nodes.
 #[derive(Debug, Clone)]
 pub struct LinkQuality {
@@ -365,6 +377,9 @@ impl MeshTopology {
 
     /// Restore topology from a serialized snapshot. All links are marked as observed now.
     ///
+    /// Repeated `(from, to)` pairs are folded into a single edge, and the
+    /// restore is bounded at [`MAX_SNAPSHOT_NODES`] / [`MAX_SNAPSHOT_LINKS`].
+    ///
     /// # Errors
     ///
     /// Returns [`crate::Error::TopologySnapshot`] if JSON deserialization fails.
@@ -375,22 +390,58 @@ impl MeshTopology {
                 location: snafu::location!(),
             })?;
 
+        // WHY: never truncate silently  -  a restore that dropped half the mesh
+        // without saying so reads as a small mesh rather than a bad snapshot.
+        if snapshot.nodes.len() > MAX_SNAPSHOT_NODES {
+            tracing::warn!(
+                present = snapshot.nodes.len(),
+                cap = MAX_SNAPSHOT_NODES,
+                "topology snapshot exceeds node cap; restoring a prefix"
+            );
+        }
+        if snapshot.links.len() > MAX_SNAPSHOT_LINKS {
+            tracing::warn!(
+                present = snapshot.links.len(),
+                cap = MAX_SNAPSHOT_LINKS,
+                "topology snapshot exceeds link cap; restoring a prefix"
+            );
+        }
+
         let mut topo = Self::new();
-        for node in &snapshot.nodes {
+        for node in snapshot.nodes.iter().take(MAX_SNAPSHOT_NODES) {
             topo.add_node(*node);
         }
-        for link in &snapshot.links {
+        for link in snapshot.links.iter().take(MAX_SNAPSHOT_LINKS) {
             let from_idx = topo.add_node(link.from);
             let to_idx = topo.add_node(link.to);
-            topo.graph.add_edge(
-                from_idx,
-                to_idx,
-                LinkQuality {
-                    snr: link.snr,
-                    last_observed: Instant::now(),
-                    packet_count: link.packet_count,
-                },
-            );
+
+            // WHY: `update_link` keeps at most one edge per ordered pair, and
+            // `to_bytes` re-emits whatever edges exist. Restoring with a bare
+            // `add_edge` admits parallel edges the live path can never create,
+            // and each save/load cycle multiplies them. Fold instead: the last
+            // observation wins, and the counts add.
+            let existing = topo
+                .graph
+                .edges_connecting(from_idx, to_idx)
+                .next()
+                .map(|e| e.id());
+
+            if let Some(edge_id) = existing {
+                if let Some(weight) = topo.graph.edge_weight_mut(edge_id) {
+                    weight.snr = link.snr;
+                    weight.packet_count = weight.packet_count.saturating_add(link.packet_count);
+                }
+            } else {
+                topo.graph.add_edge(
+                    from_idx,
+                    to_idx,
+                    LinkQuality {
+                        snr: link.snr,
+                        last_observed: Instant::now(),
+                        packet_count: link.packet_count,
+                    },
+                );
+            }
         }
         Ok(topo)
     }
@@ -696,6 +747,80 @@ mod tests {
                 .unwrap()
                 .len(),
             2
+        );
+    }
+
+    // ── akroasis#229: snapshot restore must dedup and stay bounded ────────
+
+    fn link(from: u32, to: u32, snr: f32, packet_count: u32) -> LinkSnapshot {
+        LinkSnapshot {
+            from: n(from),
+            to: n(to),
+            snr,
+            packet_count,
+        }
+    }
+
+    #[test]
+    fn load_from_bytes_folds_repeated_link_pairs() {
+        // WHY: `update_link` keeps at most one edge per ordered pair, so a
+        // restore that admits parallel edges produces a graph the live path
+        // could never reach  -  and `to_bytes` re-emits them, compounding.
+        let snapshot = TopologySnapshot {
+            nodes: vec![n(1), n(2)],
+            links: vec![link(1, 2, 5.0, 3), link(1, 2, 7.5, 4)],
+        };
+        let bytes = serde_json::to_vec(&snapshot).unwrap();
+
+        let topo = MeshTopology::load_from_bytes(&bytes).unwrap();
+
+        assert_eq!(topo.edge_count(), 1, "repeated pair must fold to one edge");
+        let neighbors = topo.neighbors(n(1));
+        assert_eq!(neighbors.len(), 1);
+        let (peer, quality) = &neighbors[0];
+        assert_eq!(*peer, n(2));
+        assert!(
+            (quality.snr - 7.5).abs() < f32::EPSILON,
+            "last observation should win, got {}",
+            quality.snr
+        );
+        assert_eq!(quality.packet_count, 7, "counts should add");
+    }
+
+    #[test]
+    fn load_from_bytes_round_trips_without_multiplying_edges() {
+        // WHY: the compounding case  -  save/load/save must be a fixed point.
+        let mut topo = MeshTopology::new();
+        topo.update_link(n(1), n(2), 5.0);
+        topo.update_link(n(2), n(3), 6.0);
+
+        let once = MeshTopology::load_from_bytes(&topo.save_to_bytes().unwrap()).unwrap();
+        let twice = MeshTopology::load_from_bytes(&once.save_to_bytes().unwrap()).unwrap();
+
+        assert_eq!(once.edge_count(), 2);
+        assert_eq!(twice.edge_count(), 2, "reload must not multiply edges");
+    }
+
+    #[test]
+    fn load_from_bytes_caps_nodes_and_links() {
+        let over = MAX_SNAPSHOT_NODES + 10;
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "test-only: indices are far below u32::MAX"
+        )]
+        let nodes: Vec<NodeNum> = (0..over as u32).map(n).collect();
+        let snapshot = TopologySnapshot {
+            nodes,
+            links: Vec::new(),
+        };
+        let bytes = serde_json::to_vec(&snapshot).unwrap();
+
+        let topo = MeshTopology::load_from_bytes(&bytes).unwrap();
+
+        assert_eq!(
+            topo.node_count(),
+            MAX_SNAPSHOT_NODES,
+            "restore must stop at the node cap"
         );
     }
 }

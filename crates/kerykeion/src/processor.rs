@@ -137,9 +137,15 @@ impl PacketProcessor {
             }
         }
 
-        // WHY: emit GeoSignals for each produced event.
+        // WHY: an event names its own subject, which is not always the packet
+        // sender. NEIGHBORINFO reports carry a reporter id from the payload, so
+        // locating every signal at `from` puts a relayed report at the relay
+        // rather than at the node the report is about.
         for event in &events {
-            let position = self.node_db.get(from).and_then(|n| n.position.as_ref());
+            let position = event
+                .subject()
+                .and_then(|subject| self.node_db.get(subject))
+                .and_then(|n| n.position.as_ref());
             let signal = mesh_event_to_signal(event, position);
             // WHY: broadcast send errors mean no receivers are listening; not fatal.
             let _ = self.tx.send(signal);
@@ -205,11 +211,23 @@ impl PacketProcessor {
             }
         };
 
+        // WHY: hw_model is an i32 on the wire. Collapsing an out-of-range value
+        // to 0 makes a malformed report indistinguishable from UNSET, which is
+        // also what a radio that never declared its model reports.
+        let hw_model = u32::try_from(user_proto.hw_model).unwrap_or_else(|_| {
+            tracing::warn!(
+                from = from.0,
+                hw_model = user_proto.hw_model,
+                "NODEINFO hw_model out of range; recording as UNSET"
+            );
+            0
+        });
+
         let user = UserInfo {
             id: user_proto.id,
             long_name: user_proto.long_name,
             short_name: user_proto.short_name.clone(),
-            hw_model: u32::try_from(user_proto.hw_model).unwrap_or(0),
+            hw_model,
             is_licensed: user_proto.is_licensed,
         };
 
