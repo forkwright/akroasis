@@ -5,6 +5,29 @@
 //! serial interaction is abstracted behind the [`SerialPort`] trait
 //! for testability.
 
+// WHY: every item in this module (the `SerialPort` trait, the
+// `auto_detect`/`try_magic` handshake, and the `VariantIdentification`
+// error variant they construct) is a complete, correctly-implemented
+// capability with zero production callers — nothing outside this module's
+// own `#[cfg(test)]` block ever opens a live port and drives it. That is
+// one coherent unwired cluster, not five unrelated oversights, so it gets
+// one module-level marker rather than five copies of the same reason.
+// `not(test)` scopes the suppression to non-test builds only: under
+// `#[cfg(test)]` the mock-backed test module is the real caller and the
+// lint does not fire there, so an unconditional `expect` would go
+// unfulfilled under `cargo test`/`cargo nextest`.
+// Tracked, not merely asserted: akroasis#264.
+#![cfg_attr(
+    not(test),
+    expect(
+        dead_code,
+        reason = "baofeng serial auto-detect path (SerialPort trait, \
+                   auto_detect/try_magic handshake, VariantIdentification \
+                   error variant) — implemented but has zero production \
+                   callers; tracked in akroasis#264"
+    )
+)]
+
 use snafu::Snafu;
 
 use super::constants::{ACK, CMD_IDENT};
