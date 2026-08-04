@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use crate::types::{NodeIdStr, NodeNum};
 
 /// In-memory store of all mesh nodes seen during a session.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct NodeDb {
     nodes: HashMap<NodeNum, MeshNode>,
     my_node: Option<NodeNum>,
