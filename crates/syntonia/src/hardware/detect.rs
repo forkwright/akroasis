@@ -26,6 +26,7 @@ pub struct VariantConfig {
 }
 
 /// Radio identification response FROM the auto-detect probe.
+// WHY: pure data — a raw identification response with no derived invariant.
 #[derive(Debug, Clone)]
 pub struct RadioIdent {
     /// Firmware version string.
@@ -35,6 +36,7 @@ pub struct RadioIdent {
 }
 
 /// A detected radio with its cable and identification info.
+// WHY: pure data — a detection result bag with no derived invariant.
 #[derive(Debug, Clone)]
 pub struct DetectedRadio {
     /// USB cable connecting the radio.
@@ -163,8 +165,8 @@ pub trait RadioProber {
 /// Default prober that opens real serial ports.
 struct DefaultProber;
 
-impl RadioProber for DefaultProber {
-    // kanon:ignore ARCHITECTURE/trait-impl-colocation -- RadioProber trait exists for testability; DefaultProber is the production path
+#[rustfmt::skip]
+impl RadioProber for DefaultProber { // kanon:ignore ARCHITECTURE/trait-impl-colocation -- RadioProber trait exists for testability; DefaultProber is the production path
     fn probe(&self, port_path: &str) -> Result<Option<(VariantConfig, RadioIdent)>, DetectError> {
         let mut port = serialport::new(port_path, BAUD_RATE)
             .timeout(PROBE_TIMEOUT)
@@ -238,7 +240,12 @@ fn try_magic_sequence(
     let mut ident_buf = [0u8; IDENT_LENGTH];
     port.read_exact(&mut ident_buf)?;
 
-    let _ = port.write_all(&[ACK]);
+    // WHY: the ident bytes are already read at this point, so a failure to
+    // write the closing ACK does not invalidate the identification — log it
+    // rather than failing a handshake that otherwise succeeded.
+    if let Err(error) = port.write_all(&[ACK]) {
+        tracing::debug!(%error, "failed to write closing ACK after ident read");
+    }
 
     let Some(variant) = (seq.parse)(&ident_buf) else {
         return Ok(None);
@@ -353,7 +360,7 @@ fn find_cable_for_port(port_path: &str) -> Result<UsbCable, DetectError> {
 // ── Tests ────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
-#[allow(
+#[expect(
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::indexing_slicing,
