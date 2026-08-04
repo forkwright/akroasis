@@ -55,6 +55,7 @@ pub(crate) fn quantize(coords: &Coordinates, resolution: u32) -> GridCell {
 // ---------------------------------------------------------------------------
 
 /// A single signal observation placed in a grid cell.
+// WHY: pure data — an observation record with no derived invariant.
 #[derive(Debug, Clone)]
 pub struct DomainHit {
     /// The top-level signal domain discriminant.
@@ -69,6 +70,7 @@ pub struct DomainHit {
 
 /// A cell that accumulated observations from `>= min_domains` distinct signal
 /// domains within the configured time window.
+// WHY: pure data — a detection result bag with no derived invariant.
 #[derive(Debug, Clone)]
 pub struct Convergence {
     /// Approximate centre coordinates of the convergence cell.
