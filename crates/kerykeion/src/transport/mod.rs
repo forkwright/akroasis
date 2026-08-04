@@ -7,6 +7,8 @@
 pub mod serial;
 pub mod tcp;
 
+use tracing::instrument;
+
 use self::serial::SerialTransport;
 use self::tcp::TcpTransport;
 use crate::Error;
@@ -14,7 +16,6 @@ use crate::config::{ConnectionConfig, TransportConfig};
 use crate::connection::MeshConnection;
 use crate::error::BleConnectSnafu;
 use crate::proto::{FromRadio, ToRadio};
-use tracing::instrument;
 
 /// A concrete, enum-dispatched connection to a Meshtastic radio.
 ///

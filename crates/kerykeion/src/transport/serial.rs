@@ -82,9 +82,15 @@ fn open_serial_stream(port: &str, baud: u32) -> Result<SerialStream, Error> {
         })?;
 
     // WHY: Meshtastic firmware does not use hardware handshake lines; asserting
-    // DTR/RTS causes some devices to reboot on connect.
-    let _ = stream.write_data_terminal_ready(false);
-    let _ = stream.write_request_to_send(false);
+    // DTR/RTS causes some devices to reboot on connect. Clearing them is
+    // best-effort — some backends/port types don't support the control lines
+    // at all, so a failure here is informational, not fatal to the connection.
+    if let Err(error) = stream.write_data_terminal_ready(false) {
+        tracing::debug!(%error, "failed to clear DTR on serial port");
+    }
+    if let Err(error) = stream.write_request_to_send(false) {
+        tracing::debug!(%error, "failed to clear RTS on serial port");
+    }
 
     Ok(stream)
 }
