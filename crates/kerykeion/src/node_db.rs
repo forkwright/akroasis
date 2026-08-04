@@ -1,11 +1,12 @@
 //! In-memory database of known mesh nodes.
 
 use std::collections::HashMap;
+use std::time::Duration;
 
 use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 
-use crate::types::NodeNum;
+use crate::types::{NodeIdStr, NodeNum};
 
 /// In-memory store of all mesh nodes seen during a session.
 #[derive(Debug, Default)]
@@ -33,11 +34,30 @@ pub struct MeshNode {
     pub hop_count: Option<u8>,
 }
 
+impl MeshNode {
+    /// Time elapsed since this node was last heard from, as of `now`.
+    ///
+    /// Returns `None` if the node has never sent a packet.
+    #[must_use]
+    pub fn elapsed_since_heard(&self, now: Timestamp) -> Option<Duration> {
+        let last_heard = self.last_heard?;
+        let elapsed_ms = now
+            .as_millisecond()
+            .saturating_sub(last_heard.as_millisecond());
+        #[expect(
+            clippy::cast_sign_loss,
+            reason = "elapsed_ms is always non-negative since now >= last_heard"
+        )]
+        let elapsed = Duration::from_millis(elapsed_ms as u64); // SAFETY: last_heard is always <= now for any node reachable via NodeDb iteration
+        Some(elapsed)
+    }
+}
+
 /// User profile information for a mesh node.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserInfo {
     /// Short unique node ID string (e.g. `!deadbeef`).
-    pub id: String,
+    pub id: NodeIdStr,
     /// Long display name.
     pub long_name: String,
     /// Short display name (up to 4 characters).

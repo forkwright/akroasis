@@ -86,14 +86,14 @@ pub use store_forward::{StoreForward, StoredMessage};
 pub use topology::{LinkQuality, MeshTopology, TopologySnapshot};
 pub use types::{
     BROADCAST_ADDR, ChannelIndex, FRAME_MAGIC, MAX_CHANNELS, MAX_HOP_LIMIT, MAX_PACKET_SIZE,
-    NodeNum, PacketId,
+    MeshChannelId, NodeIdStr, NodeNum, PacketId,
 };
 
 #[cfg(test)]
 mod tests {
     use prost::Message as _;
 
-    use crate::proto::{Data, FromRadio, MeshPacket, ToRadio, from_radio, mesh_packet, to_radio};
+    use super::proto::{Data, FromRadio, MeshPacket, ToRadio, from_radio, mesh_packet, to_radio};
 
     fn make_mesh_packet() -> MeshPacket {
         MeshPacket {

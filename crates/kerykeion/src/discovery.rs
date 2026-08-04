@@ -179,15 +179,7 @@ async fn run_stale_detection(
         .node_db()
         .iter()
         .filter_map(|(&num, node)| {
-            let last_heard = node.last_heard?;
-            let elapsed_ms = now
-                .as_millisecond()
-                .saturating_sub(last_heard.as_millisecond());
-            #[expect(
-                clippy::cast_sign_loss,
-                reason = "elapsed_ms is always non-negative since now >= last_heard"
-            )]
-            let elapsed = Duration::from_millis(elapsed_ms as u64); // SAFETY: elapsed_ms comes from Instant::elapsed().as_millis() capped earlier; fits u64
+            let elapsed = node.elapsed_since_heard(now)?;
             let state = classify_node_state(elapsed, stale_timeout);
 
             if state == NodeState::Offline {
@@ -202,7 +194,10 @@ async fn run_stale_detection(
         let event = MeshEvent::NodeOffline { node: *node };
         let position = proc.node_db().get(*node).and_then(|n| n.position.as_ref());
         let signal = mesh_event_to_signal(&event, position);
-        let _ = tx.send(signal);
+        // WHY: broadcast send errors mean no receivers are listening; not fatal.
+        if let Err(error) = tx.send(signal) {
+            tracing::trace!(%error, "no active receiver for node-offline signal");
+        }
     }
 
     // WHY: remove nodes past 3× timeout FROM the active topology. Edges must
@@ -217,7 +212,10 @@ async fn run_stale_detection(
     if components.len() > 1 {
         let event = MeshEvent::PartitionDetected { components };
         let signal = mesh_event_to_signal(&event, None);
-        let _ = tx.send(signal);
+        // WHY: broadcast send errors mean no receivers are listening; not fatal.
+        if let Err(error) = tx.send(signal) {
+            tracing::trace!(%error, "no active receiver for partition-detected signal");
+        }
     }
 }
 

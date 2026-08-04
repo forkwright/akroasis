@@ -148,7 +148,9 @@ impl PacketProcessor {
                 .and_then(|n| n.position.as_ref());
             let signal = mesh_event_to_signal(event, position);
             // WHY: broadcast send errors mean no receivers are listening; not fatal.
-            let _ = self.tx.send(signal);
+            if let Err(error) = self.tx.send(signal) {
+                tracing::trace!(%error, "no active receiver for mesh signal");
+            }
         }
 
         events
@@ -224,7 +226,7 @@ impl PacketProcessor {
         });
 
         let user = UserInfo {
-            id: user_proto.id,
+            id: user_proto.id.into(),
             long_name: user_proto.long_name,
             short_name: user_proto.short_name.clone(),
             hw_model,

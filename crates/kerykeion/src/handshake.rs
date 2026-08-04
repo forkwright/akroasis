@@ -29,6 +29,7 @@ use crate::types::NodeNum;
 // Historical default (10 s) now lives in [`HandshakeConfig::default`].
 
 /// Result of a successful config handshake with the radio.
+// WHY: pure data — a handshake result bag with no derived invariant.
 #[derive(Debug)]
 pub struct HandshakeResult {
     /// Node number of the local radio.
@@ -172,7 +173,7 @@ pub async fn handshake_with_config(
 /// Convert a proto `NodeInfo` INTO a [`MeshNode`] for the in-memory database.
 pub(crate) fn node_info_to_mesh_node(ni: &crate::proto::NodeInfo) -> MeshNode {
     let user = ni.user.as_ref().map(|u| UserInfo {
-        id: u.id.clone(),
+        id: u.id.clone().into(),
         long_name: u.long_name.clone(),
         short_name: u.short_name.clone(),
         // WHY: proto3 stores HardwareModel as i32; VALUES are always ≥ 0.
