@@ -211,6 +211,48 @@ impl MeshCollector {
         drop(guard);
     }
 
+    /// Dispatches a decoded `FromRadio` message to the `PacketProcessor`.
+    ///
+    /// Mesh packets are routed to [`PacketProcessor::process_mesh_packet`] for
+    /// topology + `GeoSignal` emission. Top-level `NodeInfo` frames never pass
+    /// through that decode path (`process_mesh_packet` only sees `NODEINFO_APP`
+    /// payloads carried inside a `MeshPacket`), so they are mirrored directly
+    /// into the processor's `NodeDb` here  -  otherwise a node learned only via
+    /// a runtime `NodeInfo` frame stays invisible to the processor (#198).
+    async fn dispatch_to_processor(
+        &self,
+        from_radio: &FromRadio,
+        processor: &Arc<Mutex<PacketProcessor>>,
+    ) {
+        match &from_radio.payload_variant {
+            Some(from_radio::PayloadVariant::Packet(pkt)) => {
+                processor.lock().await.process_mesh_packet(pkt);
+                // Inbound ACK/NAK: update the delivery tracker + outbound queue.
+                self.dispatch_routing(pkt).await;
+            }
+            Some(from_radio::PayloadVariant::NodeInfo(node_info)) => {
+                let mesh_node = crate::handshake::node_info_to_mesh_node(node_info);
+                processor.lock().await.node_db_mut().insert(mesh_node);
+            }
+            _ => {} // WHY: every other variant is already logged by `process_packet`, which runs unconditionally before this call — nothing else concerns the processor.
+        }
+    }
+
+    /// Builds the `PacketProcessor`, seeded with every node already known to
+    /// the collector (typically handshake-discovered nodes) so the processor
+    /// does not start blind to nodes learned before its construction (#198).
+    async fn make_processor(
+        &self,
+        tx: broadcast::Sender<GeoSignal>,
+    ) -> Arc<Mutex<PacketProcessor>> {
+        let seeded = self.node_db.lock().await.clone();
+        Arc::new(Mutex::new(PacketProcessor::new(
+            seeded,
+            MeshTopology::new(),
+            tx,
+        )))
+    }
+
     /// Connects to all configured transports and performs handshakes.
     ///
     /// # Errors
@@ -407,12 +449,10 @@ impl Collector for MeshCollector { // kanon:ignore ARCHITECTURE/trait-impl-coloc
             return Ok(());
         }
 
-        // 3. Create packet processor (owns topology graph, emits GeoSignals).
-        let processor = Arc::new(Mutex::new(PacketProcessor::new(
-            NodeDb::new(),
-            MeshTopology::new(),
-            tx.clone(),
-        )));
+        // 3. Create packet processor (owns topology graph, emits GeoSignals),
+        // seeded with every node the handshake already discovered so it does
+        // not start blind to nodes learned before this point (#198).
+        let processor = self.make_processor(tx.clone()).await;
 
         // 4–7. Start heartbeat, gateway health, discovery, and router tasks.
         let mut tasks: JoinSet<Result<(), Error>> = JoinSet::new();
@@ -443,13 +483,7 @@ impl Collector for MeshCollector { // kanon:ignore ARCHITECTURE/trait-impl-coloc
                             // Update node_db for CLI display.
                             self.process_packet(&from_radio).await;
                             // Dispatch to PacketProcessor for topology + GeoSignal emission.
-                            if let Some(from_radio::PayloadVariant::Packet(pkt)) =
-                                &from_radio.payload_variant
-                            {
-                                processor.lock().await.process_mesh_packet(pkt);
-                                // Inbound ACK/NAK: update the delivery tracker + outbound queue.
-                                self.dispatch_routing(pkt).await;
-                            }
+                            self.dispatch_to_processor(&from_radio, &processor).await;
                         }
                         Err(e) => {
                             tracing::warn!(error = %e, "receive error");

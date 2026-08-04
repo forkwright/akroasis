@@ -140,6 +140,62 @@ async fn process_empty_payload_is_noop() {
     );
 }
 
+// WHY (#198): `PacketProcessor` owns topology + GeoSignal emission and must
+// see every node the collector knows about, including ones learned only via
+// a runtime `NodeInfo` frame with no subsequent mesh packet.
+
+#[tokio::test]
+async fn dispatch_to_processor_routes_runtime_nodeinfo_to_processor_node_db() {
+    let c = MeshCollector::new(make_config(vec![]));
+    let processor = c.make_processor(make_tx()).await;
+
+    let from_radio = FromRadio {
+        id: 9,
+        payload_variant: Some(from_radio::PayloadVariant::NodeInfo(
+            crate::proto::NodeInfo {
+                num: 0xC0FF_EE,
+                ..Default::default()
+            },
+        )),
+    };
+
+    c.dispatch_to_processor(&from_radio, &processor).await;
+
+    let guard = processor.lock().await;
+    assert!(
+        guard
+            .node_db()
+            .get(crate::types::NodeNum(0xC0FF_EE))
+            .is_some(),
+        "node learned only via a runtime NodeInfo frame must reach the processor's NodeDb"
+    );
+}
+
+#[tokio::test]
+async fn make_processor_is_seeded_with_nodes_already_known_to_the_collector() {
+    let c = MeshCollector::new(make_config(vec![]));
+
+    // Simulate a handshake-discovered node landing in the collector's
+    // NodeDb before the processor is constructed.
+    c.node_db().lock().await.insert(crate::node_db::MeshNode {
+        num: crate::types::NodeNum(0xFEED),
+        user: None,
+        position: None,
+        metrics: None,
+        last_heard: None,
+        snr: None,
+        hop_count: None,
+    });
+
+    let processor = c.make_processor(make_tx()).await;
+
+    let guard = processor.lock().await;
+    assert!(
+        guard.node_db().get(crate::types::NodeNum(0xFEED)).is_some(),
+        "processor must be seeded with nodes the collector already knew about"
+    );
+}
+
 #[test]
 fn compute_hop_count_valid() {
     assert_eq!(MeshCollector::compute_hop_count(3, 1), Some(2));
