@@ -21,7 +21,7 @@ runtime data. It is not an implementation of #132.
   produced in memory and forwarded through the collector/processor path.
 
 Because of that shape, wrapping the vault in a generic column codec now would
-mostly add indirection around an already-specific and working encryption path.
+add indirection around an already-specific and working encryption path.
 
 ## Target Shape
 

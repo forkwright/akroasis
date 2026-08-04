@@ -1,3 +1,9 @@
+<!--
+scope: akroasis repo conventions for cross-tool coding agents (hand-authored complement to the generated kanon block below)
+defers_to: CLAUDE.md for Claude Code-specific behavior; ~/.claude/CLAUDE.md for operator principles
+tightens: none
+-->
+
 # akroasis
 
 Communications sovereignty and RF intelligence platform. Rust workspace, single binary, grid-down capable.
@@ -66,7 +72,7 @@ build, test, and lint commands from this repository root.
 - `kanon docs sync --apply --repo akroasis` - regenerate derived bootstrap docs
 
 For agent-native operations, prefer the `mcp__kanon__*` tool family. See
-[workflow/AGENTS-mcp-tools.md](workflow/AGENTS-mcp-tools.md) for routing and fallback rules.
+`workflow/AGENTS-mcp-tools.md` in the canonical kanon repo for routing and fallback rules.
 
 ## Standards
 
