@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.21](https://github.com/forkwright/akroasis/compare/v0.1.20...v0.1.21) (2026-08-04)
+
+
+### Bug Fixes
+
+* **lint:** burn down the kanon-lint baseline — 104 entries down to 25 ([#358](https://github.com/forkwright/akroasis/issues/358)) ([7004d73](https://github.com/forkwright/akroasis/commit/7004d734aba92ce404f003f2deca6885b9525f84))
+
 ## [0.1.20](https://github.com/forkwright/akroasis/compare/v0.1.19...v0.1.20) (2026-08-04)
 
 
