@@ -18,7 +18,7 @@ pub const CHANNEL_COUNT: u16 = 900;
 
 /// EEPROM image size in bytes (estimated from CHIRP source).
 ///
-/// TODO(#80): verify against actual ADMS-14 traffic capture.
+/// TODO(#80)[deliberate-prudent]: verify against actual ADMS-14 traffic capture.
 pub const IMAGE_SIZE: usize = 65_536;
 
 /// Radio constraints for the FTM-510DR.

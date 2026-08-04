@@ -32,6 +32,7 @@ pub enum Error {
 // ---------------------------------------------------------------------------
 
 /// A [`GeoSignal`] annotated with the anomaly score from baseline comparison.
+// WHY: pure data — a pipeline data carrier with no derived invariant.
 #[derive(Debug, Clone)]
 pub struct AggregatedSignal {
     /// The original signal event.

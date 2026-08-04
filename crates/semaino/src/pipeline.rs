@@ -137,8 +137,10 @@ impl SemainoPipeline {
                 loop {
                     match rx.recv().await {
                         Ok(signal) => {
-                            // Fan to aggregator (ignore send error — aggregator exited).
-                            let _ = inner_tx.send(signal.clone());
+                            // Fan to aggregator (send error means the aggregator exited).
+                            if let Err(error) = inner_tx.send(signal.clone()) {
+                                tracing::trace!(%error, "aggregator channel closed, dropping fanned signal");
+                            }
                             // Fan to grid channel (ignore send error — pipeline exited).
                             if signal_tx.send(signal).await.is_err() {
                                 break;

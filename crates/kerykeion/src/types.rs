@@ -19,6 +19,48 @@ pub struct PacketId(pub u32);
 #[serde(try_from = "u8", into = "u8")]
 pub struct ChannelIndex(pub u8);
 
+/// Meshtastic node ID as a hex string (e.g. `!deadbeef`), before parsing
+/// into a [`NodeNum`]. Kept distinct from `NodeNum` because Meshtastic
+/// sometimes reports IDs that are not valid hex node strings.
+///
+/// `#[serde(transparent)]` keeps the wire representation a bare string,
+/// matching the pre-newtype `String` field it replaces.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct NodeIdStr(pub String);
+
+/// Meshtastic channel name (e.g. `LongFast`), as reported in MQTT envelopes.
+///
+/// `#[serde(transparent)]` keeps the wire representation a bare string,
+/// matching the pre-newtype `String` field it replaces.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct MeshChannelId(pub String);
+
+impl From<String> for NodeIdStr {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+
+impl From<&str> for NodeIdStr {
+    fn from(value: &str) -> Self {
+        Self(value.to_string())
+    }
+}
+
+impl From<String> for MeshChannelId {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+
+impl From<&str> for MeshChannelId {
+    fn from(value: &str) -> Self {
+        Self(value.to_string())
+    }
+}
+
 impl TryFrom<u8> for ChannelIndex {
     type Error = crate::error::Error;
 
@@ -78,6 +120,18 @@ impl fmt::Display for PacketId {
 }
 
 impl fmt::Display for ChannelIndex {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl fmt::Display for NodeIdStr {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl fmt::Display for MeshChannelId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
     }

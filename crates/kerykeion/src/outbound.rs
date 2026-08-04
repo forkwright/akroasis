@@ -35,6 +35,14 @@ pub struct PendingMessage {
     pub retries: u8,
 }
 
+impl PendingMessage {
+    /// Whether this message has exceeded its TTL as of `now`.
+    #[must_use]
+    pub fn is_expired(&self, now: Instant) -> bool {
+        now.duration_since(self.created) >= self.ttl
+    }
+}
+
 /// A message that has been sent and is awaiting ACK.
 #[derive(Debug)]
 pub struct InflightMessage {
@@ -53,6 +61,20 @@ pub struct InflightMessage {
     pub max_retries: u8,
     /// Duration to wait for ACK before timeout.
     pub ack_timeout: Duration,
+}
+
+impl InflightMessage {
+    /// Whether this message has exceeded its TTL as of `now`.
+    #[must_use]
+    pub fn is_expired(&self, now: Instant) -> bool {
+        now.duration_since(self.created) >= self.ttl
+    }
+
+    /// Whether this message has exceeded its ACK timeout as of `now`.
+    #[must_use]
+    pub fn has_timed_out(&self, now: Instant) -> bool {
+        now.duration_since(self.sent_at) >= self.ack_timeout
+    }
 }
 
 /// Manages outbound message flow with priority ordering and inflight tracking.
@@ -124,7 +146,7 @@ impl OutboundQueue {
 
         let now = Instant::now();
         while let Some(front) = self.pending.front() {
-            if now.duration_since(front.created) >= front.ttl {
+            if front.is_expired(now) {
                 // Expired  -  discard.
                 self.pending.pop_front();
                 continue;
@@ -192,7 +214,7 @@ impl OutboundQueue {
         let now = Instant::now();
         self.inflight
             .iter()
-            .filter(|(_, msg)| now.duration_since(msg.sent_at) >= msg.ack_timeout)
+            .filter(|(_, msg)| msg.has_timed_out(now))
             .map(|(id, _)| *id)
             .collect()
     }
@@ -226,10 +248,8 @@ impl OutboundQueue {
     /// Remove messages past TTL FROM both pending and inflight.
     pub fn drain_expired(&mut self) {
         let now = Instant::now();
-        self.pending
-            .retain(|msg| now.duration_since(msg.created) < msg.ttl);
-        self.inflight
-            .retain(|_, msg| now.duration_since(msg.created) < msg.ttl);
+        self.pending.retain(|msg| !msg.is_expired(now));
+        self.inflight.retain(|_, msg| !msg.is_expired(now));
     }
 
     /// Number of messages waiting to be sent.

@@ -1,7 +1,13 @@
 [baseline]
-created = "2026-07-16"
-remove_after = "2026-08-13"
-reason = "akroasis#261 lint-debt burn-down — errors first (vault plain-string-secret, kerykeion crypto indexing); entries deleted as each family clears; expiry enforces completion (expired non-empty baseline fails the gate). Extended for WORKFLOW/unwired-dead-code-untracked (akroasis#264/#267, dead-code rule postdates the original #261 sweep) and VOCAB/crate-name-collision (akroasis#264, fleet hub-words naming decision) so gate-attestation is earnable on any branch while those land."
+created = "2026-08-03"
+remove_after = "2026-11-01"
+reason = "akroasis#261 lint-debt burn-down — errors first (vault plain-string-secret, kerykeion crypto indexing), both resolved. Remaining entries are deliberate exceptions, not deferred mechanical work: RUST/no-arc-mutex-anti-pattern (kerykeion/collector.rs) already uses tokio::sync::Mutex — the rule's own recommended async-safe primitive; converting further to RwLock needs a per-callsite read/write classification across 5 files, an architecture change outside a lint-driven edit. VOCAB/crate-name-collision + NAMING/no-fleet-collision (koinon) are a cross-repo naming call deferred to a fleet naming decision (akroasis#264). NAMING/no-owner-prefix (akroasis-server) needs a GNOMON-reviewed rename, an identity decision outside a mechanical fix. ARCH/substrate-dead-dep (sphragis) is a deliberately staged dependency awaiting the pinax reference-store integration and a cryptographic review (akroasis#172). TOML/missing-trailing-comma (.gitleaks.toml), RUST/doc-promised-observability (delivery.rs), CI/release-yml-missing-attestation (release-please.yml builds no artifacts to attest — release.yml already attests), and RUST/plain-string-secret (ListEntryReport.credential_type, a JSON category label not a secret) are confirmed lint-rule false positives. Entries clear only when the rule is fixed upstream or the cited decision resolves."
+
+[[baseline.entry]]
+rule = "ARCH/substrate-dead-dep"
+file = "Cargo.toml"
+line = 1
+hash = "59bc0a0f46c351ca788a518854b298adb512865e8c940bc63665cae98879b4f8"
 
 [[baseline.entry]]
 rule = "CI/release-yml-missing-attestation"
@@ -10,82 +16,10 @@ line = 1
 hash = "b525087c2878d94b7bcb773fc6795d4e90b36c64bb32ad2ec421a37935890fb1"
 
 [[baseline.entry]]
-rule = "TOML/missing-trailing-comma"
-file = ".gitleaks.toml"
-line = 40
-hash = "725011530d3abd84a570798b9d272d44d36de3c2a2fac6d6b2e0eda8aeba371b"
-
-[[baseline.entry]]
-rule = "CONTEXT/preamble-required"
-file = "AGENTS.md"
+rule = "NAMING/no-fleet-collision"
+file = "crates/koinon/Cargo.toml"
 line = 1
-hash = "d6c6de7896975f22e5f97d6bf55cb4655039d229c52e088100f6d8a03afb79da"
-
-[[baseline.entry]]
-rule = "TESTING/no-tests"
-file = "crates/akroasis/src/lib.rs"
-line = 1
-hash = "47086693071e4f1a9db9a32d219cefeb23f6737c569c3639123303b3bc0e551d"
-
-[[baseline.entry]]
-rule = "RUST/import-order"
-file = "crates/akroasis/src/mesh/mod.rs"
-line = 385
-hash = "5b54f313105239b61375bef02b418e356eb8085e75be84bd9e7a0a4b462f57d0"
-
-[[baseline.entry]]
-rule = "RUST/non-exhaustive-enum"
-file = "crates/akroasis/src/radio/import.rs"
-line = 29
-hash = "bbf2dc4b6d71202dd426a6e20a8b382d6508708c7dae169f929d6b489c61c313"
-
-[[baseline.entry]]
-rule = "RUST/non-exhaustive-enum"
-file = "crates/akroasis/src/radio/mod.rs"
-line = 23
-hash = "d47998f8bcefc657af832db9881164ea3baa207b648ccc1ebd08a3c256620665"
-
-[[baseline.entry]]
-rule = "RUST/non-exhaustive-enum"
-file = "crates/akroasis/src/radio/mod.rs"
-line = 85
-hash = "a028142e5cd9c0f19673d16b996f11b89d8836a593c65232371a6298500b17e1"
-
-[[baseline.entry]]
-rule = "RUST/non-exhaustive-enum"
-file = "crates/akroasis/src/radio/mod.rs"
-line = 116
-hash = "1e39c08c59461ac3d28322fe2b8046c30d260e5ce2c19c417686dff744bb6d33"
-
-[[baseline.entry]]
-rule = "TOPOLOGY/shallow-struct"
-file = "crates/akroasis/src/radio/mod.rs"
-line = 158
-hash = "7487358fa292ef927ecee876f17511d618055f1996189ef3a3f8b77682ff36f4"
-
-[[baseline.entry]]
-rule = "ARCHITECTURE/trait-impl-colocation"
-file = "crates/akroasis/src/radio/mod.rs"
-line = 233
-hash = "2274fe9e5edf207e194b67d41e75430d09100cc97d03f63d9bcab8e9a53961d6"
-
-[[baseline.entry]]
-rule = "RUST/unreachable-in-match"
-file = "crates/akroasis/src/radio/mod.rs"
-line = 274
-hash = "c5620a6e1be15dc30789e24b9d828bae9426991232af028213a7c6bb4fca02da"
-
-[[baseline.entry]]
-rule = "RUST/non-exhaustive-enum"
-file = "crates/akroasis/src/vault/mod.rs"
-line = 26
-hash = "660431f0990e53029cb1b3bb0fc47cc456b622d4fbef0b18278947eb810ded15"
-
-[[baseline.entry]]
-rule = "RUST/non-exhaustive-enum"
-file = "crates/akroasis/src/vault/mod.rs"
-line = 75
-hash = "004cb692ae2d8e57506bb7f28c076a28a9b78d7ed9454fbb724852f81a1c8a92"
+hash = "70acf00586aa7b90c3866278505be7b81fb7ee1f7e21c17c1a22ac239be3c72a"
 
 [[baseline.entry]]
 rule = "NAMING/no-owner-prefix"
@@ -94,16 +28,10 @@ line = 1
 hash = "70acf00586aa7b90c3866278505be7b81fb7ee1f7e21c17c1a22ac239be3c72a"
 
 [[baseline.entry]]
-rule = "TESTING/no-tests"
-file = "crates/akroasis-server/src/lib.rs"
-line = 1
-hash = "a529bce94bd386f6470a75ecc35333d89834ae7a3dcfaf4c6ee950cce50bad98"
-
-[[baseline.entry]]
 rule = "RUST/doc-promised-observability"
-file = "crates/kerykeion/src/bridge.rs"
-line = 216
-hash = "c09a96434169a8ae9108ffc46f642e53d544223cb91a2f3440d65e6eab6bd29a"
+file = "crates/kerykeion/src/delivery.rs"
+line = 217
+hash = "607ca7f986a30d706ae8ae0d5c8f1bfbbe66013fd0119d390d78aa6162a02d40"
 
 [[baseline.entry]]
 rule = "RUST/no-arc-mutex-anti-pattern"
@@ -162,468 +90,65 @@ hash = "6a06b74f070ed7106dd94ee3413828f8c7a171437a3338fa22527aa88886f164"
 [[baseline.entry]]
 rule = "RUST/no-arc-mutex-anti-pattern"
 file = "crates/kerykeion/src/collector.rs"
-line = 218
+line = 220
 hash = "6c4fbdc699709e234c39f0621e36131eabe6268dee8700e65bd8765a1c0b02a6"
 
 [[baseline.entry]]
 rule = "RUST/no-arc-mutex-anti-pattern"
 file = "crates/kerykeion/src/collector.rs"
-line = 232
+line = 234
 hash = "9e8262782b39ce943612317d40851d93d1040432f2479d2201dcd2b84c9db818"
 
 [[baseline.entry]]
 rule = "RUST/no-arc-mutex-anti-pattern"
 file = "crates/kerykeion/src/collector.rs"
-line = 245
+line = 259
 hash = "6126ff9755ca718aded3f0a24e05cadaf317d3edad98f9aedbd00c123b19319a"
 
 [[baseline.entry]]
 rule = "RUST/no-arc-mutex-anti-pattern"
 file = "crates/kerykeion/src/collector.rs"
-line = 261
+line = 289
 hash = "5e18bdda2077885c5995a7b1e486419e3c37a328e8ccf861cb234288e0420668"
 
 [[baseline.entry]]
 rule = "RUST/no-arc-mutex-anti-pattern"
 file = "crates/kerykeion/src/collector.rs"
-line = 262
+line = 290
 hash = "76da9249c02084d15c951639a9643e705682e786062e46b648768d514edeb97b"
 
 [[baseline.entry]]
 rule = "RUST/no-arc-mutex-anti-pattern"
 file = "crates/kerykeion/src/collector.rs"
-line = 383
+line = 411
 hash = "bf306ffa19e0898259628da1f361f4eb4ae5c88aad26958e332195a046bc5ce6"
 
 [[baseline.entry]]
-rule = "RUST/indexing-slicing"
-file = "crates/kerykeion/src/crypto.rs"
-line = 43
-hash = "307ebc7b35b89760a59160a54499126372b68e897569ee366857562ac7e3025c"
+rule = "RUST/no-arc-mutex-anti-pattern"
+file = "crates/kerykeion/src/collector.rs"
+line = 542
+hash = "fe75cd33cc7a9ea08308572303acddc654b313d47a6c7969553439d2cd8339dd"
 
 [[baseline.entry]]
-rule = "RUST/no-silent-result-swallow"
-file = "crates/kerykeion/src/discovery.rs"
-line = 205
-hash = "9e452f58b6170d285ddf6f7c9446321dd3c65a9ba58cb9d9ff66aafc1a9e8ced"
+rule = "RUST/no-arc-mutex-anti-pattern"
+file = "crates/kerykeion/src/collector.rs"
+line = 543
+hash = "016035fd0887be2ed9c1d41200342155076e945454ac95fbcd579ad42072e79d"
 
 [[baseline.entry]]
-rule = "TOPOLOGY/shallow-struct"
-file = "crates/kerykeion/src/gateway.rs"
-line = 26
-hash = "11f77fc4329f7df36a71622f0909a92005282f47aae8050bda481e2ebb777b80"
-
-[[baseline.entry]]
-rule = "TOPOLOGY/shallow-struct"
-file = "crates/kerykeion/src/handshake.rs"
-line = 33
-hash = "98cb97a400498d30cd70ec9324dd61862e1bcba044762c9d6ba25ff008a3868c"
-
-[[baseline.entry]]
-rule = "RUST/test-missing-use-super"
-file = "crates/kerykeion/src/lib.rs"
-line = 93
-hash = "15095e6982f525afaf069c212cd0973c3d0a4db99a58960b495d2172c790bee0"
-
-[[baseline.entry]]
-rule = "TOPOLOGY/shallow-struct"
-file = "crates/kerykeion/src/mqtt.rs"
-line = 18
-hash = "5487a713071c6288b1a2a61176198016b969cde903312b94ff575e0a2bb23796"
-
-[[baseline.entry]]
-rule = "RUST/primitive-for-domain-id"
-file = "crates/kerykeion/src/mqtt.rs"
-line = 22
-hash = "469194516e531d6f640ab778c5988cac2514ae85c0cbdcbc83829c4b863ef966"
-
-[[baseline.entry]]
-rule = "RUST/primitive-for-domain-id"
-file = "crates/kerykeion/src/mqtt.rs"
-line = 24
-hash = "d6dfe29afd84ce9ac1063aa59cc70216c424be08d3ed56b3d766b28b05835ed1"
-
-[[baseline.entry]]
-rule = "TOPOLOGY/shallow-struct"
-file = "crates/kerykeion/src/mqtt.rs"
-line = 29
-hash = "a04b3aadbc8d64a86fea640b20557f3e255a4ba5a7ea194595c11d0a9c34a670"
-
-[[baseline.entry]]
-rule = "TESTING/tautological-test"
-file = "crates/kerykeion/src/mqtt.rs"
-line = 261
-hash = "aed7ebc1ed72490359ff4b52f3b92e3b67b0e3e922ff8142e8f0d052796d689a"
-
-[[baseline.entry]]
-rule = "TOPOLOGY/shallow-struct"
-file = "crates/kerykeion/src/node_db.rs"
-line = 19
-hash = "ecc87c63ce69f7fad064ff830b2715e03e77cde5ccdf2adc7b9a32468c7d4dfa"
-
-[[baseline.entry]]
-rule = "RUST/primitive-for-domain-id"
-file = "crates/kerykeion/src/node_db.rs"
-line = 40
-hash = "914ca450c19248c590d633739b2fe50c28b57d5c4b58ef3c9084292269bb935c"
-
-[[baseline.entry]]
-rule = "TOPOLOGY/shallow-struct"
-file = "crates/kerykeion/src/outbound.rs"
-line = 25
-hash = "9724a97f4418c40bb414d0783973f91cd804f57b0d396ec96a06c9c44273a04f"
-
-[[baseline.entry]]
-rule = "TOPOLOGY/shallow-struct"
-file = "crates/kerykeion/src/outbound.rs"
-line = 40
-hash = "f28d8457ac1f397d47a7e1db846e1638b130dbf187cd2bb719a689b1110dd5cb"
-
-[[baseline.entry]]
-rule = "RUST/no-silent-result-swallow"
-file = "crates/kerykeion/src/processor.rs"
-line = 145
-hash = "12d8c877131f8e3d806c7b15851366aab2dcee5f079623731a8f08e9761ec603"
-
-[[baseline.entry]]
-rule = "TOPOLOGY/shallow-struct"
-file = "crates/kerykeion/src/topology.rs"
-line = 21
-hash = "58ac07a178793d818497e2038344c4e3a533ad64520f13209fbb46bd2494cb2b"
-
-[[baseline.entry]]
-rule = "RUST/import-order"
-file = "crates/kerykeion/src/transport/mod.rs"
-line = 17
-hash = "c748ba4baeb994b8a2debd5b431ccc64fcea69ec31dd2fd3c5949665516d44c0"
-
-[[baseline.entry]]
-rule = "RUST/no-silent-result-swallow"
-file = "crates/kerykeion/src/transport/serial.rs"
-line = 86
-hash = "5ce82f70d7d59647b30a63ee7b2de37d000ec2444e14be8772db32c07b77e4eb"
-
-[[baseline.entry]]
-rule = "RUST/no-silent-result-swallow"
-file = "crates/kerykeion/src/transport/serial.rs"
-line = 87
-hash = "30388c4f275c5e989b26e991a23eb3e09f75fb1b298e515c1fdf9f2ca73aaeee"
-
-[[baseline.entry]]
-rule = "NAMING/no-fleet-collision"
-file = "crates/koinon/Cargo.toml"
-line = 1
-hash = "70acf00586aa7b90c3866278505be7b81fb7ee1f7e21c17c1a22ac239be3c72a"
-
-[[baseline.entry]]
-rule = "TOPOLOGY/shallow-struct"
-file = "crates/koinon/src/hardware.rs"
-line = 259
-hash = "635566a5376aca1bf92ec855cbe96b69003a02f89b19a6dbdc822d59e580ed34"
-
-[[baseline.entry]]
-rule = "RUST/no-debug-derive-on-public-types"
-file = "crates/koinon/src/tamper_log.rs"
-line = 155
-hash = "50d045131e1a2f659ef9b7d91f23499570d3c0ff047998ea759d704128bf5265"
-
-[[baseline.entry]]
-rule = "RUST/no-result-unwrap-or-default"
-file = "crates/koinon/src/tamper_log.rs"
-line = 293
-hash = "8c45bee0afc5b671fa5c4e4691d11d232504f3a410456c18e3d22e94134777aa"
-
-[[baseline.entry]]
-rule = "TOPOLOGY/shallow-struct"
-file = "crates/koinon/src/tamper_log.rs"
-line = 350
-hash = "3a82e225fc3e3091c19d16433c344bc468c91f63799cc74461cdecc11ca44675"
-
-[[baseline.entry]]
-rule = "RUST/no-result-unwrap-or-default"
-file = "crates/koinon/src/tamper_log.rs"
-line = 404
-hash = "8c45bee0afc5b671fa5c4e4691d11d232504f3a410456c18e3d22e94134777aa"
-
-[[baseline.entry]]
-rule = "RUST/no-silent-result-swallow"
-file = "crates/kryphos/src/key.rs"
-line = 285
-hash = "d1416ac2d86b612a4585758a52e83d66a15450d7f58243b77b7d088f687b2d55"
-
-[[baseline.entry]]
-rule = "RUST/no-debug-derive-on-public-types"
-file = "crates/kryphos/src/storage.rs"
-line = 70
-hash = "3fe1ad211aa8bad42fceb09d5fbdb3d78493b8f18f5116b56985f2ae1c2d1c6b"
-
-[[baseline.entry]]
-rule = "TOPOLOGY/shallow-struct"
-file = "crates/kryphos/src/storage.rs"
-line = 71
-hash = "3f0f8583d594548d11aaf1c74efb937b839ef9910edd2af0826ac7fbcc29010b"
-
-[[baseline.entry]]
-rule = "RUST/no-debug-derive-on-public-types"
-file = "crates/kryphos/src/storage.rs"
-line = 83
-hash = "3fe1ad211aa8bad42fceb09d5fbdb3d78493b8f18f5116b56985f2ae1c2d1c6b"
-
-[[baseline.entry]]
-rule = "TOPOLOGY/shallow-struct"
-file = "crates/kryphos/src/storage.rs"
-line = 84
-hash = "fd3f0e0d2616149449f38db6417ee5f11afa4559749b9b54e4fb41274f44265b"
-
-[[baseline.entry]]
-rule = "TOPOLOGY/shallow-struct"
-file = "crates/kryphos/src/storage.rs"
-line = 97
-hash = "a33d08186fabd42dc752ef22864297a54ba5b14c3c7b8c38097315f2582b7990"
-
-[[baseline.entry]]
-rule = "TOPOLOGY/shallow-struct"
-file = "crates/semaino/src/aggregator.rs"
-line = 36
-hash = "e2b4ce893357523f00039ab78959a5718aa3935094a254aaecf5a1dbdc97729d"
-
-[[baseline.entry]]
-rule = "TOPOLOGY/shallow-struct"
-file = "crates/semaino/src/alert.rs"
-line = 73
-hash = "4e5ef5104b47dd039767e8e2d6ef6699ade3e36c5770ac0a821dea0561c1c0b2"
-
-[[baseline.entry]]
-rule = "RUST/no-silent-result-swallow"
-file = "crates/semaino/src/pipeline.rs"
-line = 141
-hash = "05145eba731ce322a30ffd1d8c7f5c7bb739f4c2057d24cccab943afd98cce2b"
-
-[[baseline.entry]]
-rule = "TESTING/tautological-test"
-file = "crates/semaino/tests/smoke.rs"
-line = 18
-hash = "c1aaacd548343771dde0d6e32030314b43af7915b9d4552bd3d6744a0e2d449e"
-
-[[baseline.entry]]
-rule = "TESTING/tautological-test"
-file = "crates/semaino/tests/smoke.rs"
-line = 23
-hash = "5da81cd310c82f090c6d51d13b5eef7e1272be3300a2c05709cddcd6da5893e1"
-
-[[baseline.entry]]
-rule = "RUST/indexing-slicing"
-file = "crates/syntonia/src/baofeng/codec.rs"
-line = 209
-hash = "ac043efdc2bafc96f1c1ce44a051a00625778a9fba330a805a16e727512d56db"
-
-[[baseline.entry]]
-rule = "RUST/indexing-slicing"
-file = "crates/syntonia/src/baofeng/codec.rs"
-line = 210
-hash = "f0c8192172ae70c887b64e43139d1ad4d067a3171fdf9517bf68f110165377fa"
-
-[[baseline.entry]]
-rule = "RUST/indexing-slicing"
-file = "crates/syntonia/src/baofeng/codec.rs"
-line = 211
-hash = "1b4fb109e8c34ef8d19cb165c430c48fe6113897aca0ad6ccd9311f64ebac052"
-
-[[baseline.entry]]
-rule = "TOPOLOGY/shallow-struct"
-file = "crates/syntonia/src/baofeng/protocol.rs"
-line = 63
-hash = "5e33c46d8abc082f98f1c260c83e44cd55d7fcb63d110192b5f87368a97ec844"
-
-[[baseline.entry]]
-rule = "RUST/no-result-unwrap-or-default"
-file = "crates/syntonia/src/baofeng/protocol.rs"
-line = 86
-hash = "f3d465ac7f5cef277893a0054d9601776e937adbeaab0ef5f4012787c834094b"
-
-[[baseline.entry]]
-rule = "RUST/no-result-unwrap-or-default"
-file = "crates/syntonia/src/baofeng/protocol.rs"
-line = 89
-hash = "3ebe4a9e355f93fc8f447aff0fc6774a0e24e7f23cdfc5fdb179eb9ab353e0ff"
-
-[[baseline.entry]]
-rule = "RUST/no-result-unwrap-or-default"
-file = "crates/syntonia/src/baofeng/protocol.rs"
-line = 97
-hash = "f3d465ac7f5cef277893a0054d9601776e937adbeaab0ef5f4012787c834094b"
-
-[[baseline.entry]]
-rule = "RUST/no-result-unwrap-or-default"
-file = "crates/syntonia/src/baofeng/protocol.rs"
-line = 105
-hash = "7873fbbe232236ad2463b12d7f999f4356d4c3390b18905072f1a62117e531f2"
-
-[[baseline.entry]]
-rule = "RUST/no-result-unwrap-or-default"
-file = "crates/syntonia/src/baofeng/protocol.rs"
-line = 137
-hash = "f3d465ac7f5cef277893a0054d9601776e937adbeaab0ef5f4012787c834094b"
-
-[[baseline.entry]]
-rule = "RUST/no-result-unwrap-or-default"
-file = "crates/syntonia/src/baofeng/protocol.rs"
-line = 142
-hash = "21cbca9402679a28ad5d3a7fb9280100b9298c2eb37f0fe999f9bc757fcf736e"
-
-[[baseline.entry]]
-rule = "RUST/no-result-unwrap-or-default"
-file = "crates/syntonia/src/baofeng/protocol.rs"
-line = 160
-hash = "f3d465ac7f5cef277893a0054d9601776e937adbeaab0ef5f4012787c834094b"
-
-[[baseline.entry]]
-rule = "RUST/no-result-unwrap-or-default"
-file = "crates/syntonia/src/baofeng/protocol.rs"
-line = 163
-hash = "3ebe4a9e355f93fc8f447aff0fc6774a0e24e7f23cdfc5fdb179eb9ab353e0ff"
-
-[[baseline.entry]]
-rule = "RUST/no-result-unwrap-or-default"
-file = "crates/syntonia/src/baofeng/protocol.rs"
-line = 171
-hash = "f3d465ac7f5cef277893a0054d9601776e937adbeaab0ef5f4012787c834094b"
-
-[[baseline.entry]]
-rule = "RUST/no-result-unwrap-or-default"
-file = "crates/syntonia/src/baofeng/protocol.rs"
-line = 174
-hash = "21cbca9402679a28ad5d3a7fb9280100b9298c2eb37f0fe999f9bc757fcf736e"
-
-[[baseline.entry]]
-rule = "RUST/no-result-unwrap-or-default"
-file = "crates/syntonia/src/baofeng/tone_codec.rs"
-line = 63
-hash = "b44e129c748dadd29d016db78aee5ac27164544a785789026aa87334efddd2e1"
-
-[[baseline.entry]]
-rule = "TOPOLOGY/shallow-struct"
-file = "crates/syntonia/src/baofeng/variant.rs"
-line = 66
-hash = "2df5f344710c8c41cfdc1db5db970823dbe71b1d8257e9ed33213093e61f2cfb"
-
-[[baseline.entry]]
-rule = "TOPOLOGY/shallow-struct"
-file = "crates/syntonia/src/hardware/cables.rs"
-line = 40
-hash = "ce003a646d8a4e2c5c9b14306e00d6371dde5125f2ded47e02dd0246b97472d3"
-
-[[baseline.entry]]
-rule = "RUST/prefer-expect-over-allow"
-file = "crates/syntonia/src/hardware/cables.rs"
-line = 95
-hash = "0658fa78601251d1573deba75582c9589bcbc36324981ec0bca0a4e9a97c4c1f"
-
-[[baseline.entry]]
-rule = "TOPOLOGY/shallow-struct"
-file = "crates/syntonia/src/hardware/detect.rs"
-line = 27
-hash = "917455a45e772a67e7e9d38282ebc83298c41de1939c3d4e905761b070166b10"
-
-[[baseline.entry]]
-rule = "TOPOLOGY/shallow-struct"
-file = "crates/syntonia/src/hardware/detect.rs"
-line = 36
-hash = "7487358fa292ef927ecee876f17511d618055f1996189ef3a3f8b77682ff36f4"
-
-[[baseline.entry]]
-rule = "ARCHITECTURE/trait-impl-colocation"
-file = "crates/syntonia/src/hardware/detect.rs"
-line = 150
-hash = "1bc9066d5ae2e65da4a2695d046b2eff0dd24529d00e524083a25a7c7b092824"
-
-[[baseline.entry]]
-rule = "RUST/no-silent-result-swallow"
-file = "crates/syntonia/src/hardware/detect.rs"
-line = 186
-hash = "f3d0d06e10d904c01d32243c62f68946bdf2059520b200e0cab1b050ca7a7e28"
-
-[[baseline.entry]]
-rule = "RUST/prefer-expect-over-allow"
-file = "crates/syntonia/src/hardware/detect.rs"
+rule = "RUST/plain-string-secret"
+file = "crates/akroasis/src/vault/mod.rs"
 line = 299
-hash = "0658fa78601251d1573deba75582c9589bcbc36324981ec0bca0a4e9a97c4c1f"
+hash = "01adcd08767a47a81357cb88176d195b9a83327798a7b9b241382d860f511071"
 
 [[baseline.entry]]
-rule = "TOPOLOGY/shallow-struct"
-file = "crates/syntonia/src/hardware/usb.rs"
-line = 9
-hash = "2853363ceb61b9bd069d0f41199902da670d028dc90abd81e5a04a762a48237f"
-
-[[baseline.entry]]
-rule = "RUST/prefer-expect-over-allow"
-file = "crates/syntonia/src/hardware/usb.rs"
-line = 113
-hash = "0658fa78601251d1573deba75582c9589bcbc36324981ec0bca0a4e9a97c4c1f"
-
-[[baseline.entry]]
-rule = "RUST/prefer-expect-over-allow"
-file = "crates/syntonia/src/hardware/warnings.rs"
-line = 127
-hash = "0658fa78601251d1573deba75582c9589bcbc36324981ec0bca0a4e9a97c4c1f"
-
-[[baseline.entry]]
-rule = "TOPOLOGY/shallow-struct"
-file = "crates/syntonia/src/validate.rs"
-line = 23
-hash = "53a89a35fc4f3511c628c1c477ded84f399e2f1d305a778bd301faa74fb57e0b"
-
-[[baseline.entry]]
-rule = "RUST/todo-marker-needs-quadrant-and-artifact"
-file = "crates/syntonia/src/yaesu/codec.rs"
-line = 49
-hash = "d0ffbb52894edff5a26763a23bee1ffa0fc59d71cacd3af59a330fb38f4cb3ab"
-
-[[baseline.entry]]
-rule = "RUST/todo-marker-needs-quadrant-and-artifact"
-file = "crates/syntonia/src/yaesu/codec.rs"
-line = 76
-hash = "35da0788c6b8da8c28aff18e1e753aaec829100e3a134d2ec532e99055284d98"
-
-[[baseline.entry]]
-rule = "RUST/todo-marker-needs-quadrant-and-artifact"
-file = "crates/syntonia/src/yaesu/protocol.rs"
-line = 57
-hash = "933a0685039066c1c91ad30fcfdea174dd29d4ab5f079d411aa20ee8640f8640"
-
-[[baseline.entry]]
-rule = "RUST/todo-marker-needs-quadrant-and-artifact"
-file = "crates/syntonia/src/yaesu/variant.rs"
-line = 21
-hash = "04a68f255b72e353634d0b6f8320f695e9e336912be9ee77a21d99ad049bd126"
-
-[[baseline.entry]]
-rule = "WRITING/weasel-word"
-file = "docs/fjall-column-encryption.md"
-line = 24
-hash = "232a7f89b46c0e7e8e4230e151a37f11f11066a4cc28ccc8f80900e00a6562d9"
-
-[[baseline.entry]]
-rule = "DOCS/stale-local-link"
-file = "docs/lexicon.md"
-line = 4
-hash = "fc87d21d559fcde14292dfd5cc556da5caf9490a5187f2fcb799b9e1776cdddc"
-
-[[baseline.entry]]
-rule = "WRITING/elegant-variation"
-file = "docs/reference-store.md"
-line = 107
-hash = "61d61f68639e1d69a3bd7f313c5552c746cbdde45afa62cf514bb387b2546db9"
-
-[[baseline.entry]]
-rule = "WRITING/temporal-staleness"
-file = "docs/reference-store.md"
-line = 119
-hash = "0e86e21cdd2928545ab3a5f2baf12ad50e27522bcc7b4c7630d0b9b0e76f58a3"
+rule = "TOML/missing-trailing-comma"
+file = ".gitleaks.toml"
+line = 40
+hash = "725011530d3abd84a570798b9d272d44d36de3c2a2fac6d6b2e0eda8aeba371b"
 
 [[baseline.entry]]
 rule = "VOCAB/crate-name-collision"
 file = "crates/koinon/Cargo.toml"
 line = 1
 hash = "70acf00586aa7b90c3866278505be7b81fb7ee1f7e21c17c1a22ac239be3c72a"
-

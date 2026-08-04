@@ -106,17 +106,17 @@ describe the content inside it.
 
 ## Migration gates
 
-Before moving data out of the current staging area:
+Before moving content out of the current staging area:
 
 1. Verify the source path exists on the migration host.
-2. Generate checksums for every payload.
+2. Generate checksums for every content item.
 3. Classify each content set as frozen or refreshable.
 4. Write manifests for each content set.
 5. Create the target `reference/` tree on the chosen drive.
-6. Copy payloads into `staging/`, verify checksums, then promote them into
+6. Copy content into `staging/`, verify checksums, then promote it into
    `captures/`.
 7. Build the raw/text indexes.
-8. Update fleet pointers that currently name the staging path.
+8. Update fleet pointers that name the staging path.
 9. Remove the staging copy only after checksum verification and operator signoff.
 
 ## Current repo state

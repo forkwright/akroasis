@@ -255,6 +255,7 @@ pub struct HardwareAsset {
 // ── Known USB device table ─────────────────────────────────────────────────────
 
 /// A USB device chipset with known vendor/product identifiers.
+// WHY: pure data — a static lookup-table row with no derived invariant.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct KnownUsbDevice {
     /// USB vendor identifier.

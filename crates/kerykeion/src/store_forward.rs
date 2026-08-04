@@ -102,7 +102,7 @@ impl StoreForward {
         self.queues
             .remove(&dest)
             .map(|q| q.messages.into_iter().collect())
-            .unwrap_or_default()
+            .unwrap_or_default() // WHY: HashMap::remove returns Option, not Result — no destination queue is a legitimate "nothing to drain" case, not an error to mask.
     }
 
     /// Remove messages that have exceeded their TTL.

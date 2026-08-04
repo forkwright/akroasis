@@ -5,6 +5,7 @@ use snafu::{ResultExt, Snafu};
 use crate::hardware::cables::{CableChip, classify_cable};
 
 /// A detected USB programming cable.
+// WHY: pure data — a detection result bag with no derived invariant.
 #[derive(Debug, Clone)]
 pub struct UsbCable {
     /// USB vendor ID.
@@ -110,7 +111,7 @@ fn is_pl2303_clone(devices: &rusb::DeviceList<rusb::GlobalContext>, vid: u16, pi
 }
 
 #[cfg(test)]
-#[allow(
+#[expect(
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::indexing_slicing,

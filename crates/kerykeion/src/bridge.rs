@@ -225,6 +225,9 @@ impl GatewayBridge {
         if needs_selection {
             if let Some(cooldown) = self.last_failover {
                 if cooldown.elapsed() < self.config.failover_cooldown() {
+                    tracing::debug!(
+                        "gateway reselection needed but suppressed by failover cooldown"
+                    );
                     return;
                 }
             }

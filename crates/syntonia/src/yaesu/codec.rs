@@ -46,8 +46,8 @@ pub enum YaesuCodecError {
     reason = "stub; real implementation will read from `_image` and will not be const (see #80)"
 )]
 pub fn decode_channel(_image: &[u8], _index: u16) -> Result<Channel, YaesuCodecError> {
-    // TODO(#80): implement once EEPROM memory map is verified via ADMS-14
-    // traffic capture. Known fields from CHIRP source:
+    // TODO(#80)[deliberate-prudent]: implement once EEPROM memory map is
+    // verified via ADMS-14 traffic capture. Known fields from CHIRP source:
     // - Frequency: 4 bytes BCD (similar to Baofeng but different byte order)
     // - Offset: 4 bytes BCD
     // - Tone mode: 1 byte (CTCSS/DCS/cross-tone)
@@ -73,7 +73,7 @@ pub fn encode_channel(
     _index: u16,
     _channel: &Channel,
 ) -> Result<(), YaesuCodecError> {
-    // TODO(#80): implement once EEPROM memory map is verified
+    // TODO(#80)[deliberate-prudent]: implement once EEPROM memory map is verified
     Err(YaesuCodecError::NotYetImplemented)
 }
 

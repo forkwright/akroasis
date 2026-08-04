@@ -11,20 +11,22 @@ use snafu::ResultExt;
 
 use crate::error::{Error, ProtobufDecodeSnafu};
 use crate::proto::{MapReport, MqttClientProxyMessage, ServiceEnvelope};
-use crate::types::NodeNum;
+use crate::types::{MeshChannelId, NodeIdStr, NodeNum};
 
 /// Parsed gateway identifier extracted from a `ServiceEnvelope`.
+// WHY: pure data — a parsed envelope result with no derived invariant.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GatewayInfo {
     /// The gateway's node number, if the `gateway_id` is a valid hex node string.
     pub node_num: Option<NodeNum>,
     /// The raw gateway ID string from the envelope.
-    pub raw_id: String,
+    pub raw_id: NodeIdStr,
     /// The channel ID the message was published on.
-    pub channel_id: String,
+    pub channel_id: MeshChannelId,
 }
 
 /// Decoded map report with human-friendly field types.
+// WHY: pure data — a protobuf decode result with no derived invariant.
 #[derive(Debug, Clone)]
 pub struct ParsedMapReport {
     /// Long name of the reporting node.
@@ -63,8 +65,8 @@ pub fn extract_gateway_info(envelope: &ServiceEnvelope) -> GatewayInfo {
     let node_num = parse_gateway_id(&envelope.gateway_id);
     GatewayInfo {
         node_num,
-        raw_id: envelope.gateway_id.clone(),
-        channel_id: envelope.channel_id.clone(),
+        raw_id: envelope.gateway_id.clone().into(),
+        channel_id: envelope.channel_id.clone().into(),
     }
 }
 
@@ -183,8 +185,8 @@ mod tests {
 
         let info = extract_gateway_info(&envelope);
         assert_eq!(info.node_num, Some(NodeNum(0xDEAD_BEEF)));
-        assert_eq!(info.channel_id, "LongFast");
-        assert_eq!(info.raw_id, "!deadbeef");
+        assert_eq!(info.channel_id, MeshChannelId::from("LongFast"));
+        assert_eq!(info.raw_id, NodeIdStr::from("!deadbeef"));
     }
 
     #[test]
@@ -259,8 +261,10 @@ mod tests {
 
     #[test]
     fn decode_invalid_bytes_returns_error() {
+        // WHY: every byte has its continuation bit set, so the leading varint
+        // tag never terminates within the buffer — prost deterministically
+        // reports a truncated-message decode error rather than panicking.
         let result = decode_service_envelope(&[0xFF, 0xFF, 0xFF]);
-        // WHY: protobuf may or may not fail on arbitrary bytes — just verify no panic.
-        let _ = result;
+        assert!(result.is_err());
     }
 }

@@ -33,7 +33,11 @@ use super::variant::VariantConfig;
 // ── Block planning constants ────────────────────────────────────────────────
 
 /// Standard EEPROM block size for plan operations (16 bytes).
-pub const BLOCK_SIZE: usize = 16;
+///
+/// `u16` (not `usize`): every use site sends this over the wire as a `u16`
+/// block-size/address-stride field, matching the sibling `u8` constants in
+/// `constants.rs` that are converted the same way via infallible `From`.
+pub const BLOCK_SIZE: u16 = 16;
 
 /// Start of the main channel memory region.
 pub const MAIN_START: u16 = 0x0000;
@@ -59,6 +63,7 @@ pub const DROPPED_BYTE_ADDR: u16 = 0x1FCF;
 // ── Block plan ──────────────────────────────────────────────────────────────
 
 /// A planned EEPROM read/write operation at a specific address.
+// WHY: pure data — a protocol operation descriptor with no derived invariant.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BlockOp {
     /// EEPROM address to read/write.
@@ -83,10 +88,10 @@ pub fn download_plan(config: &VariantConfig) -> Vec<BlockOp> {
     while addr < MAIN_END {
         ops.push(BlockOp {
             addr,
-            size: u16::try_from(BLOCK_SIZE).unwrap_or_default(),
+            size: BLOCK_SIZE,
             is_warmup: false,
         });
-        addr += u16::try_from(BLOCK_SIZE).unwrap_or_default();
+        addr += BLOCK_SIZE;
     }
 
     if config.has_aux_block {
@@ -94,7 +99,7 @@ pub fn download_plan(config: &VariantConfig) -> Vec<BlockOp> {
         if config.needs_aux_warmup {
             ops.push(BlockOp {
                 addr: AUX_WARMUP_ADDR,
-                size: u16::try_from(BLOCK_SIZE).unwrap_or_default(),
+                size: BLOCK_SIZE,
                 is_warmup: true,
             });
         }
@@ -102,7 +107,7 @@ pub fn download_plan(config: &VariantConfig) -> Vec<BlockOp> {
         // Aux region with dropped-byte workaround
         let mut aux_addr = AUX_START;
         while aux_addr < AUX_END {
-            let block_end = aux_addr + u16::try_from(BLOCK_SIZE).unwrap_or_default();
+            let block_end = aux_addr + BLOCK_SIZE;
 
             if aux_addr <= DROPPED_BYTE_ADDR && DROPPED_BYTE_ADDR < block_end {
                 // Split INTO smaller reads around the problem address.
@@ -134,12 +139,12 @@ pub fn download_plan(config: &VariantConfig) -> Vec<BlockOp> {
             } else {
                 ops.push(BlockOp {
                     addr: aux_addr,
-                    size: u16::try_from(BLOCK_SIZE).unwrap_or_default(),
+                    size: BLOCK_SIZE,
                     is_warmup: false,
                 });
             }
 
-            aux_addr += u16::try_from(BLOCK_SIZE).unwrap_or_default();
+            aux_addr += BLOCK_SIZE;
         }
     }
 
@@ -157,10 +162,10 @@ pub fn upload_plan(config: &VariantConfig) -> Vec<BlockOp> {
     while addr < MAIN_END {
         ops.push(BlockOp {
             addr,
-            size: u16::try_from(BLOCK_SIZE).unwrap_or_default(),
+            size: BLOCK_SIZE,
             is_warmup: false,
         });
-        addr += u16::try_from(BLOCK_SIZE).unwrap_or_default();
+        addr += BLOCK_SIZE;
     }
 
     if config.has_aux_block {
@@ -168,10 +173,10 @@ pub fn upload_plan(config: &VariantConfig) -> Vec<BlockOp> {
         while aux_addr < AUX_END {
             ops.push(BlockOp {
                 addr: aux_addr,
-                size: u16::try_from(BLOCK_SIZE).unwrap_or_default(),
+                size: BLOCK_SIZE,
                 is_warmup: false,
             });
-            aux_addr += u16::try_from(BLOCK_SIZE).unwrap_or_default();
+            aux_addr += BLOCK_SIZE;
         }
     }
 
@@ -638,7 +643,11 @@ impl<P: SerialPort> Uv5rProtocol<P> {
 
 /// Check whether an address range overlaps any forbidden calibration region.
 fn is_forbidden(addr: u16, len: usize) -> bool {
-    let end = addr.saturating_add(u16::try_from(len).unwrap_or_default());
+    // WHY: saturate to u16::MAX (not 0) on an oversized len — this is a
+    // calibration-write guard, so a conversion failure must widen the
+    // checked range rather than collapse it to a zero-length no-op that
+    // could silently let a forbidden-address write through.
+    let end = addr.saturating_add(u16::try_from(len).unwrap_or(u16::MAX));
     FORBIDDEN_RANGES
         .iter()
         .any(|&(f_start, f_end)| addr < f_end && end > f_start)

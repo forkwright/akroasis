@@ -20,6 +20,7 @@ use self::errors::RadioError;
 
 /// Radio subcommands.
 #[derive(Subcommand)]
+#[non_exhaustive]
 pub enum RadioCommand {
     /// Detect connected radios
     Detect {
@@ -82,6 +83,7 @@ pub enum RadioCommand {
 
 /// Supported export formats.
 #[derive(clap::ValueEnum, Clone, Debug)]
+#[non_exhaustive]
 pub enum ExportFormat {
     Toml,
     Json,
@@ -113,6 +115,7 @@ impl ExportFormat {
         reason = "radio variants used in test mocks; not all exercised in binary (test-fixture)"
     )
 )]
+#[non_exhaustive]
 pub enum RadioVariant {
     Uv5r,
     BfF8hp,
@@ -154,6 +157,7 @@ impl std::fmt::Display for RadioVariant {
 // ---------------------------------------------------------------------------
 
 /// A radio discovered during hardware detection.
+// WHY: pure data — a detection result snapshot with no derived invariant.
 #[derive(Debug, Clone)]
 pub struct DetectedRadio {
     pub variant: RadioVariant,
@@ -230,7 +234,8 @@ pub trait Session {
 )]
 pub struct StubHardware;
 
-impl Hardware for StubHardware {
+#[rustfmt::skip]
+impl Hardware for StubHardware { // kanon:ignore ARCHITECTURE/trait-impl-colocation -- Hardware trait exists for testability; SerialHardware (serial_hardware.rs) is the production path
     fn detect_radios(&self) -> Result<Vec<DetectedRadio>, RadioError> {
         Err(RadioError::HardwareNotAvailable)
     }
@@ -269,10 +274,7 @@ pub fn resolve_target(port: Option<&str>, hw: &dyn Hardware) -> Result<DetectedR
         let radios = hw.detect_radios()?;
         match radios.len() {
             0 => Err(RadioError::NoRadioDetected),
-            1 => Ok(radios.into_iter().next().unwrap_or_else(|| {
-                // SAFETY: We just verified len() == 1
-                unreachable!()
-            })),
+            1 => radios.into_iter().next().ok_or(RadioError::NoRadioDetected),
             _ => Err(RadioError::MultipleRadiosDetected),
         }
     }

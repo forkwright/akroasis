@@ -124,7 +124,7 @@ pub(crate) fn port_access_denied(port: &str) -> HardwareWarning {
 }
 
 #[cfg(test)]
-#[allow(
+#[expect(
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::indexing_slicing,

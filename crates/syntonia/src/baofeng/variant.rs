@@ -73,6 +73,7 @@ impl fmt::Display for RadioVariant {
 // ── PowerMapping ─────────────────────────────────────────────────────────────
 
 /// Maps a logical power level to its EEPROM bit representation and wattage.
+// WHY: pure data — a static lookup-table row with no derived invariant.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PowerMapping {
     /// Logical power level.

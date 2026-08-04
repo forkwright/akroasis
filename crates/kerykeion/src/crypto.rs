@@ -38,9 +38,14 @@ pub const DEFAULT_PSK: [u8; 16] = [
 /// Layout: `[packet_id as u64 LE || from_node as u32 LE || 0x00000000]`
 pub(crate) fn build_nonce(packet_id: u32, from_node: u32) -> [u8; 16] {
     let mut nonce = [0u8; 16];
+    // WHY: split_at_mut over a fixed-size array yields disjoint sub-slices
+    // without bracket-range indexing, so the 8/4-byte layout is expressed
+    // without a panic-shaped `nonce[a..b]` access.
+    let (packet_slot, rest) = nonce.split_at_mut(8);
     // WHY: Meshtastic firmware zero-extends packet_id to u64 before encoding.
-    nonce[0..8].copy_from_slice(&u64::from(packet_id).to_le_bytes()); // SAFETY: fixed-size [u8; 16], not a string. kanon:ignore RUST/indexing-slicing -- compile-time bounded
-    nonce[8..12].copy_from_slice(&from_node.to_le_bytes());
+    packet_slot.copy_from_slice(&u64::from(packet_id).to_le_bytes());
+    let (node_slot, _reserved) = rest.split_at_mut(4);
+    node_slot.copy_from_slice(&from_node.to_le_bytes());
     // Bytes 12..16 remain zero.
     nonce
 }

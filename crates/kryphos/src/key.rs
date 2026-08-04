@@ -282,7 +282,7 @@ impl fmt::Debug for VaultKey {
 fn hex(bytes: &[u8]) -> String {
     bytes.iter().fold(String::new(), |mut s, b| {
         use fmt::Write;
-        let _ = write!(s, "{b:02x}");
+        let _ = write!(s, "{b:02x}"); // WHY: fmt::Write for String is infallible; the Result exists only for the trait's generality over fallible writers.
         s
     })
 }

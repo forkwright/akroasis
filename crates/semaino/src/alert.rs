@@ -69,6 +69,7 @@ impl AlertFingerprint {
 // ---------------------------------------------------------------------------
 
 /// A deduplicated, severity-classified alert produced by the pipeline.
+// WHY: pure data — an alert record with no derived invariant.
 #[derive(Debug, Clone)]
 pub struct Alert {
     /// Unique identifier for this alert instance.
@@ -645,8 +646,35 @@ mod tests {
 
     // ── TracingSink ──────────────────────────────────────────────────────────
 
+    /// Minimal `tracing::Subscriber` that only counts emitted events, so a
+    /// test can verify a sink actually emits without pulling in
+    /// `tracing-subscriber` as a dev-dependency.
+    struct EventCounter(std::sync::Arc<std::sync::atomic::AtomicUsize>);
+
+    impl tracing::Subscriber for EventCounter {
+        fn enabled(&self, _metadata: &tracing::Metadata<'_>) -> bool {
+            true
+        }
+
+        fn new_span(&self, _span: &tracing::span::Attributes<'_>) -> tracing::span::Id {
+            tracing::span::Id::from_u64(1)
+        }
+
+        fn record(&self, _span: &tracing::span::Id, _values: &tracing::span::Record<'_>) {}
+
+        fn record_follows_from(&self, _span: &tracing::span::Id, _follows: &tracing::span::Id) {}
+
+        fn event(&self, _event: &tracing::Event<'_>) {
+            self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        }
+
+        fn enter(&self, _span: &tracing::span::Id) {}
+
+        fn exit(&self, _span: &tracing::span::Id) {}
+    }
+
     #[test]
-    fn tracing_sink_emit_does_not_panic() {
+    fn tracing_sink_emit_records_one_event() {
         let sink = TracingSink;
         let alert = Alert {
             id: Ulid::generate(),
@@ -657,8 +685,18 @@ mod tests {
             summary: "test alert".into(),
             fingerprint: AlertFingerprint::new(0, None, 2),
         };
-        // Calling emit must not panic; tracing output is discarded in tests.
-        sink.emit(&alert);
+
+        let count = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let subscriber = EventCounter(std::sync::Arc::clone(&count));
+        tracing::subscriber::with_default(subscriber, || {
+            sink.emit(&alert);
+        });
+
+        assert_eq!(
+            count.load(std::sync::atomic::Ordering::SeqCst),
+            1,
+            "TracingSink::emit must record exactly one tracing event per alert"
+        );
     }
 
     // ── environmental signal path ──────────────────────────────────────────────

@@ -36,6 +36,7 @@ impl fmt::Display for CableChip {
 }
 
 /// A known programming cable entry.
+// WHY: pure data — a static lookup-table row with no derived invariant.
 #[derive(Debug, Clone, Copy)]
 pub struct KnownCable {
     /// USB vendor ID.
@@ -92,7 +93,7 @@ pub fn lookup_cable(vid: u16, pid: u16) -> Option<&'static KnownCable> {
 }
 
 #[cfg(test)]
-#[allow(
+#[expect(
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::indexing_slicing,
