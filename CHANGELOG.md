@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.1.20](https://github.com/forkwright/akroasis/compare/v0.1.19...v0.1.20) (2026-08-04)
+
+
+### Bug Fixes
+
+* **api:** split ApiError into client message and server detail ([#354](https://github.com/forkwright/akroasis/issues/354)) ([026b5d0](https://github.com/forkwright/akroasis/commit/026b5d018de0dabd71c1e1942cba41c4efbd1c10)), closes [#227](https://github.com/forkwright/akroasis/issues/227)
+* **config:** deny unknown fields on operator-authored config types ([#344](https://github.com/forkwright/akroasis/issues/344)) ([2026402](https://github.com/forkwright/akroasis/commit/202640250e33cb50371ce8d1f831916013bba08f)), closes [#261](https://github.com/forkwright/akroasis/issues/261)
+* **gate:** compile and test hardware-serial feature in gate stages ([#355](https://github.com/forkwright/akroasis/issues/355)) ([bfef8be](https://github.com/forkwright/akroasis/commit/bfef8be71a3ebfa0c6b7d74df689686819a1cdfa))
+* **kerykeion:** close six correctness and resilience findings from the wave-1 audit ([#348](https://github.com/forkwright/akroasis/issues/348)) ([6d75b31](https://github.com/forkwright/akroasis/commit/6d75b3190d6fa5c1fee8b603acff31cc552b828e)), closes [#229](https://github.com/forkwright/akroasis/issues/229)
+* **kerykeion:** reject unknown keys in mesh config deserialization ([#343](https://github.com/forkwright/akroasis/issues/343)) ([cdf664e](https://github.com/forkwright/akroasis/commit/cdf664ead7b084ded0b4daadc3aa1b9fa557160e)), closes [#261](https://github.com/forkwright/akroasis/issues/261)
+* **koinon:** validate deserialized values and stop the writer emitting unverifiable log entries ([#350](https://github.com/forkwright/akroasis/issues/350)) ([20e7206](https://github.com/forkwright/akroasis/commit/20e7206ca84ca907be0fd1ba46cfb6d1c123d441)), closes [#230](https://github.com/forkwright/akroasis/issues/230)
+* **radio:** honor CSV quoting on import and preserve probe failure causes ([#347](https://github.com/forkwright/akroasis/issues/347)) ([81d45e4](https://github.com/forkwright/akroasis/commit/81d45e40d3667ff26a61d5687a8d6cf5c1dbc82d)), closes [#228](https://github.com/forkwright/akroasis/issues/228)
+* **semaino:** reclaim expired alert-suppression entries ([#346](https://github.com/forkwright/akroasis/issues/346)) ([77f4427](https://github.com/forkwright/akroasis/commit/77f4427739013e8a97787ea82017d18a3495f54c)), closes [#222](https://github.com/forkwright/akroasis/issues/222)
+* **semaino:** report the baseline the score was computed against ([#351](https://github.com/forkwright/akroasis/issues/351)) ([0041e49](https://github.com/forkwright/akroasis/commit/0041e492e668e87f52953045e0f0e4d63606ad85)), closes [#232](https://github.com/forkwright/akroasis/issues/232)
+* **syntonia:** close nine wave-1 audit findings and consolidate detection tables ([#342](https://github.com/forkwright/akroasis/issues/342)) ([78c5a0c](https://github.com/forkwright/akroasis/commit/78c5a0c45bb067e750bfe6eef91b578d303d6d5d)), closes [#233](https://github.com/forkwright/akroasis/issues/233)
+* **vault:** avoid mutating vault dir on failed open of uninitialized path ([#356](https://github.com/forkwright/akroasis/issues/356)) ([44b1f57](https://github.com/forkwright/akroasis/commit/44b1f57515cd1dddd08227fcb839e98def156084)), closes [#286](https://github.com/forkwright/akroasis/issues/286)
+
 ## [0.1.19](https://github.com/forkwright/akroasis/compare/v0.1.18...v0.1.19) (2026-07-31)
 
 
