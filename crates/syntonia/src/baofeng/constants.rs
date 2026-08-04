@@ -16,6 +16,20 @@
 use std::time::Duration;
 
 /// Serial baud rate for UV-5R programming mode.
+// WHY: unlike the rest of this file, `BAUD_RATE` has zero callers even
+// within the auto-detect cluster itself (`baofeng::detect` never opens a
+// live port) — it stays dead with the feature ON, not just OFF, so it needs
+// its own suppression on top of the module-level one above.
+#[cfg_attr(
+    feature = "hardware-serial",
+    expect(
+        dead_code,
+        reason = "baofeng serial auto-detect handshake constant — part of \
+                   the auto_detect/try_magic capability implemented in \
+                   baofeng::detect, which has zero production callers; \
+                   tracked in akroasis#264"
+    )
+)]
 pub(crate) const BAUD_RATE: u32 = 9600;
 
 /// Acknowledgement byte sent/received during protocol exchanges.
@@ -77,6 +91,19 @@ pub(crate) const INTER_BYTE_DELAY: Duration = Duration::from_millis(10);
 pub(crate) const POST_ACK_DELAY: Duration = Duration::from_millis(50);
 
 /// Delay before retrying identification after a failure.
+// WHY: same as `BAUD_RATE` above — dead with the feature ON, not just OFF,
+// because the retry loop that would sleep on this constant was never wired
+// into `baofeng::detect::auto_detect`.
+#[cfg_attr(
+    feature = "hardware-serial",
+    expect(
+        dead_code,
+        reason = "baofeng serial auto-detect retry-delay constant — part of \
+                   the auto_detect/try_magic capability implemented in \
+                   baofeng::detect, which has zero production callers; \
+                   tracked in akroasis#264"
+    )
+)]
 pub(crate) const IDENT_RETRY_DELAY: Duration = Duration::from_secs(2);
 
 /// Read timeout for serial responses.

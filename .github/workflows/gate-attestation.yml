@@ -24,6 +24,17 @@
 # reusable workflow's own contract. --jobs 8 / --build-jobs 8 --test-threads 8
 # match .kanon-ci.toml's concurrency cap (OOM guard on the local gate box;
 # harmless headroom on the hosted runner).
+# `crates/syntonia/tests/gate_feature_coverage.rs` asserts that mirror rather
+# than trusting this comment to hold.
+#
+# WHY(#335): --features syntonia/hardware-serial on check and nextest. The
+# feature is off by default, so before this every stage skipped
+# `baofeng::{protocol,detect,variant}` entirely and ran none of the 85 tests
+# behind them -- the code that drives the serial link and flashes radio
+# EEPROM. libudev-dev was already in system_packages below, so the hosted
+# runner needs no new package.
+# The clippy stage is deliberately left without it — see NOTE(#264) in
+# .kanon-ci.toml.
 #
 # system_packages: libusb-1.0-0-dev (rusb -> libusb1-sys) + libudev-dev
 # (-> libudev-sys), the only native -sys crates in Cargo.lock that need a
@@ -64,9 +75,9 @@ jobs:
     uses: forkwright/.github/.github/workflows/hybrid-gate.yml@main
     with:
       fmt_cmd: "cargo fmt --all -- --check"
-      check_cmd: "cargo check --workspace --all-targets --jobs 8"
+      check_cmd: "cargo check --workspace --all-targets --features syntonia/hardware-serial --jobs 8"
       clippy_cmd: "cargo clippy --workspace --all-targets --jobs 8 -- -D warnings"
-      nextest_cmd: "cargo nextest run --workspace --build-jobs 8 --test-threads 8"
+      nextest_cmd: "cargo nextest run --workspace --features syntonia/hardware-serial --build-jobs 8 --test-threads 8"
       doctest_cmd: ""
       system_packages: "libusb-1.0-0-dev libudev-dev protobuf-compiler"
       needs_fleet_repo_token: false
