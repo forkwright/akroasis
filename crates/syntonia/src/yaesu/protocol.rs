@@ -54,8 +54,8 @@ impl<S: SerialPort> YaesuSession<S> {
     ///
     /// Returns `YaesuProtocolError::ProtocolNotYetReversed`.
     pub fn open(_port: S) -> Result<Self, YaesuProtocolError> {
-        // TODO(#80): configure port to 38400 baud, send identification
-        // request, wait for model string response.
+        // TODO(#80)[deliberate-prudent]: configure port to 38400 baud, send
+        // identification request, wait for model string response.
         //
         // Known from ADMS-14 observation:
         // - Baud: 38400
