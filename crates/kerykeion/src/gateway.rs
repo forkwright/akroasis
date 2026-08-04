@@ -22,6 +22,7 @@ pub struct GatewayDetector {
 }
 
 /// Health state for a tracked gateway node.
+// WHY: pure data — a tracked snapshot with no derived invariant.
 #[derive(Debug, Clone)]
 pub struct GatewayState {
     /// When this gateway was last seen.
