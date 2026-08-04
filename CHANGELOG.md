@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.22](https://github.com/forkwright/akroasis/compare/v0.1.21...v0.1.22) (2026-08-04)
+
+
+### Bug Fixes
+
+* **kerykeion:** seed PacketProcessor's NodeDb and route runtime NodeInfo to it ([#360](https://github.com/forkwright/akroasis/issues/360)) ([9e8778b](https://github.com/forkwright/akroasis/commit/9e8778b43263621cf55b48c449b62421f3925781))
+
 ## [0.1.21](https://github.com/forkwright/akroasis/compare/v0.1.20...v0.1.21) (2026-08-04)
 
 
