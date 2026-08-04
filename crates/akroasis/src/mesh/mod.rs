@@ -379,10 +379,10 @@ pub fn build_nodes_table(db: &NodeDb) -> String {
     reason = "test assertions use unwrap, indexing, and panic for clarity"
 )]
 mod tests {
+    use clap::Parser;
     use kerykeion::node_db::{DeviceMetrics, UserInfo};
 
     use super::*;
-    use clap::Parser;
 
     #[derive(Parser)]
     struct TestCli {

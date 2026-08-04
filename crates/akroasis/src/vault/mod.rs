@@ -23,6 +23,7 @@ fn default_vault_path() -> PathBuf {
 
 /// Vault subcommands.
 #[derive(Subcommand)]
+#[non_exhaustive]
 pub enum VaultCommand {
     /// Create a new vault (prompts for passphrase)
     Init,
@@ -72,6 +73,7 @@ pub enum VaultCommand {
 
 /// Errors from vault CLI operations.
 #[derive(Debug, Snafu)]
+#[non_exhaustive]
 pub enum VaultCliError {
     /// A vault operation failed.
     #[snafu(display("{source}"))]
