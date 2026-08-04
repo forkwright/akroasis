@@ -205,10 +205,18 @@ pub fn encode_channel(
 
     // SAFETY(indexing): ch_data is always 16 bytes, indices are within bounds
     let mut ch_data = [0u8; 16];
-    ch_data[0..4].copy_from_slice(&rx_bytes); // SAFETY: ch_data is fixed-size [u8; 16], not a string. kanon:ignore RUST/indexing-slicing -- compile-time bounded
-    ch_data[4..8].copy_from_slice(&tx_bytes);
-    ch_data[8..10].copy_from_slice(&tone_bytes);
-    ch_data[10..12].copy_from_slice(&tone_bytes);
+    // WHY: split_at_mut over the fixed-size array yields disjoint sub-slices
+    // without bracket-range indexing for the rx/tx frequency and tone fields.
+    let (rx_slot, rest) = ch_data.split_at_mut(4);
+    rx_slot.copy_from_slice(&rx_bytes);
+    let (tx_slot, rest) = rest.split_at_mut(4);
+    tx_slot.copy_from_slice(&tx_bytes);
+    // WHY: rx and tx tone codes are stored as separate fields but always set
+    // to the same encoded value in this simple encode path.
+    let (rx_tone_slot, rest) = rest.split_at_mut(2);
+    rx_tone_slot.copy_from_slice(&tone_bytes);
+    let (tx_tone_slot, _rest) = rest.split_at_mut(2);
+    tx_tone_slot.copy_from_slice(&tone_bytes);
     ch_data[14] = power_to_bits(channel.power); // kanon:ignore RUST/indexing-slicing -- ch_data is fixed-size [u8; 16]; index 14 is compile-time bounded
 
     let mut byte15: u8 = 0;

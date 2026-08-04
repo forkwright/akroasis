@@ -60,7 +60,7 @@ pub fn encode_tone(tone: ToneMode) -> u16 {
                 .map(|i| i + 1);
 
             match (idx, polarity) {
-                (Some(i), DcsPolarity::Normal) => u16::try_from(i).unwrap_or_default(),
+                (Some(i), DcsPolarity::Normal) => i as u16, // SAFETY: idx ∈ 1..=104 from DCS table lookup; fits u16
                 (Some(i), DcsPolarity::Inverted) => (i + 105) as u16, // SAFETY: idx ∈ 1..=104 from DCS table lookup; +105 fits u16
                 (None, _) => 0,
             }
