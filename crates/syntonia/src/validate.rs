@@ -59,9 +59,20 @@ pub fn baofeng_f8hp_constraints() -> RadioConstraints {
     }
 }
 
-/// Checks whether a frequency falls within any of the valid bands.
-fn freq_in_bands(freq: Frequency, bands: &[(Frequency, Frequency)]) -> bool {
-    bands.iter().any(|&(lo, hi)| freq >= lo && freq <= hi)
+impl RadioConstraints {
+    /// Whether `freq` falls within any of the radio's valid bands.
+    #[must_use]
+    pub fn allows_frequency(&self, freq: Frequency) -> bool {
+        self.valid_bands
+            .iter()
+            .any(|&(lo, hi)| freq >= lo && freq <= hi)
+    }
+
+    /// Whether `level` is one of the radio's supported power levels.
+    #[must_use]
+    pub fn allows_power_level(&self, level: PowerLevel) -> bool {
+        self.power_levels.contains(&level)
+    }
 }
 
 /// Validates a single channel against radio constraints.
@@ -72,7 +83,7 @@ pub fn validate_channel(channel: &Channel, constraints: &RadioConstraints) -> Ve
     let mut issues = Vec::new();
 
     // RX frequency must be within valid bands.
-    if !freq_in_bands(channel.rx_freq, &constraints.valid_bands) {
+    if !constraints.allows_frequency(channel.rx_freq) {
         issues.push(ValidationIssue::Error(format!(
             "channel {}: RX frequency {} is outside valid bands",
             channel.index, channel.rx_freq
@@ -81,7 +92,7 @@ pub fn validate_channel(channel: &Channel, constraints: &RadioConstraints) -> Ve
 
     // TX frequency (if explicit) must be within valid bands.
     if let Some(tx) = channel.tx_freq {
-        if !freq_in_bands(tx, &constraints.valid_bands) {
+        if !constraints.allows_frequency(tx) {
             issues.push(ValidationIssue::Error(format!(
                 "channel {}: TX frequency {} is outside valid bands",
                 channel.index, tx
@@ -98,7 +109,7 @@ pub fn validate_channel(channel: &Channel, constraints: &RadioConstraints) -> Ve
     }
 
     // Power level must be supported by the radio.
-    if !constraints.power_levels.contains(&channel.power) {
+    if !constraints.allows_power_level(channel.power) {
         issues.push(ValidationIssue::Error(format!(
             "channel {}: power level {:?} not supported by this radio",
             channel.index, channel.power
