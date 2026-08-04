@@ -67,7 +67,7 @@ struct StoredEntry {
 }
 
 /// A decrypted credential retrieved from the vault.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct DecryptedEntry {
     /// Human-readable name for this credential.
     pub name: CompactString,
@@ -79,8 +79,22 @@ pub struct DecryptedEntry {
     pub metadata: EntryMetadata,
 }
 
+// WHY: manual Debug instead of #[derive(Debug)] — `secret` holds the
+// decrypted plaintext credential; redact it so an accidental `{:?}` log
+// never prints it (RUST/no-debug-derive-on-public-types).
+impl std::fmt::Debug for DecryptedEntry {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DecryptedEntry")
+            .field("name", &self.name)
+            .field("credential_type", &self.credential_type)
+            .field("secret", &"<redacted>")
+            .field("metadata", &self.metadata)
+            .finish()
+    }
+}
+
 /// Summary of a vault entry (no secret material).
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct EntryInfo {
     /// Human-readable name for this credential.
     pub name: CompactString,
@@ -92,7 +106,23 @@ pub struct EntryInfo {
     pub metadata: EntryMetadata,
 }
 
+// WHY: manual Debug instead of #[derive(Debug)] — the type touches
+// `credential_type` (RUST/no-debug-derive-on-public-types matches on the
+// "credential" token). None of these fields are secret material, so this
+// mirrors the derived output exactly.
+impl std::fmt::Debug for EntryInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("EntryInfo")
+            .field("name", &self.name)
+            .field("credential_type", &self.credential_type)
+            .field("status", &self.status)
+            .field("metadata", &self.metadata)
+            .finish()
+    }
+}
+
 /// Lifecycle history of a vault entry.
+// WHY: pure data — a query result bag with no derived invariant.
 #[derive(Debug, Clone)]
 pub struct EntryHistory {
     /// Human-readable name for this credential.
