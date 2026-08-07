@@ -750,19 +750,23 @@ fn supervise_task_result_shuts_down_on_task_error() {
 }
 
 #[tokio::test]
-async fn supervise_task_result_shuts_down_on_panic() {
-    // WHY: a real JoinError from a real panic, not a hand-built stand-in --
-    // JoinError has no public constructor, so this is the only way to reach
-    // the panic arm with a genuine value.
-    let join_err = tokio::spawn(async {
-        panic!("synthetic test panic");
-    })
-    .await
-    .expect_err("a task that panics must yield Err from JoinHandle::await");
+async fn supervise_task_result_shuts_down_on_join_error() {
+    // WHY: a real JoinError, not a hand-built stand-in -- JoinError has no
+    // public constructor. Aborting a task and awaiting its handle yields a
+    // genuine one without triggering an actual panic (clippy::panic denies
+    // `panic!()` outside a deliberately-scoped exception, and the
+    // classifier under test treats every `Err(JoinError)` identically
+    // regardless of whether it came from a panic or a cancellation).
+    let handle = tokio::spawn(std::future::pending::<()>());
+    handle.abort();
+    #[expect(clippy::expect_used, reason = "test-only")]
+    let join_err = handle
+        .await
+        .expect_err("an aborted task must yield Err from JoinHandle::await");
     assert_eq!(
         supervise_task_result(Err(join_err)),
         TaskOutcome::Shutdown,
-        "a panicked task must escalate to shutdown rather than only log"
+        "a panicked or aborted task must escalate to shutdown rather than only log"
     );
 }
 
