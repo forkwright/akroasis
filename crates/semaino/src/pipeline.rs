@@ -165,11 +165,20 @@ impl SemainoPipeline {
         );
 
         // Main loop: interleave grid ingestion and alert processing.
+        //
+        // WHY(#224): this used to be `biased`, always polling the aggregated
+        // (anomaly) branch first. Under a sustained burst of notable
+        // signals that unconditionally starves the grid-ingest branch,
+        // blinding convergence detection precisely during the flood the
+        // pipeline exists to catch. Fair (unbiased) polling removes that
+        // starvation. The other half of #224 -- a triggering signal's own
+        // data missing from the grid at the moment it is evaluated -- is
+        // handled unconditionally in `handle_aggregated` below, so
+        // correctness here no longer depends on which branch scheduling
+        // favors.
         let mut signal_rx = signal_rx;
         loop {
             tokio::select! {
-                biased;
-
                 // Drain aggregated signals (anomaly → alert path).
                 Some(aggregated) = agg_rx.recv() => {
                     self.handle_aggregated(&aggregated);
@@ -209,9 +218,9 @@ impl SemainoPipeline {
         //
         // NOTE: measured, not assumed — no scenario tried (warm-up depth,
         // escalating outliers, immediate close, multi-threaded runtime) ever
-        // lost an alert to the old code, because the biased select cannot
-        // break while agg_rx holds items and the aggregator finishes its
-        // backlog first in practice. This is therefore a correctness
+        // lost an alert to the pre-drain code; the aggregator finished its
+        // backlog and emitted before the loop above observed `signal_rx`
+        // close in every case tried. This is therefore a correctness
         // hardening that makes the comment true, not a fix for an observed
         // loss.
         //
@@ -233,7 +242,19 @@ impl SemainoPipeline {
     }
 
     /// Process one [`AggregatedSignal`] through convergence detection and alerting.
+    ///
+    /// WHY(#224): ingests `aggregated.signal` into the grid before running
+    /// detection. The signal already reached the grid path independently via
+    /// `signal_rx`, but that delivery races this one across two
+    /// unsynchronized channels with no ordering guarantee -- detection could
+    /// otherwise run against a grid that does not yet contain the very
+    /// signal that produced the anomaly being evaluated. Re-ingesting here
+    /// is idempotent (`DomainSlots` keeps one hit per domain, see
+    /// `convergence.rs`), so this is safe regardless of whether the
+    /// `signal_rx` delivery already landed.
     fn handle_aggregated(&mut self, aggregated: &AggregatedSignal) {
+        self.grid.ingest(&aggregated.signal);
+
         let now = koinon::Timestamp::now();
         let convergences = self
             .grid
@@ -266,7 +287,7 @@ mod tests {
     use std::sync::{Arc, Mutex};
 
     use koinon::{
-        AnomalyScore, Frequency, GeoSignal, Power, Timestamp,
+        AnomalyScore, Coordinates, Frequency, GeoSignal, Power, Timestamp,
         signal::{RfDetail, SignalKind},
     };
     use tokio::sync::broadcast;
@@ -446,6 +467,78 @@ mod tests {
 
         let result = classify(&AnomalyScore::Normal, None);
         assert!(result.is_none());
+    }
+
+    // ── #224: handle_aggregated must not miss its own triggering signal ────
+
+    #[test]
+    fn handle_aggregated_ingests_its_own_trigger_before_detecting() {
+        // WHY(#224): a biased select could previously run convergence
+        // detection before the grid-ingest path delivered the very signal
+        // that produced the anomaly -- the same defect this test targets,
+        // reproduced deterministically (no task scheduling involved) by
+        // calling handle_aggregated directly against a grid that has NOT
+        // yet seen the RF trigger signal, only a co-located Mesh signal that
+        // arrived through the ordinary path.
+        use koinon::signal::MeshDetail;
+
+        let loc = Coordinates::new(51.5, -0.1, None).expect("valid coordinates");
+
+        let mut pipeline = SemainoPipeline::new(&SemainoConfig {
+            suppression_window_secs: 0,
+            min_convergence_domains: 2,
+            ..SemainoConfig::default()
+        });
+        let sink = CollectingSink::default();
+        let sink_data = Arc::clone(&sink.0);
+        pipeline.add_sink(sink);
+
+        // Simulates a signal that already reached the grid through the
+        // ordinary signal_rx path.
+        pipeline.grid.ingest(&GeoSignal::new(
+            SignalKind::Mesh(MeshDetail::NodeSeen {
+                node_id: 1,
+                snr: 5.0,
+                hop_count: 1,
+            }),
+            Timestamp::now(),
+            Some(loc),
+        ));
+
+        // The RF trigger itself has NOT been ingested through signal_rx --
+        // handle_aggregated is the only place that has seen it.
+        let aggregated = AggregatedSignal {
+            signal: GeoSignal::new(
+                SignalKind::Rf(RfDetail::Transmission {
+                    frequency: Frequency::mhz(146),
+                    power: Power::dbm(50.0),
+                    modulation: "FM".into(),
+                    bandwidth: Frequency::khz(25),
+                }),
+                Timestamp::now(),
+                Some(loc),
+            ),
+            score: AnomalyScore::Elevated(2.2),
+            baseline_mean: Some(-50.0),
+            baseline_stddev: Some(1.0),
+        };
+
+        pipeline.handle_aggregated(&aggregated);
+
+        let alerts = sink_data.lock().expect("sink lock");
+        assert_eq!(
+            alerts.len(),
+            1,
+            "the co-located Mesh signal plus the RF trigger together must \
+             cross the 2-domain convergence threshold"
+        );
+        assert_eq!(
+            alerts[0].severity,
+            koinon::signal::AlertSeverity::Medium,
+            "an Elevated score with 2-domain convergence classifies as \
+             Medium; a Low severity here means the RF trigger's own signal \
+             was missing from the grid at detection time (#224)"
+        );
     }
 
     #[tokio::test]
