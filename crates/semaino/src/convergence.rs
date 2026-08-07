@@ -119,7 +119,14 @@ struct DomainSlots([Option<DomainHit>; DOMAIN_SLOTS]);
 impl DomainSlots {
     /// Record `hit`, replacing any earlier hit for the same domain.
     fn record(&mut self, hit: DomainHit) {
-        self.0[slot_index(kind_discriminant(&hit.kind))] = Some(hit);
+        let idx = slot_index(kind_discriminant(&hit.kind));
+        // WHY: idx is derived from slot_index, which only ever returns
+        // 0..DOMAIN_SLOTS -- get_mut cannot fail, but indexing_slicing is
+        // denied workspace-wide, so this avoids the panic-shaped operator
+        // regardless.
+        if let Some(slot) = self.0.get_mut(idx) {
+            *slot = Some(hit);
+        }
     }
 
     /// Hits at or after `cutoff_ms`, at most one per domain.
@@ -599,8 +606,8 @@ mod tests {
             osint_kind(),
         ];
 
-        for i in 0..10_000 {
-            grid.ingest(&signal_at(kinds[i % kinds.len()].clone(), loc));
+        for kind in kinds.iter().cycle().take(10_000) {
+            grid.ingest(&signal_at(kind.clone(), loc));
         }
 
         let cell = quantize(&loc, 10_000);
@@ -636,8 +643,11 @@ mod tests {
 
         let cell = quantize(&loc, 10_000);
         let slots = grid.cells.get(&cell).expect("cell must exist");
-        let rf_slot = slots.0[slot_index(kind_discriminant(&rf_kind()))]
-            .as_ref()
+        let rf_idx = slot_index(kind_discriminant(&rf_kind()));
+        let rf_slot = slots
+            .0
+            .get(rf_idx)
+            .and_then(Option::as_ref)
             .expect("rf slot must be occupied");
         assert_eq!(
             rf_slot.timestamp.as_unix_millis(),
