@@ -525,16 +525,18 @@ mod tests {
 
         pipeline.handle_aggregated(&aggregated);
 
-        let alerts = sink_data.lock().expect("sink lock");
+        let (alert_count, first_severity) = {
+            let alerts = sink_data.lock().expect("sink lock");
+            (alerts.len(), alerts.first().map(|a| a.severity.clone()))
+        };
         assert_eq!(
-            alerts.len(),
-            1,
+            alert_count, 1,
             "the co-located Mesh signal plus the RF trigger together must \
              cross the 2-domain convergence threshold"
         );
         assert_eq!(
-            alerts[0].severity,
-            koinon::signal::AlertSeverity::Medium,
+            first_severity,
+            Some(koinon::signal::AlertSeverity::Medium),
             "an Elevated score with 2-domain convergence classifies as \
              Medium; a Low severity here means the RF trigger's own signal \
              was missing from the grid at detection time (#224)"
