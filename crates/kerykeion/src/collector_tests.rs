@@ -724,3 +724,80 @@ async fn router_flush_starts_ack_timeout_after_transmit() {
     token.cancel();
     handle.abort();
 }
+
+// ── akroasis#205: background task failures escalate, not just log ─────────
+
+#[test]
+fn supervise_task_result_continues_on_clean_completion() {
+    assert_eq!(
+        supervise_task_result(Ok(Ok(()))),
+        TaskOutcome::Continue,
+        "a task that returns Ok must not trigger shutdown"
+    );
+}
+
+#[test]
+fn supervise_task_result_shuts_down_on_task_error() {
+    let err = Error::ConnectionLost {
+        detail: "synthetic test error".into(),
+        location: snafu::location!(),
+    };
+    assert_eq!(
+        supervise_task_result(Ok(Err(err))),
+        TaskOutcome::Shutdown,
+        "a task that returns Err must escalate to shutdown rather than only log"
+    );
+}
+
+#[tokio::test]
+async fn supervise_task_result_shuts_down_on_panic() {
+    // WHY: a real JoinError from a real panic, not a hand-built stand-in --
+    // JoinError has no public constructor, so this is the only way to reach
+    // the panic arm with a genuine value.
+    let join_err = tokio::spawn(async {
+        panic!("synthetic test panic");
+    })
+    .await
+    .expect_err("a task that panics must yield Err from JoinHandle::await");
+    assert_eq!(
+        supervise_task_result(Err(join_err)),
+        TaskOutcome::Shutdown,
+        "a panicked task must escalate to shutdown rather than only log"
+    );
+}
+
+#[tokio::test]
+async fn losing_router_flush_shuts_down_the_collector_loop() {
+    // WHY(#205): this is the scenario the issue names as most consequential
+    // -- router-flush dying used to leave the collector receiving forever
+    // while silently never sending again. Drive the actual `select!` arm
+    // (via a JoinSet standing in for `tasks`) and assert the loop's exit
+    // condition, not just the pure classifier above.
+    let mut tasks: JoinSet<Result<(), Error>> = JoinSet::new();
+    tasks.spawn(async {
+        Err(Error::ConnectionLost {
+            detail: "router flush died".into(),
+            location: snafu::location!(),
+        })
+    });
+
+    let cancel = CancellationToken::new();
+    let mut shut_down = false;
+    tokio::select! {
+        Some(task_result) = tasks.join_next() => {
+            if supervise_task_result(task_result) == TaskOutcome::Shutdown {
+                cancel.cancel();
+                shut_down = true;
+            }
+        }
+    }
+
+    assert!(
+        shut_down,
+        "the loop must recognize a lost background task as a shutdown condition"
+    );
+    assert!(
+        cancel.is_cancelled(),
+        "losing a background task must cancel the collector, not just log it"
+    );
+}
