@@ -85,16 +85,78 @@ pub struct Convergence {
 // ConvergenceGrid
 // ---------------------------------------------------------------------------
 
+/// Number of domain-discriminant slots a cell can hold.
+///
+/// WHY(#223): [`kind_discriminant`] returns 0-6 for the seven known
+/// [`SignalKind`] variants, plus sentinel 255 for any future
+/// `#[non_exhaustive]` variant. Reserving one slot per known discriminant
+/// (indices 0-6) and one shared slot for the sentinel (index 7) makes
+/// per-cell storage exactly as expressive as `domain_count` ever reads --
+/// distinctness of discriminant values -- while fixing its size at
+/// compile time.
+const DOMAIN_SLOTS: usize = 8;
+
+/// Map a domain discriminant to its slot index in [`DOMAIN_SLOTS`].
+const fn slot_index(discriminant: u8) -> usize {
+    match discriminant {
+        255 => DOMAIN_SLOTS - 1,
+        d => d as usize,
+    }
+}
+
+/// Bounded per-cell observation state: one retained hit per domain.
+///
+/// WHY(#223): the grid previously stored every ingested [`DomainHit`] in an
+/// unbounded per-cell `Vec`, so an attacker who streams frames at one
+/// coordinate grows that cell's memory at the input rate with no ceiling. No
+/// consumer of [`Convergence`] reads more than one hit per domain --
+/// `domain_count` only needs distinctness -- so retaining the single most
+/// recent hit per discriminant carries the same detection semantics at fixed
+/// size.
+#[derive(Debug, Clone, Default)]
+struct DomainSlots([Option<DomainHit>; DOMAIN_SLOTS]);
+
+impl DomainSlots {
+    /// Record `hit`, replacing any earlier hit for the same domain.
+    fn record(&mut self, hit: DomainHit) {
+        self.0[slot_index(kind_discriminant(&hit.kind))] = Some(hit);
+    }
+
+    /// Hits at or after `cutoff_ms`, at most one per domain.
+    fn within_window(&self, cutoff_ms: i64) -> impl Iterator<Item = &DomainHit> {
+        self.0
+            .iter()
+            .filter_map(Option::as_ref)
+            .filter(move |h| h.timestamp.as_unix_millis() >= cutoff_ms)
+    }
+
+    /// Drop hits older than `cutoff_ms`. Returns `true` if any slot remains.
+    fn evict(&mut self, cutoff_ms: i64) -> bool {
+        let mut any_remaining = false;
+        for slot in &mut self.0 {
+            if slot
+                .as_ref()
+                .is_some_and(|h| h.timestamp.as_unix_millis() < cutoff_ms)
+            {
+                *slot = None;
+            }
+            any_remaining |= slot.is_some();
+        }
+        any_remaining
+    }
+}
+
 /// Spatial grid tracking per-cell domain observations.
 ///
-/// Cells are keyed by [`GridCell`]. Each cell holds a [`Vec<DomainHit>`]
-/// ordered by insertion time. Callers must periodically call [`evict`] to
-/// prevent unbounded growth.
+/// Cells are keyed by [`GridCell`]. Each cell holds a bounded [`DomainSlots`]
+/// (at most one retained hit per domain, independent of input volume — see
+/// [`DomainSlots`]). Callers must periodically call [`evict`] to reclaim
+/// cells whose hits have all aged out.
 ///
 /// [`evict`]: ConvergenceGrid::evict
 pub struct ConvergenceGrid {
     /// Per-cell observations.
-    cells: HashMap<GridCell, Vec<DomainHit>>,
+    cells: HashMap<GridCell, DomainSlots>,
     /// Grid quantization factor (default 10 000 ≈ 10 m resolution).
     resolution: u32,
 }
@@ -118,7 +180,7 @@ impl ConvergenceGrid {
             return;
         };
         let cell = quantize(&coords, self.resolution);
-        self.cells.entry(cell).or_default().push(DomainHit {
+        self.cells.entry(cell).or_default().record(DomainHit {
             kind: signal.kind.clone(),
             timestamp: signal.timestamp,
         });
@@ -130,6 +192,11 @@ impl ConvergenceGrid {
     /// Only hits whose `timestamp` is `>= cutoff` (where `cutoff = now - window`)
     /// are considered. The caller supplies `now` so the function is pure and
     /// testable without a real clock.
+    ///
+    /// WHY(#223): work here is bounded by `cells.len() * DOMAIN_SLOTS`
+    /// regardless of how many signals were ingested — no cell can hold more
+    /// than [`DOMAIN_SLOTS`] hits, so a flood at one coordinate no longer
+    /// makes this scan more expensive.
     #[must_use]
     pub fn detect(
         &self,
@@ -146,12 +213,8 @@ impl ConvergenceGrid {
 
         let mut result = Vec::new();
 
-        for (&cell, hits) in &self.cells {
-            // Filter to hits within the time window.
-            let window_hits: Vec<&DomainHit> = hits
-                .iter()
-                .filter(|h| h.timestamp.as_unix_millis() >= cutoff_ms)
-                .collect();
+        for (&cell, slots) in &self.cells {
+            let window_hits: Vec<&DomainHit> = slots.within_window(cutoff_ms).collect();
 
             // Count distinct domain discriminants.
             let distinct = domain_count(&window_hits);
@@ -159,7 +222,7 @@ impl ConvergenceGrid {
                 let center = cell_center(cell, self.resolution);
                 result.push(Convergence {
                     center,
-                    hits: window_hits.iter().map(|h| (*h).clone()).collect(),
+                    hits: window_hits.into_iter().cloned().collect(),
                     domain_count: distinct,
                 });
             }
@@ -173,10 +236,7 @@ impl ConvergenceGrid {
     /// Cells that become empty after eviction are removed from the grid.
     pub fn evict(&mut self, older_than: Timestamp) {
         let cutoff = older_than.as_unix_millis();
-        self.cells.retain(|_, hits| {
-            hits.retain(|h| h.timestamp.as_unix_millis() >= cutoff);
-            !hits.is_empty()
-        });
+        self.cells.retain(|_, slots| slots.evict(cutoff));
     }
 }
 
@@ -500,6 +560,91 @@ mod tests {
     }
 
     // ── full domain set ───────────────────────────────────────────────────────
+
+    // ── #223: per-cell storage is bounded under a same-domain flood ─────────
+
+    #[test]
+    fn single_domain_flood_does_not_grow_cell_storage() {
+        let mut grid = ConvergenceGrid::new(10_000);
+        let loc = coords(51.5, -0.1);
+
+        for _ in 0..10_000 {
+            grid.ingest(&signal_at(rf_kind(), loc));
+        }
+
+        let cell = quantize(&loc, 10_000);
+        let slots = grid
+            .cells
+            .get(&cell)
+            .expect("cell must exist after at least one ingest");
+        let occupied = slots.0.iter().filter(|s| s.is_some()).count();
+        assert_eq!(
+            occupied, 1,
+            "10,000 same-domain signals at one coordinate must retain exactly \
+             one slot, not grow with input volume"
+        );
+    }
+
+    #[test]
+    fn multi_domain_flood_stays_within_domain_slot_bound() {
+        let mut grid = ConvergenceGrid::new(10_000);
+        let loc = coords(51.5, -0.1);
+        let kinds = [
+            rf_kind(),
+            mesh_kind(),
+            network_kind(),
+            proximity_kind(),
+            gps_kind(),
+            env_kind(),
+            osint_kind(),
+        ];
+
+        for i in 0..10_000 {
+            grid.ingest(&signal_at(kinds[i % kinds.len()].clone(), loc));
+        }
+
+        let cell = quantize(&loc, 10_000);
+        let slots = grid.cells.get(&cell).expect("cell must exist");
+        let occupied = slots.0.iter().filter(|s| s.is_some()).count();
+        assert!(
+            occupied <= DOMAIN_SLOTS,
+            "occupied slots ({occupied}) must never exceed the fixed bound \
+             ({DOMAIN_SLOTS}) regardless of input volume"
+        );
+        assert_eq!(
+            occupied,
+            kinds.len(),
+            "all seven distinct domains from the flood should still be represented"
+        );
+    }
+
+    #[test]
+    fn a_later_hit_for_the_same_domain_replaces_the_earlier_one() {
+        // WHY(#223): the whole point of bounding storage to one slot per
+        // domain is that a later hit for a domain already present replaces
+        // the earlier one rather than accumulating -- verify the *content*
+        // that survives is the latest, not just the count.
+        let mut grid = ConvergenceGrid::new(10_000);
+        let loc = coords(51.5, -0.1);
+
+        let old_ts = Timestamp::from_unix_millis(Timestamp::now().as_unix_millis() - 5_000)
+            .expect("valid timestamp");
+        grid.ingest(&GeoSignal::new(rf_kind(), old_ts, Some(loc)));
+
+        let now = Timestamp::now();
+        grid.ingest(&GeoSignal::new(rf_kind(), now, Some(loc)));
+
+        let cell = quantize(&loc, 10_000);
+        let slots = grid.cells.get(&cell).expect("cell must exist");
+        let rf_slot = slots.0[slot_index(kind_discriminant(&rf_kind()))]
+            .as_ref()
+            .expect("rf slot must be occupied");
+        assert_eq!(
+            rf_slot.timestamp.as_unix_millis(),
+            now.as_unix_millis(),
+            "the surviving hit must be the latest one, not the first"
+        );
+    }
 
     #[test]
     fn seven_distinct_domains_all_detected() {
