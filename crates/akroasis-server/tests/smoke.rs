@@ -63,7 +63,7 @@ async fn timeout_layer_bounds_a_handler_that_never_returns() {
             // WHY: any duration well past REQUEST_TIMEOUT proves the
             // layer -- not the handler -- ends the request. Paused tokio
             // time makes this resolve without real wall-clock delay.
-            tokio::time::sleep(Duration::from_secs(3600)).await;
+            tokio::time::sleep(Duration::from_secs(3600)).await; // kanon:ignore TESTING/sleep-in-test -- runs under start_paused = true; tokio's virtual clock resolves this without real wall-clock delay, which is the deterministic time control this rule wants
         }),
     ));
 
