@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.1.23](https://github.com/forkwright/akroasis/compare/v0.1.22...v0.1.23) (2026-08-09)
+
+
+### Bug Fixes
+
+* **akroasis-server:** bound request timeout, concurrency, and body size ([#362](https://github.com/forkwright/akroasis/issues/362)) ([d77876d](https://github.com/forkwright/akroasis/commit/d77876d1af58ebfdaa406bd4f3015cdda3d418da)), closes [#194](https://github.com/forkwright/akroasis/issues/194)
+* **kerykeion:** escalate background task failures to a clean shutdown ([#363](https://github.com/forkwright/akroasis/issues/363)) ([0a468f1](https://github.com/forkwright/akroasis/commit/0a468f11996be9c4aa67be137762c3e4038c6211)), closes [#205](https://github.com/forkwright/akroasis/issues/205)
+* **semaino:** bound per-cell convergence storage to one hit per domain ([#364](https://github.com/forkwright/akroasis/issues/364)) ([cba9170](https://github.com/forkwright/akroasis/commit/cba91700705b3ec73ee711709eb943eff26d9254)), closes [#223](https://github.com/forkwright/akroasis/issues/223)
+* **semaino:** ingest a trigger signal before detecting its convergence ([#365](https://github.com/forkwright/akroasis/issues/365)) ([de0b8ae](https://github.com/forkwright/akroasis/commit/de0b8ae2be29a60921ec0ace9cf64ad51e022968)), closes [#224](https://github.com/forkwright/akroasis/issues/224)
+
 ## [0.1.22](https://github.com/forkwright/akroasis/compare/v0.1.21...v0.1.22) (2026-08-04)
 
 

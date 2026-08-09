@@ -34,7 +34,7 @@ dependencies = [
 
 [[package]]
 name = "akroasis"
-version = "0.1.22"
+version = "0.1.23"
 dependencies = [
  "clap",
  "comfy-table",
@@ -59,7 +59,7 @@ dependencies = [
 
 [[package]]
 name = "akroasis-server"
-version = "0.1.22"
+version = "0.1.23"
 dependencies = [
  "akroasis",
  "axum",
@@ -1392,7 +1392,7 @@ dependencies = [
 
 [[package]]
 name = "kerykeion"
-version = "0.1.22"
+version = "0.1.23"
 dependencies = [
  "aes",
  "bytes",
@@ -1417,7 +1417,7 @@ dependencies = [
 
 [[package]]
 name = "koinon"
-version = "0.1.22"
+version = "0.1.23"
 dependencies = [
  "blake3",
  "ciborium",
@@ -1437,7 +1437,7 @@ dependencies = [
 
 [[package]]
 name = "kryphos"
-version = "0.1.22"
+version = "0.1.23"
 dependencies = [
  "argon2",
  "blake3",
@@ -2163,7 +2163,7 @@ checksum = "b12e76d157a900eb52e81bc6e9f3069344290341720e9178cde2407113ac8d89"
 
 [[package]]
 name = "semaino"
-version = "0.1.22"
+version = "0.1.23"
 dependencies = [
  "jiff",
  "koinon",
@@ -2456,7 +2456,7 @@ checksum = "0bf256ce5efdfa370213c1dabab5935a12e49f2c58d15e9eac2870d3b4f27263"
 
 [[package]]
 name = "syntonia"
-version = "0.1.22"
+version = "0.1.23"
 dependencies = [
  "compact_str",
  "csv",
