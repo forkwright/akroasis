@@ -495,10 +495,10 @@ impl Collector for MeshCollector { // kanon:ignore ARCHITECTURE/trait-impl-coloc
                     }
                 }
                 Some(task_result) = tasks.join_next() => {
-                    match task_result {
-                        Ok(Ok(())) => tracing::debug!("background task completed"),
-                        Ok(Err(e)) => tracing::warn!(error = %e, "background task error"),
-                        Err(e) => tracing::warn!(error = %e, "background task panicked"),
+                    if supervise_task_result(task_result) == TaskOutcome::Shutdown {
+                        tracing::error!("collector shutting down: a background task subsystem was lost");
+                        cancel.cancel();
+                        break;
                     }
                 }
             }
@@ -521,6 +521,44 @@ impl Collector for MeshCollector { // kanon:ignore ARCHITECTURE/trait-impl-coloc
 
         tracing::info!("collector shutdown complete");
         Ok(())
+    }
+}
+
+/// What the main receive loop should do after observing a background task's
+/// join result.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TaskOutcome {
+    /// The task exited cleanly (or is merely being logged); keep running.
+    Continue,
+    /// The task panicked or returned an error; the collector must not keep
+    /// running silently degraded with that subsystem gone.
+    Shutdown,
+}
+
+/// Classify a background task's [`JoinSet::join_next`] result and log it.
+///
+/// WHY(#205): heartbeat, gateway health, discovery, and router-flush used to
+/// be logged-and-ignored on panic or error, leaving the collector running --
+/// and reporting healthy -- with a subsystem permanently gone. Losing
+/// router-flush in particular silently stops all outbound sending while the
+/// collector keeps receiving, so the operator has no signal that the tool
+/// has stopped doing half its job. Every background task is now supervised
+/// uniformly: any panic or error escalates to a clean shutdown rather than
+/// an indefinite silent partial failure.
+fn supervise_task_result(result: Result<Result<(), Error>, tokio::task::JoinError>) -> TaskOutcome {
+    match result {
+        Ok(Ok(())) => {
+            tracing::debug!("background task completed");
+            TaskOutcome::Continue
+        }
+        Ok(Err(e)) => {
+            tracing::error!(error = %e, "background task returned an error");
+            TaskOutcome::Shutdown
+        }
+        Err(e) => {
+            tracing::error!(error = %e, "background task panicked");
+            TaskOutcome::Shutdown
+        }
     }
 }
 
