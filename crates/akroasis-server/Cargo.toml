@@ -23,5 +23,11 @@ tower-http = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 
+[dev-dependencies]
+# WHY(#194): `start_paused = true` on the timeout-layer regression test needs
+# tokio's virtual clock, which "full" deliberately excludes from production
+# builds.
+tokio = { workspace = true, features = ["test-util"] }
+
 [lints]
 workspace = true

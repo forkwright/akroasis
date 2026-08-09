@@ -124,8 +124,8 @@ rusb = "0.9.4"
 
 # HTTP server
 axum = { version = "0.8", features = ["macros"] }
-tower = "0.5"
-tower-http = { version = "0.7", features = ["cors", "trace"] }
+tower = { version = "0.5", features = ["util", "timeout"] }
+tower-http = { version = "0.7", features = ["cors", "trace", "limit"] }
 
 # Testing
 proptest = "1"
