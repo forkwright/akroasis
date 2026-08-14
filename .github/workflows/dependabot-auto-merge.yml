@@ -27,9 +27,14 @@ jobs:
           (steps.metadata.outputs.update-type == 'version-update:semver-minor' &&
            steps.metadata.outputs.dependency-type == 'direct:development')
         run: |
+          # WHY exit 1, not exit 0: this step is a GUARD, and `exit 0` makes
+          # it SUCCEED. The merge steps below gate only on
+          # `steps.metadata.outputs.update-type`, never on this step's
+          # outcome, and Actions skips a later step only when an earlier one
+          # FAILS -- so a zero exit printed a refusal and then merged anyway.
           if ! gh pr checks "$PR_URL" --watch --interval 30 --required; then
-            echo "Required CI checks did not pass — skipping auto-merge"
-            exit 0
+            echo "Required CI checks did not pass; refusing auto-merge." >&2
+            exit 1
           fi
         env:
           PR_URL: ${{ github.event.pull_request.html_url }}
