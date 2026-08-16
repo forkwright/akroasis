@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.24](https://github.com/forkwright/akroasis/compare/v0.1.23...v0.1.24) (2026-08-14)
+
+
+### Bug Fixes
+
+* **ci:** make the dependabot auto-merge guard refuse instead of merging ([#372](https://github.com/forkwright/akroasis/issues/372)) ([56147fb](https://github.com/forkwright/akroasis/commit/56147fbb7995b29261f2b2603903c40ad7807b2a)), closes [#371](https://github.com/forkwright/akroasis/issues/371)
+
 ## [0.1.23](https://github.com/forkwright/akroasis/compare/v0.1.22...v0.1.23) (2026-08-09)
 
 
