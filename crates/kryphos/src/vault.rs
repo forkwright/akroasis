@@ -6,9 +6,10 @@ use compact_str::CompactString;
 use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use snafu::ResultExt;
+use zeroize::Zeroizing;
 
 use crate::error::{CryptoError, KeyParseSnafu};
-use crate::key::{InstallationIdentity, SigningKey, VaultKey};
+use crate::key::{InstallationIdentity, SIGNING_KEY_LEN, SigningKey, VaultKey};
 
 /// Size of the Argon2id salt in bytes.
 pub const SALT_LEN: usize = 16;
@@ -17,7 +18,15 @@ pub const SALT_LEN: usize = 16;
 pub const NONCE_LEN: usize = 12;
 
 /// Current vault format version.
-pub const VAULT_VERSION: u32 = 1;
+///
+/// WARNING: bumping this is a hard break, not a migration point — `open`
+/// rejects any header whose `version` does not match exactly, so a vault
+/// written under a prior version simply fails to open under a newer one.
+/// v2 changed `StoredEntry`'s on-disk shape: names, types, tags, status, and
+/// history moved from plaintext fields into `encrypted_metadata`, and the
+/// fjall record key changed from the plaintext name to a keyed-hash lookup
+/// key, so a v1 store has neither the fields nor the keys v2 code expects.
+pub const VAULT_VERSION: u32 = 2;
 
 /// The kind of credential stored in a [`VaultEntry`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -218,13 +227,25 @@ pub fn seal_signing_key(
 ) -> Result<Vec<u8>, CryptoError> {
     let cipher = ChaCha20Poly1305::new(vault_key.as_bytes().into());
     let nonce = Nonce::from_slice(nonce);
-    let plaintext = identity.signing_key().to_bytes();
+    // WHY: `to_bytes()` returns the raw Ed25519 signing key in an ordinary
+    // array; wrap immediately so this ephemeral copy is scrubbed on drop
+    // rather than left on the stack after `encrypt` returns — the same
+    // coverage `unseal_signing_key` gives the decrypt direction below
+    // (RUST/#218).
+    let plaintext = zeroizing_signing_key_bytes(identity);
 
     cipher
         .encrypt(nonce, plaintext.as_ref())
         .map_err(|e| CryptoError::EncryptionFailed {
             reason: e.to_string(),
         })
+}
+
+/// Copies the signing key's raw bytes into a zero-on-drop buffer.
+fn zeroizing_signing_key_bytes(
+    identity: &InstallationIdentity,
+) -> Zeroizing<[u8; SIGNING_KEY_LEN]> {
+    Zeroizing::new(identity.signing_key().to_bytes())
 }
 
 /// Decrypts a signing key from vault ciphertext, reconstructing the
@@ -244,9 +265,21 @@ pub fn unseal_signing_key(
     let cipher = ChaCha20Poly1305::new(vault_key.as_bytes().into());
     let nonce = Nonce::from_slice(nonce);
 
-    let plaintext = cipher
-        .decrypt(nonce, ciphertext)
-        .map_err(|_| CryptoError::DecryptionFailed)?;
+    // WHY: wrap at the point of allocation — `decrypt`'s return (the raw
+    // Ed25519 signing key bytes) is moved straight into `Zeroizing::new`
+    // with no intermediate unwrapped binding, so this ephemeral copy is
+    // scrubbed on drop rather than left in freed heap memory.
+    // `SigningKey::from_bytes` (key.rs) makes one further copy crossing
+    // into its own fixed-size array before constructing the
+    // `ZeroizeOnDrop`-protected `ed25519_dalek::SigningKey`; that copy is
+    // wrapped the same way (`zeroizing_key_array`), so no unprotected frame
+    // remains between this decrypt output and the protected key it becomes
+    // (RUST/#218).
+    let plaintext = Zeroizing::new(
+        cipher
+            .decrypt(nonce, ciphertext)
+            .map_err(|_| CryptoError::DecryptionFailed)?,
+    );
 
     let signing = SigningKey::from_bytes(&plaintext).context(KeyParseSnafu)?;
 
@@ -437,6 +470,28 @@ mod tests {
         assert!(
             recovered.verify(message, &sig).is_ok(),
             "recovered identity must verify signatures FROM the original"
+        );
+    }
+
+    /// Dispositive by construction, same mechanism as
+    /// `decrypted_secret_is_zeroized_on_drop_by_type` (kryphos storage
+    /// tests): `[u8; N]` alone does not implement `ZeroizeOnDrop` (only
+    /// `Zeroize`), so this specific bound fails to compile against a bare
+    /// array and passes only because `zeroizing_signing_key_bytes` returns
+    /// `Zeroizing<[u8; N]>` — the encrypt-direction counterpart of the
+    /// `Zeroizing` wrap `unseal_signing_key` already applies on decrypt.
+    #[test]
+    fn seal_signing_key_plaintext_buffer_is_zeroize_on_drop_by_type() {
+        use zeroize::ZeroizeOnDrop;
+        fn assert_zeroizes_on_drop<T: ZeroizeOnDrop>(_: &T) {}
+
+        let identity = InstallationIdentity::generate();
+        let plaintext = zeroizing_signing_key_bytes(&identity);
+        assert_zeroizes_on_drop(&plaintext);
+        assert_eq!(
+            *plaintext,
+            identity.signing_key().to_bytes(),
+            "wrapped buffer must carry the same bytes through"
         );
     }
 

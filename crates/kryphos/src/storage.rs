@@ -10,6 +10,7 @@ use jiff::Timestamp;
 use koinon::{ChainKey, LogEntryKind, TamperLog, VerificationResult};
 use serde::{Deserialize, Serialize};
 use snafu::ResultExt;
+use zeroize::Zeroizing;
 
 use crate::crypto::{self, decrypt, encrypt};
 use crate::error::{
@@ -45,6 +46,13 @@ const TAMPER_LOG_FILE: &str = "tamper.log";
 /// vault key from a leaked chain key is infeasible.
 const CHAIN_KEY_DOMAIN: &[u8] = b"kryphos/tamper-log/chain-key/v1";
 
+/// Domain-separation tag for deriving the fjall lookup-key subkey from
+/// the vault's [`VaultKey`] (see [`Vault::lookup_key`]).
+///
+/// Reuses the vault's existing secret rather than requiring a second one
+/// to manage, mirroring [`CHAIN_KEY_DOMAIN`].
+const LOOKUP_KEY_DOMAIN: &[u8] = b"kryphos/vault/lookup-key/v1";
+
 /// On-disk vault header stored as JSON.
 #[derive(Debug, Serialize, Deserialize)]
 struct StoredHeader {
@@ -55,10 +63,25 @@ struct StoredHeader {
 }
 
 /// Entry as stored in fjall (JSON-serialized value).
+///
+/// Both fields are independently-nonced ChaCha20-Poly1305 ciphertexts.
+/// `encrypted_metadata` decrypts to an [`EntryMetadataRecord`] carrying
+/// the name, type, metadata, status, and history — none of it readable
+/// from the fjall data directory without the vault key. Keeping it
+/// separate from `encrypted_secret` means listing entries (which needs
+/// only the metadata) never touches secret ciphertext.
 #[derive(Debug, Serialize, Deserialize)]
 struct StoredEntry {
-    credential_type: CredentialType,
     encrypted_secret: Vec<u8>,
+    encrypted_metadata: Vec<u8>,
+}
+
+/// Plaintext form of everything but the secret value; JSON-serialized
+/// and encrypted as `StoredEntry::encrypted_metadata`.
+#[derive(Debug, Serialize, Deserialize)]
+struct EntryMetadataRecord {
+    name: CompactString,
+    credential_type: CredentialType,
     metadata: EntryMetadata,
     #[serde(default)]
     status: EntryStatus,
@@ -74,7 +97,12 @@ pub struct DecryptedEntry {
     /// What kind of credential this is.
     pub credential_type: CredentialType,
     /// The decrypted secret bytes.
-    pub secret: Vec<u8>,
+    ///
+    /// Wrapped in [`Zeroizing`] at the point of allocation (the return
+    /// of [`decrypt`], moved straight in — no unwrapped copy exists in
+    /// between) so the plaintext is scrubbed on drop rather than left in
+    /// freed heap memory.
+    pub secret: Zeroizing<Vec<u8>>,
     /// Associated metadata.
     pub metadata: EntryMetadata,
 }
@@ -280,7 +308,9 @@ impl Vault {
         credential_type: CredentialType,
         secret: &[u8],
     ) -> Result<(), VaultError> {
-        if self.keyspace.get(name).map_err(fjall_err)?.is_some() {
+        let key = self.lookup_key(name);
+
+        if self.keyspace.get(key).map_err(fjall_err)?.is_some() {
             return Err(VaultError::DuplicateEntry {
                 name: name.to_owned(),
             });
@@ -289,9 +319,9 @@ impl Vault {
         let encrypted_secret = encrypt(&self.key, secret).context(EntryCryptoSnafu)?;
 
         let now = Timestamp::now();
-        let entry = StoredEntry {
+        let record = EntryMetadataRecord {
+            name: CompactString::from(name),
             credential_type,
-            encrypted_secret,
             metadata: EntryMetadata {
                 created_at: now,
                 rotated_at: None,
@@ -305,9 +335,15 @@ impl Vault {
                 kind: HistoryEventKind::Created,
             }],
         };
+        let encrypted_metadata = self.encrypt_metadata(&record)?;
+
+        let entry = StoredEntry {
+            encrypted_secret,
+            encrypted_metadata,
+        };
 
         let value = serde_json::to_vec(&entry).context(SerializationSnafu)?;
-        self.keyspace.insert(name, value).map_err(fjall_err)?;
+        self.keyspace.insert(key, value).map_err(fjall_err)?;
         self.db
             .persist(fjall::PersistMode::SyncAll)
             .map_err(fjall_err)?;
@@ -324,50 +360,57 @@ impl Vault {
     /// Returns [`VaultError::EntryRevoked`] if the entry has been revoked.
     /// Returns [`VaultError::EntryCrypto`] if decryption fails.
     pub fn get(&self, name: &str) -> Result<DecryptedEntry, VaultError> {
-        let raw = self.keyspace.get(name).map_err(fjall_err)?.ok_or_else(|| {
+        let key = self.lookup_key(name);
+        let raw = self.keyspace.get(key).map_err(fjall_err)?.ok_or_else(|| {
             VaultError::EntryNotFound {
                 name: name.to_owned(),
             }
         })?;
 
         let entry: StoredEntry = serde_json::from_slice(&raw).context(SerializationSnafu)?;
+        let record = self.decrypt_metadata(&entry)?;
 
-        if entry.status == EntryStatus::Revoked {
+        if record.status == EntryStatus::Revoked {
             return EntryRevokedSnafu { name }.fail();
         }
 
-        let secret = decrypt(&self.key, &entry.encrypted_secret).context(EntryCryptoSnafu)?;
+        // WHY: wrap at the point of allocation — `decrypt`'s return is moved
+        // straight into `Zeroizing::new` with no intermediate unwrapped
+        // binding, so there is no plaintext copy that this fix leaves
+        // unscrubbed on drop.
+        let secret =
+            Zeroizing::new(decrypt(&self.key, &entry.encrypted_secret).context(EntryCryptoSnafu)?);
 
         Ok(DecryptedEntry {
-            name: CompactString::from(name),
-            credential_type: entry.credential_type,
+            name: record.name,
+            credential_type: record.credential_type,
             secret,
-            metadata: entry.metadata,
+            metadata: record.metadata,
         })
     }
 
     /// Lists all entries in the vault (names and metadata only).
     ///
-    /// No secrets are decrypted or returned.
+    /// No secrets are decrypted or returned: only `encrypted_metadata` is
+    /// touched, never `encrypted_secret`.
     ///
     /// # Errors
     ///
     /// Returns [`VaultError::StorageBackend`] on iteration errors.
+    /// Returns [`VaultError::EntryCrypto`] if metadata decryption fails.
     pub fn list(&self) -> Result<Vec<EntryInfo>, VaultError> {
         let mut entries = Vec::new();
 
         for guard in self.keyspace.iter() {
-            let (key, value) = guard.into_inner().map_err(fjall_err)?;
-            let name = std::str::from_utf8(&key).map_err(|e| VaultError::StorageBackend {
-                message: format!("invalid UTF-8 key: {e}"),
-            })?;
+            let (_key, value) = guard.into_inner().map_err(fjall_err)?;
             let entry: StoredEntry = serde_json::from_slice(&value).context(SerializationSnafu)?;
+            let record = self.decrypt_metadata(&entry)?;
 
             entries.push(EntryInfo {
-                name: CompactString::from(name),
-                credential_type: entry.credential_type,
-                status: entry.status,
-                metadata: entry.metadata,
+                name: record.name,
+                credential_type: record.credential_type,
+                status: record.status,
+                metadata: record.metadata,
             });
         }
 
@@ -383,19 +426,21 @@ impl Vault {
     /// Returns [`VaultError::EntryNotFound`] if no entry with this name exists.
     /// Returns [`VaultError::EntryNotDeletable`] if the entry is revoked.
     pub fn remove(&self, name: &str) -> Result<(), VaultError> {
-        let raw = self.keyspace.get(name).map_err(fjall_err)?.ok_or_else(|| {
+        let key = self.lookup_key(name);
+        let raw = self.keyspace.get(key).map_err(fjall_err)?.ok_or_else(|| {
             VaultError::EntryNotFound {
                 name: name.to_owned(),
             }
         })?;
 
         let entry: StoredEntry = serde_json::from_slice(&raw).context(SerializationSnafu)?;
+        let record = self.decrypt_metadata(&entry)?;
 
-        if entry.status == EntryStatus::Revoked {
+        if record.status == EntryStatus::Revoked {
             return EntryNotDeletableSnafu { name }.fail();
         }
 
-        self.keyspace.remove(name).map_err(fjall_err)?;
+        self.keyspace.remove(key).map_err(fjall_err)?;
         self.db
             .persist(fjall::PersistMode::SyncAll)
             .map_err(fjall_err)?;
@@ -415,30 +460,38 @@ impl Vault {
     /// Returns [`VaultError::EntryRevoked`] if the entry has been revoked.
     /// Returns [`VaultError::EntryCrypto`] if encryption fails.
     pub fn rotate(&self, name: &str, new_secret: &[u8]) -> Result<(), VaultError> {
-        let raw = self.keyspace.get(name).map_err(fjall_err)?.ok_or_else(|| {
+        let key = self.lookup_key(name);
+        let raw = self.keyspace.get(key).map_err(fjall_err)?.ok_or_else(|| {
             VaultError::EntryNotFound {
                 name: name.to_owned(),
             }
         })?;
 
-        let mut entry: StoredEntry = serde_json::from_slice(&raw).context(SerializationSnafu)?;
+        let entry: StoredEntry = serde_json::from_slice(&raw).context(SerializationSnafu)?;
+        let mut record = self.decrypt_metadata(&entry)?;
 
-        if entry.status == EntryStatus::Revoked {
+        if record.status == EntryStatus::Revoked {
             return EntryRevokedSnafu { name }.fail();
         }
 
-        entry.encrypted_secret = encrypt(&self.key, new_secret).context(EntryCryptoSnafu)?;
+        let encrypted_secret = encrypt(&self.key, new_secret).context(EntryCryptoSnafu)?;
 
         let now = Timestamp::now();
-        entry.metadata.rotated_at = Some(now);
-        entry.metadata.rotation_count += 1;
-        entry.history.push(HistoryEvent {
+        record.metadata.rotated_at = Some(now);
+        record.metadata.rotation_count += 1;
+        record.history.push(HistoryEvent {
             timestamp: now,
             kind: HistoryEventKind::Rotated,
         });
+        let encrypted_metadata = self.encrypt_metadata(&record)?;
+
+        let entry = StoredEntry {
+            encrypted_secret,
+            encrypted_metadata,
+        };
 
         let value = serde_json::to_vec(&entry).context(SerializationSnafu)?;
-        self.keyspace.insert(name, value).map_err(fjall_err)?;
+        self.keyspace.insert(key, value).map_err(fjall_err)?;
         self.db
             .persist(fjall::PersistMode::SyncAll)
             .map_err(fjall_err)?;
@@ -457,28 +510,36 @@ impl Vault {
     /// Returns [`VaultError::EntryNotFound`] if no entry with this name exists.
     /// Returns [`VaultError::EntryRevoked`] if the entry is already revoked.
     pub fn revoke(&self, name: &str) -> Result<(), VaultError> {
-        let raw = self.keyspace.get(name).map_err(fjall_err)?.ok_or_else(|| {
+        let key = self.lookup_key(name);
+        let raw = self.keyspace.get(key).map_err(fjall_err)?.ok_or_else(|| {
             VaultError::EntryNotFound {
                 name: name.to_owned(),
             }
         })?;
 
-        let mut entry: StoredEntry = serde_json::from_slice(&raw).context(SerializationSnafu)?;
+        let entry: StoredEntry = serde_json::from_slice(&raw).context(SerializationSnafu)?;
+        let mut record = self.decrypt_metadata(&entry)?;
 
-        if entry.status == EntryStatus::Revoked {
+        if record.status == EntryStatus::Revoked {
             return EntryRevokedSnafu { name }.fail();
         }
 
         let now = Timestamp::now();
-        entry.status = EntryStatus::Revoked;
-        entry.metadata.revoked_at = Some(now);
-        entry.history.push(HistoryEvent {
+        record.status = EntryStatus::Revoked;
+        record.metadata.revoked_at = Some(now);
+        record.history.push(HistoryEvent {
             timestamp: now,
             kind: HistoryEventKind::Revoked,
         });
+        let encrypted_metadata = self.encrypt_metadata(&record)?;
+
+        let entry = StoredEntry {
+            encrypted_secret: entry.encrypted_secret,
+            encrypted_metadata,
+        };
 
         let value = serde_json::to_vec(&entry).context(SerializationSnafu)?;
-        self.keyspace.insert(name, value).map_err(fjall_err)?;
+        self.keyspace.insert(key, value).map_err(fjall_err)?;
         self.db
             .persist(fjall::PersistMode::SyncAll)
             .map_err(fjall_err)?;
@@ -496,19 +557,21 @@ impl Vault {
     ///
     /// Returns [`VaultError::EntryNotFound`] if no entry with this name exists.
     pub fn history(&self, name: &str) -> Result<EntryHistory, VaultError> {
-        let raw = self.keyspace.get(name).map_err(fjall_err)?.ok_or_else(|| {
+        let key = self.lookup_key(name);
+        let raw = self.keyspace.get(key).map_err(fjall_err)?.ok_or_else(|| {
             VaultError::EntryNotFound {
                 name: name.to_owned(),
             }
         })?;
 
         let entry: StoredEntry = serde_json::from_slice(&raw).context(SerializationSnafu)?;
+        let record = self.decrypt_metadata(&entry)?;
 
         Ok(EntryHistory {
-            name: CompactString::from(name),
-            status: entry.status,
-            metadata: entry.metadata,
-            events: entry.history,
+            name: record.name,
+            status: record.status,
+            metadata: record.metadata,
+            events: record.history,
         })
     }
 
@@ -541,6 +604,32 @@ impl Vault {
     /// no second secret to generate, store, or rotate.
     fn chain_key(&self) -> ChainKey {
         ChainKey::from_bytes(blake3::keyed_hash(self.key.as_bytes(), CHAIN_KEY_DOMAIN).into())
+    }
+
+    /// Derives the fjall record key for `name` via a two-step keyed BLAKE3
+    /// hash of the vault key, so credential names never appear as fjall
+    /// keys on disk.
+    ///
+    /// Deterministic (same name -> same key), so `get`/`add`/`remove` stay
+    /// O(1) keyspace lookups without ever storing the name itself. A fresh
+    /// derivation on every call, mirroring [`Self::chain_key`].
+    fn lookup_key(&self, name: &str) -> [u8; 32] {
+        let subkey = blake3::keyed_hash(self.key.as_bytes(), LOOKUP_KEY_DOMAIN);
+        blake3::keyed_hash(subkey.as_bytes(), name.as_bytes()).into()
+    }
+
+    /// Decrypts and parses an entry's `encrypted_metadata` field.
+    fn decrypt_metadata(&self, entry: &StoredEntry) -> Result<EntryMetadataRecord, VaultError> {
+        let metadata_bytes =
+            decrypt(&self.key, &entry.encrypted_metadata).context(EntryCryptoSnafu)?;
+        serde_json::from_slice(&metadata_bytes).context(SerializationSnafu)
+    }
+
+    /// Serializes and encrypts an [`EntryMetadataRecord`] for storage as
+    /// `StoredEntry::encrypted_metadata`.
+    fn encrypt_metadata(&self, record: &EntryMetadataRecord) -> Result<Vec<u8>, VaultError> {
+        let metadata_bytes = serde_json::to_vec(record).context(SerializationSnafu)?;
+        encrypt(&self.key, &metadata_bytes).context(EntryCryptoSnafu)
     }
 
     fn append_vault_audit(&self, name: &str, operation: &str) -> Result<(), VaultError> {

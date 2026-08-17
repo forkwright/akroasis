@@ -579,7 +579,7 @@ mod tests {
             .unwrap();
 
         let entry = vault.get("test-key").unwrap();
-        assert_eq!(entry.secret, b"secret-123");
+        assert_eq!(entry.secret.as_slice(), b"secret-123".as_slice());
         assert_eq!(entry.credential_type, CredentialType::ApiKey);
     }
 
@@ -640,7 +640,7 @@ mod tests {
         vault.rotate("rotate-key", b"new-secret").unwrap();
 
         let entry = vault.get("rotate-key").unwrap();
-        assert_eq!(entry.secret, b"new-secret");
+        assert_eq!(entry.secret.as_slice(), b"new-secret".as_slice());
     }
 
     #[test]
@@ -658,7 +658,8 @@ mod tests {
 
         let entry = vault.get("binary-key").unwrap();
         assert_eq!(
-            entry.secret, non_utf8_secret,
+            entry.secret.as_slice(),
+            non_utf8_secret,
             "secret bytes must round-trip exactly, with no UTF-8 lossy substitution"
         );
     }
