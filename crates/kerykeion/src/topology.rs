@@ -52,14 +52,87 @@ impl MeshTopology {
     }
 
     /// Insert a node or return its existing index.
-    // TODO(#204): cardinality bound lands in the next commit.
+    ///
+    /// If `node` is not already tracked and the graph is at
+    /// [`MAX_LIVE_NODES`], the coldest tracked node is evicted first (#204).
     pub fn add_node(&mut self, node: NodeNum) -> NodeIndex {
+        self.add_node_protecting(node, &[])
+    }
+
+    /// [`Self::add_node`], excluding `protect` from eviction candidacy.
+    ///
+    // WHY this split exists (#204 self-eviction, caught in review before
+    // shipping): `update_link` must add TWO nodes (`from` and `to`) before
+    // it can create their edge. A node that was JUST inserted by the first
+    // call has zero edges yet — `freshness` reports `None`, the coldest
+    // possible key — so a second, independent `add_node` call for the
+    // other endpoint could evict the first one before the edge is ever
+    // created, leaving a dangling `NodeIndex` and panicking
+    // `StableGraph::add_edge`. Protecting the sibling endpoint closes that.
+    // See `update_link_never_evicts_its_own_two_new_endpoints`.
+    fn add_node_protecting(&mut self, node: NodeNum, protect: &[NodeNum]) -> NodeIndex {
         if let Some(&idx) = self.node_index.get(&node) {
             return idx;
+        }
+        if self.node_index.len() >= MAX_LIVE_NODES {
+            self.evict_coldest_node(protect);
         }
         let idx = self.graph.add_node(node);
         self.node_index.insert(node, idx);
         idx
+    }
+
+    /// Most recent `last_observed` across all of `node`'s edges (either
+    /// direction), or `None` if it has none.
+    ///
+    // WHY `None` sorts coldest via `Option`'s derived `Ord` (`None < Some(_)`):
+    // this matches `remove_stale_nodes`'s existing "no edges is stale" rule
+    // rather than introducing a second policy for the same question.
+    fn freshness(&self, idx: NodeIndex) -> Option<Instant> {
+        self.graph
+            .edges_directed(idx, Direction::Incoming)
+            .chain(self.graph.edges_directed(idx, Direction::Outgoing))
+            .map(|e| e.weight().last_observed)
+            .max()
+    }
+
+    /// Remove the coldest tracked node not in `protect` to make room for an insertion.
+    ///
+    // WHY freshness-by-edge-activity rather than insertion order (#204): an
+    // attacker who knows the eviction policy could target a specific real
+    // node by insertion position; picking the coldest node instead means an
+    // attacker can only ever evict entries THEY stopped refreshing (their
+    // own flood, once it exceeds the cap) or a real node that has
+    // genuinely gone quiet — the same tradeoff `remove_stale_nodes` already
+    // makes on a timer. No explicit "protect my own identity" field exists
+    // on `MeshTopology` (unlike `NodeDb::my_node`): the local radio's own
+    // node is the target of every direct-neighbor `update_link` call
+    // (`processor::apply_passive_learning`), so its edges are refreshed on
+    // essentially every received packet and it naturally stays warm.
+    fn evict_coldest_node(&mut self, protect: &[NodeNum]) {
+        let victim = self
+            .node_index
+            .iter()
+            .filter(|&(num, _)| !protect.contains(num))
+            .min_by_key(|&(_, &idx)| self.freshness(idx))
+            .map(|(&num, &idx)| (num, idx));
+        if let Some((num, idx)) = victim {
+            self.node_index.remove(&num);
+            self.graph.remove_node(idx);
+        }
+    }
+
+    /// Remove the coldest tracked edge to make room for a new one.
+    fn evict_coldest_edge(&mut self) {
+        let victim = self
+            .graph
+            .edge_indices()
+            .filter_map(|idx| self.graph.edge_weight(idx).map(|w| (idx, w.last_observed)))
+            .min_by_key(|&(_, last_observed)| last_observed)
+            .map(|(idx, _)| idx);
+        if let Some(idx) = victim {
+            self.graph.remove_edge(idx);
+        }
     }
 
     /// Add or update a directed edge from `from` to `to` with the given SNR.
@@ -79,8 +152,11 @@ impl MeshTopology {
             return;
         }
 
-        let from_idx = self.add_node(from);
-        let to_idx = self.add_node(to);
+        // WHY `add_node_protecting` (not `add_node`) with each other as the
+        // protected node: see the WHY on `add_node_protecting` — the second
+        // call must not evict the node the first call just inserted.
+        let from_idx = self.add_node_protecting(from, &[to]);
+        let to_idx = self.add_node_protecting(to, &[from]);
 
         // WHY: search existing edges to update rather than create duplicates.
         let existing = self
@@ -96,7 +172,12 @@ impl MeshTopology {
                 weight.packet_count = weight.packet_count.saturating_add(1);
             }
         } else {
-            // TODO(#204): cardinality bound lands in the next commit.
+            // WHY: a NEW edge is what grows cardinality (#204) — an update to
+            // an existing edge (the branch above) never does, so the cap
+            // check belongs only here.
+            if self.graph.edge_count() >= MAX_LIVE_LINKS {
+                self.evict_coldest_edge();
+            }
             self.graph.add_edge(
                 from_idx,
                 to_idx,

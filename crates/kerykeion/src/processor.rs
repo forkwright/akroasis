@@ -530,21 +530,32 @@ impl RoutingProcessor {
             return RoutingResult::NotRouting;
         };
 
-        // TODO(#208): fail-open fix lands in the next commit.
         match routing_msg.variant {
-            Some(routing::Variant::ErrorReason(code)) => {
-                let error = routing::Error::try_from(code).unwrap_or(routing::Error::None);
-                if error == routing::Error::None {
-                    RoutingResult::Ack {
+            // WHY match on the decode result directly rather than
+            // `unwrap_or(routing::Error::None)` (#208): the prior fallback
+            // read ANY unrecognized code as `Error::None`, i.e. delivery
+            // confirmed. Only an EXPLICITLY decoded `Error::None` may ACK;
+            // an out-of-enum code falls through to `UnknownError`, never `Ack`.
+            Some(routing::Variant::ErrorReason(code)) => match routing::Error::try_from(code) {
+                Ok(routing::Error::None) => RoutingResult::Ack {
+                    request_id: PacketId(request_id),
+                },
+                Ok(error) => RoutingResult::Nak {
+                    request_id: PacketId(request_id),
+                    error,
+                },
+                Err(_) => {
+                    tracing::warn!(
+                        packet_id = packet.id,
+                        code,
+                        "unrecognized routing error code; treating as undelivered, not ACK"
+                    );
+                    RoutingResult::UnknownError {
                         request_id: PacketId(request_id),
-                    }
-                } else {
-                    RoutingResult::Nak {
-                        request_id: PacketId(request_id),
-                        error,
+                        code,
                     }
                 }
-            }
+            },
             _ => RoutingResult::NotRouting,
         }
     }

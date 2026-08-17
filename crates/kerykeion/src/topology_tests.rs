@@ -430,3 +430,35 @@ fn add_node_evicts_the_coldest_node_not_the_newest() {
     );
     assert_eq!(topo.node_count(), MAX_LIVE_NODES);
 }
+
+#[test]
+fn update_link_never_evicts_its_own_two_new_endpoints() {
+    // WHY: regression, caught in review before shipping — `update_link`
+    // must insert TWO nodes (`from` and `to`) before their edge can exist.
+    // A node the FIRST insertion just added has zero edges yet
+    // (freshness=None, the coldest possible key), so an eviction triggered
+    // by the SECOND, independent insertion could pick the node the first
+    // one just added — before the edge between them is ever created —
+    // leaving a dangling index and panicking `StableGraph::add_edge`.
+    let mut topo = MeshTopology::new();
+    let hub = n(u32::MAX);
+    for i in 0..(MAX_LIVE_NODES as u32 - 1) {
+        topo.update_link(n(i), hub, 1.0);
+    }
+    assert_eq!(topo.node_count(), MAX_LIVE_NODES);
+
+    let from = n(MAX_LIVE_NODES as u32);
+    let to = n(MAX_LIVE_NODES as u32 + 1);
+    topo.update_link(from, to, 1.0); // must not panic
+
+    assert!(
+        topo.contains_node(from),
+        "the edge's own source must survive its own insertion call"
+    );
+    assert!(topo.contains_node(to), "the edge's own target must survive");
+    assert!(
+        topo.neighbors(from).iter().any(|&(num, _)| num == to),
+        "the new edge between the two brand-new endpoints must exist"
+    );
+    assert_eq!(topo.node_count(), MAX_LIVE_NODES);
+}

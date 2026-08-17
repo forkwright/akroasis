@@ -105,9 +105,49 @@ impl NodeDb {
     }
 
     /// Inserts or replaces a node record.
-    // TODO(#204): cardinality bound lands in the next commit.
+    ///
+    /// If `node.num` is not already tracked and the table is at
+    /// [`MAX_LIVE_NODES`], the least-recently-heard tracked node is evicted
+    /// first (#204) — `from` on an inbound frame is unauthenticated, so an
+    /// OTA peer can announce unbounded distinct identities without this.
     pub fn insert(&mut self, node: MeshNode) {
+        if !self.nodes.contains_key(&node.num) && self.nodes.len() >= MAX_LIVE_NODES {
+            self.evict_stalest();
+        }
         self.nodes.insert(node.num, node);
+    }
+
+    /// Remove the least-recently-heard tracked node to make room for an
+    /// insertion, protecting [`Self::my_node`] — the local radio's own
+    /// identity — from eviction.
+    ///
+    // WHY least-recently-heard rather than insertion order or a
+    // hash/id-derived victim (#204): both of those give an attacker a
+    // predictable target — flood enough distinct fake identities and the
+    // Nth-inserted (or lowest-hashing) *real* node is evicted on schedule.
+    // Staleness-by-`last_heard` means only entries an attacker themselves
+    // stopped refreshing become evictable; a sustained flood of one-shot
+    // identities degrades to evicting the flood's own earlier entries, and
+    // any legitimate node that keeps transmitting keeps refreshing its
+    // `last_heard` and stays out of eviction range.
+    //
+    // WARNING: if every tracked entry is protected (`my_node` is the only
+    // entry) this is a no-op and `insert` grows one past the cap — not
+    // reachable in practice since MAX_LIVE_NODES is far above a table of one.
+    fn evict_stalest(&mut self) {
+        let victim = self
+            .nodes
+            .iter()
+            .filter(|&(&num, _)| Some(num) != self.my_node)
+            .min_by_key(|&(_, node)| {
+                node.last_heard
+                    .map(Timestamp::as_millisecond)
+                    .unwrap_or(i64::MIN)
+            })
+            .map(|(&num, _)| num);
+        if let Some(victim) = victim {
+            self.nodes.remove(&victim);
+        }
     }
 
     /// Returns a reference to the node with the given number, if present.
