@@ -117,14 +117,44 @@ message MeshPacket {
 // (message.rs::MessageBuilder::build, discovery.rs::build_traceroute_request)
 // and read back by processor.rs::process_mesh_packet /
 // RoutingProcessor::process_routing.
+// The application ports kerykeion actually speaks, and only those.
+//
+// WHY named rather than a bare int32: `message.rs` carries a typed `portnum:
+// PortNum` field and builds each outbound message against a named variant, so
+// the compiler needs these identities. An earlier draft of this schema modeled
+// the field as a plain int32 on the belief that the code only ever compared it
+// as a raw integer; `cargo check` disproved that immediately, which is the one
+// authority a reading of the source could not overrule.
+//
+// WHY only five: these are the ports this crate sends or decodes. The upstream
+// protocol defines many more, and reproducing them would mean carrying values
+// with no consumer here — the numbers below are the wire facts for the ports
+// kerykeion uses, and nothing else is asserted about the port space.
+//
+// WARNING: this enum is deliberately NOT exhaustive of the protocol. A packet
+// arriving on any other port decodes to an unrecognised value, which is correct
+// behaviour for a client that speaks five ports, but it means an added port must
+// be added here rather than assumed present.
+enum PortNum {
+  PORT_NUM_UNSPECIFIED = 0;
+  // Plain-text chat payloads. Built by message.rs::MessageBuilder::build.
+  TEXT_MESSAGE_APP = 1;
+  // Position reports. Built by message.rs; decoded by processor.rs.
+  POSITION_APP = 3;
+  // Ack/nak and routing errors. Decoded by RoutingProcessor::process_routing.
+  ROUTING_APP = 5;
+  // Device administration passthrough. Built by message.rs.
+  ADMIN_APP = 6;
+  // Traceroute requests and replies. Built by discovery.rs.
+  TRACEROUTE_APP = 70;
+}
+
 message Data {
   // Application port this payload belongs to.
-  // WHY: kerykeion never decodes this into a named enum — processor.rs
-  // compares decoded.portnum / data.portnum as a raw i32 against its own
-  // local portnum module constants — so it is modeled as plain int32
-  // rather than reproducing an unused PortNum enum with cardinality this
-  // schema has no facts for.
-  int32 portnum = 1;
+  // WHY typed rather than int32: message.rs stores it as PortNum and converts
+  // with i32::from at the wire boundary, so the named identities are load-bearing
+  // in the Rust API even though the wire carries a bare varint.
+  PortNum portnum = 1;
 
   // The application-specific payload bytes.
   // WHY: written by MessageBuilder::build; read and handed to
