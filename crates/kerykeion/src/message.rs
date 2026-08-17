@@ -22,6 +22,7 @@ use crate::types::{ChannelIndex, MAX_HOP_LIMIT, NodeNum};
 ///     .with_ack()
 ///     .build(NodeNum(0xABCD), &[0x01], &mut packet_ids)?;
 /// ```
+#[derive(Debug)]
 pub struct MessageBuilder {
     dest: NodeNum,
     portnum: PortNum,
