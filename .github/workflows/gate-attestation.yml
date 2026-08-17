@@ -8,15 +8,16 @@
 # from that build; ai-attribution runs unconditionally via the reusable
 # workflow's own centralized job.
 #
-# NOTE (#262 residual gap, tracked -- not closed by this change): the
-# reusable workflow's check-trailer job waives dependabot[bot] PRs from
-# full-gate-build unconditionally (fleet-wide behavior, not overridable
-# per-caller), and this workflow triggers on pull_request only (no
-# push-to-main compile check). #262's "Done when" (a PR that fails
-# `cargo check --workspace` cannot auto-merge; main compiles in CI on every
-# push) is therefore only partially met: dependabot bumps still bypass the
-# build, and there is no push-triggered compile check. Left as an explicit
-# comment on #262 rather than silently claimed done.
+# NOTE (#262 status): the two residual gaps this comment used to track are
+# both closed. check-trailer no longer waives dependabot[bot] PRs from
+# full-gate-build (the reusable workflow's own trailer step routes ANY
+# untrailered tip, bot or human, to a real build -- confirmed on PRs #367/
+# #369/#370, each a full-gate-build pass before merge); and #353 added the
+# `push: branches: [main]` trigger below so a squash-merged, trailer-less
+# commit still gets built. #262's "Done when" is therefore mechanically met
+# at the PR/push-trigger level -- what remained live was the caller-level
+# `concurrency:` block documented below, which could cancel a queued
+# main-push run before full-gate-build ever started.
 #
 # fmt/check/clippy/nextest command strings mirror .kanon-ci.toml's stage
 # commands verbatim (the local `kanon gate --stamp` SSOT) so a Gate-Passed
@@ -56,8 +57,14 @@
 name: Gate Attestation
 
 on:
+  # WHY no `branches:` filter here: a `branches:` filter on `pull_request`
+  # matches the PR's BASE branch, not its head. A stacked PR (base = another
+  # open PR's branch, not main) would match nothing and get zero gate runs
+  # -- not a pending check, an absent one, so nothing blocks it from merging
+  # broken. Two PRs shipped non-viable code through exactly that shape this
+  # week (kanon#3475). `push:` stays scoped to main below; that one IS the
+  # PR's base, always resolvable, and scoping it prevents duplicate runs.
   pull_request:
-    branches: [main]
   # WHY a push trigger and not just pull_request: a squash merge does not
   # carry the source commits' trailers, so no commit on main has a
   # Gate-Passed trailer -- check-trailer finds none and routes to
@@ -67,9 +74,29 @@ on:
   push:
     branches: [main]
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+# WHY no concurrency: block here: hybrid-gate.yml itself already declares
+# `concurrency: group: ${{ github.workflow }}-${{ github.event_name ==
+# 'push' && github.sha || github.ref }}` and its own comment states callers
+# must NOT also set a concurrency group with that same key, or the shared
+# group self-cancels. This file's PRIOR block used
+# `${{ github.event.pull_request.number || github.ref }}` -- ref-keyed on
+# push, same failure class the reusable workflow's sha-on-push branch exists
+# to prevent, just reintroduced one layer up. Confirmed live on #262
+# (reopened 2026-08-05): main-push runs at 7004d734/cf1dd2da/9e8778b4/
+# 11f0978f all show zero jobs ("workflow file issue"), and three dependabot
+# squash-merges landing seconds apart on 2026-08-16 (60f97de/b5c8071/
+# bebbcd1) show the same group cancelling the first two runs' full-gate-build
+# mid-flight -- main commits merging with no completed compile check, the
+# exact defect #262 exists to close. sphragis's gate-attestation.yml carries
+# the identical fix with the identical WHY, having hit this first.
+#
+# WHY the pull_request-time behavior does not regress: without a caller-level
+# group, cancellation authority passes to the reusable workflow's own block.
+# On a pull_request event `github.ref` resolves to `refs/pull/<N>/merge`,
+# stable per PR number across every push to it -- so a superseded push to
+# the same PR still cancels that PR's own prior run, same as before, without
+# touching any other PR or a push-to-main run (different key entirely, per
+# the ternary's sha branch).
 
 permissions:
   contents: read
@@ -82,6 +109,12 @@ jobs:
       check_cmd: "cargo check --workspace --all-targets --features syntonia/hardware-serial --jobs 8"
       clippy_cmd: "cargo clippy --workspace --all-targets --jobs 8 -- -D warnings"
       nextest_cmd: "cargo nextest run --workspace --features syntonia/hardware-serial --build-jobs 8 --test-threads 8"
+      # WHY empty: nextest does not run doctests (kanon#3486). Left empty
+      # here, not skipped by oversight -- every fenced block in a doc
+      # comment across the workspace is ```text``` (ASCII diagrams) or
+      # ```ignore``` (kerykeion::message.rs), never a bare ```rust``` block,
+      # so `cargo test --doc` would compile and run zero examples. Revisit
+      # if a future doc comment adds a runnable example.
       doctest_cmd: ""
       system_packages: "libusb-1.0-0-dev libudev-dev protobuf-compiler"
       needs_fleet_repo_token: false
