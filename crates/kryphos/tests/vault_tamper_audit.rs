@@ -146,3 +146,52 @@ fn truncated_vault_audit_log_is_detected() {
         after.status
     );
 }
+
+#[test]
+fn concurrent_vault_mutations_produce_a_single_non_forked_chain() {
+    // WHY (akroasis#226): before the fix, `append_vault_audit` opened a
+    // fresh `TamperLog` per call with no synchronization — two threads
+    // sharing this `Arc<Vault>` could both recover the same tail and each
+    // append an entry chained from it, forking the chain (`verify_chain`
+    // reports `Broken`) or losing one writer's entry outright. The
+    // in-process mutex in `append_vault_audit` plus koinon's own
+    // single-writer lock must make every mutation land, in some order, as
+    // one strictly-serial, verifiable chain.
+    let dir = tempfile::tempdir().unwrap();
+    let vault_path = dir.path().join("concurrent-vault");
+    let vault = std::sync::Arc::new(Vault::create(&vault_path, TEST_PASSPHRASE).unwrap());
+
+    const WRITERS: usize = 8;
+    let barrier = std::sync::Arc::new(std::sync::Barrier::new(WRITERS));
+
+    let handles: Vec<_> = (0..WRITERS)
+        .map(|i| {
+            let vault = std::sync::Arc::clone(&vault);
+            let barrier = std::sync::Arc::clone(&barrier);
+            std::thread::spawn(move || {
+                barrier.wait();
+                vault
+                    .add(
+                        &format!("concurrent-cred-{i}"),
+                        CredentialType::ApiKey,
+                        b"v",
+                    )
+                    .unwrap();
+            })
+        })
+        .collect();
+
+    for h in handles {
+        h.join().unwrap();
+    }
+
+    let result = vault.verify_tamper_log().unwrap();
+    assert_eq!(
+        result.status,
+        ChainStatus::Intact,
+        "concurrent vault mutations on a shared Arc<Vault> must produce a \
+         single, non-forked, verifiable chain, got {:?}",
+        result.status
+    );
+    assert_eq!(result.entries_verified, WRITERS as u64);
+}

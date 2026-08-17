@@ -20,8 +20,29 @@
 //! [`TamperLog::open`] and [`TamperLog::append`] refresh a sidecar
 //! `{log}.seal` file authenticating the current entry count; [`verify_chain`]
 //! cross-checks the streamed count against it and reports
-//! [`ChainStatus::Truncated`] on any mismatch or unauthenticated seal. See
+//! [`ChainStatus::Truncated`] on any mismatch against a valid seal claiming
+//! *fewer* entries than verified, or [`ChainStatus::Unsealed`] when the seal
+//! is valid but stale — claiming *fewer* entries than the stream, which is
+//! reachable only by whoever holds the chain key (see akroasis#285). See
 //! `tamper_log_seal` for the seal and key machinery.
+//!
+//! # Single-writer lock
+//!
+//! [`TamperLog::open_with_config`] acquires an exclusive advisory lock on a
+//! `{log}.lock` sidecar and holds it for the writer's lifetime, refusing a
+//! second concurrent writer rather than letting two handles independently
+//! recover the same tail and fork the chain (akroasis#226). See
+//! `tamper_log_lock`.
+//!
+//! # Rotation
+//!
+//! Rotating a log renames the current file aside and starts a fresh one,
+//! but the chain is not reset: the new segment's first entry links from the
+//! outgoing segment's terminal hash, authenticated in the new segment's own
+//! seal as `segment_start_hash`. A rotated-away segment therefore remains
+//! provable, and [`verify_segment_chain`] walks the whole segment set and
+//! reports a break if any segment — including the seal that would have
+//! named it — is missing (akroasis#211). See `tamper_log_segments`.
 
 use std::{
     fs::{File, OpenOptions},
@@ -38,9 +59,20 @@ mod seal;
 #[path = "tamper_log_rotation.rs"]
 mod rotation;
 
+#[path = "tamper_log_lock.rs"]
+mod lock;
+
+#[path = "tamper_log_verify.rs"]
+mod verify;
+
+#[path = "tamper_log_segments.rs"]
+mod segments;
+
 use rotation::rotation_path;
 
 pub use seal::{CHAIN_KEY_LEN, ChainKey};
+pub use segments::{SegmentChainStatus, verify_segment_chain};
+pub use verify::{ChainStatus, VerificationResult, verify_chain};
 
 /// Maximum allowed entry payload size (16 MiB).
 ///
@@ -140,6 +172,21 @@ pub enum TamperLogError {
         path: PathBuf,
         /// The verification status that caused the refusal.
         status: ChainStatus,
+    },
+
+    /// Another writer already holds the exclusive lock on this log.
+    ///
+    /// `TamperLog::open_with_config` fails fast rather than blocking (see
+    /// `tamper_log_lock`) — a second concurrent opener must not recover the
+    /// same tail state a live writer already holds, which would fork the
+    /// hash chain.
+    #[snafu(display(
+        "tamper log at {} is already held by another writer",
+        path.display()
+    ))]
+    Locked {
+        /// Path of the log file that could not be locked.
+        path: PathBuf,
     },
 }
 
@@ -262,210 +309,6 @@ pub fn decode_entry(bytes: &[u8]) -> Result<(LogEntry, [u8; 32]), TamperLogError
 }
 
 // ---------------------------------------------------------------------------
-// Chain verification
-// ---------------------------------------------------------------------------
-
-/// Status of a chain verification pass.
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[non_exhaustive]
-pub enum ChainStatus {
-    /// All entries verified successfully, and the entry count matches
-    /// the authenticated seal.
-    Intact,
-    /// Chain is broken at the given sequence number.
-    Broken {
-        /// Sequence number of the first bad entry.
-        sequence: u64,
-        /// Hash that was expected (recomputed FROM content).
-        expected_hash: [u8; 32],
-        /// Hash that was stored on disk.
-        actual_hash: [u8; 32],
-    },
-    /// File is empty (no entries) and no seal claims otherwise.
-    Empty,
-    /// File is truncated or otherwise unreadable at `byte_offset`.
-    Corrupted {
-        /// Byte OFFSET WHERE the problem was detected.
-        byte_offset: u64,
-    },
-    /// The chain streamed cleanly (every link that exists verifies), but
-    /// the entry count does not match the authenticated sidecar seal —
-    /// the signature of a trailing run of entries deleted by an adversary
-    /// who lacks the chain key needed to forge a matching seal.
-    Truncated {
-        /// Entry count from a validated seal, when one authenticated.
-        /// `None` when no seal authenticated at all (missing or forged).
-        sealed_entries: Option<u64>,
-    },
-}
-
-/// Result of a chain verification pass.
-// WHY: pure data — a verification result bag with no derived invariant.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct VerificationResult {
-    /// Number of entries that were successfully parsed and verified.
-    pub entries_verified: u64,
-    /// Overall chain status.
-    pub status: ChainStatus,
-}
-
-/// Reads `path` FROM the beginning, recomputes every hash link keyed with
-/// `chain_key`, and returns the first break found — or, if every link
-/// verifies, the seal-cross-checked terminal status.
-///
-/// This is O(n) in file size and streams the file; it never loads the whole
-/// file INTO memory.
-///
-/// # Errors
-///
-/// Returns [`TamperLogError::Io`] if the file cannot be opened or read.
-pub fn verify_chain(
-    path: impl AsRef<Path>,
-    chain_key: &ChainKey,
-) -> Result<VerificationResult, TamperLogError> {
-    let path = path.as_ref();
-    let file = File::open(path).context(IoSnafu { path })?;
-    let mut reader = BufReader::new(file);
-
-    let mut prev_hash = seal::genesis_hash(chain_key);
-    let mut entries_verified: u64 = 0;
-    let mut byte_offset: u64 = 0;
-
-    loop {
-        // Read length prefix.
-        let mut len_buf = [0u8; 4];
-        match reader.read_exact(&mut len_buf) {
-            Ok(()) => {}
-            Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
-                return Ok(terminal_result(path, chain_key, entries_verified));
-            }
-            Err(e) => {
-                return Err(TamperLogError::Io {
-                    path: path.to_owned(),
-                    source: e,
-                });
-            }
-        }
-
-        let payload_len = u64::from(u32::from_le_bytes(len_buf));
-        if payload_len > MAX_ENTRY_BYTES {
-            return Ok(VerificationResult {
-                entries_verified,
-                status: ChainStatus::Corrupted { byte_offset },
-            });
-        }
-
-        // Read CBOR payload.
-        // WHY: payload_len is already bounded by MAX_ENTRY_BYTES above, but
-        // the usize conversion is still fallible on 32-bit-usize targets —
-        // treat that the same as the oversized-payload case rather than
-        // silently reading a zero-length (truncated) buffer.
-        let Ok(payload_len_usize) = usize::try_from(payload_len) else {
-            return Ok(VerificationResult {
-                entries_verified,
-                status: ChainStatus::Corrupted { byte_offset },
-            });
-        };
-        let mut cbor_bytes = vec![0u8; payload_len_usize];
-        match reader.read_exact(&mut cbor_bytes) {
-            Ok(()) => {}
-            Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
-                return Ok(VerificationResult {
-                    entries_verified,
-                    status: ChainStatus::Corrupted {
-                        byte_offset: byte_offset + 4,
-                    },
-                });
-            }
-            Err(e) => {
-                return Err(TamperLogError::Io {
-                    path: path.to_owned(),
-                    source: e,
-                });
-            }
-        }
-
-        // Read stored hash.
-        let mut stored_hash = [0u8; 32];
-        match reader.read_exact(&mut stored_hash) {
-            Ok(()) => {}
-            Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
-                return Ok(VerificationResult {
-                    entries_verified,
-                    status: ChainStatus::Corrupted {
-                        byte_offset: byte_offset + 4 + payload_len,
-                    },
-                });
-            }
-            Err(e) => {
-                return Err(TamperLogError::Io {
-                    path: path.to_owned(),
-                    source: e,
-                });
-            }
-        }
-
-        // Recompute the keyed hash.
-        let mut hasher = blake3::Hasher::new_keyed(chain_key.as_bytes());
-        hasher.update(&cbor_bytes);
-        hasher.update(&prev_hash);
-        let expected_hash: [u8; 32] = hasher.finalize().into();
-
-        if expected_hash != stored_hash {
-            let sequence = ciborium::from_reader::<LogEntry, _>(cbor_bytes.as_slice())
-                .map_or(entries_verified, |e| e.sequence);
-
-            return Ok(VerificationResult {
-                entries_verified,
-                status: ChainStatus::Broken {
-                    sequence,
-                    expected_hash,
-                    actual_hash: stored_hash,
-                },
-            });
-        }
-
-        prev_hash = expected_hash;
-        entries_verified += 1;
-        byte_offset += 4 + payload_len + 32;
-    }
-}
-
-/// Determines the terminal status once the log has streamed cleanly to
-/// EOF with `entries_verified` links all verifying, by cross-checking
-/// against the authenticated sidecar seal.
-fn terminal_result(path: &Path, chain_key: &ChainKey, entries_verified: u64) -> VerificationResult {
-    let sealed = seal::read_seal(path, chain_key);
-
-    let status = if entries_verified == 0 {
-        match sealed {
-            seal::SealState::Absent | seal::SealState::Valid(0) => ChainStatus::Empty,
-            seal::SealState::Valid(n) => ChainStatus::Truncated {
-                sealed_entries: Some(n),
-            },
-            seal::SealState::Invalid => ChainStatus::Truncated {
-                sealed_entries: None,
-            },
-        }
-    } else {
-        match sealed {
-            seal::SealState::Valid(n) if n == entries_verified => ChainStatus::Intact,
-            seal::SealState::Valid(n) => ChainStatus::Truncated {
-                sealed_entries: Some(n),
-            },
-            seal::SealState::Absent | seal::SealState::Invalid => ChainStatus::Truncated {
-                sealed_entries: None,
-            },
-        }
-    };
-
-    VerificationResult {
-        entries_verified,
-        status,
-    }
-}
-
-// ---------------------------------------------------------------------------
 // TamperLog writer
 // ---------------------------------------------------------------------------
 
@@ -473,34 +316,56 @@ fn terminal_result(path: &Path, chain_key: &ChainKey, entries_verified: u64) -> 
 ///
 /// Each call to [`TamperLog::append`] writes a length-prefixed CBOR entry
 /// followed by a keyed BLAKE3 hash that chains FROM the previous entry,
-/// then refreshes the truncation seal.
+/// then refreshes the truncation seal. Holds an exclusive advisory lock on
+/// `{path}.lock` for its entire lifetime (akroasis#226); the OS releases it
+/// automatically if the process dies, so a crashed writer never wedges the
+/// next opener.
 pub struct TamperLog {
     writer: BufWriter<File>,
     path: PathBuf,
     prev_hash: [u8; 32],
+    /// The hash this segment's own chain was linked from: the keyed genesis
+    /// root for a never-rotated log, or the outgoing segment's terminal
+    /// hash for one created by rotation. Fixed for the file's lifetime;
+    /// persisted in the seal so a restart on an empty post-rotation file
+    /// recovers it (akroasis#211).
+    segment_start_hash: [u8; 32],
     sequence: u64,
     bytes_written: u64,
     max_file_bytes: u64,
     chain_key: ChainKey,
+    // WHY: held for its Drop impl, which releases the OS advisory lock —
+    // never read, only kept alive. Mirrors kryphos::Vault's `_lock` field.
+    _lock: File,
 }
 
 impl TamperLog {
     /// Opens or creates a log file at `path`, keyed with `chain_key`.
     ///
     /// If the file already exists, it is fully verified first (see
-    /// [`verify_chain`]); anything other than [`ChainStatus::Intact`] or
-    /// [`ChainStatus::Empty`] is refused with
-    /// [`TamperLogError::ChainCompromised`] rather than resumed, which
-    /// would launder the tampering into an apparently-shorter-but-valid
-    /// chain. Otherwise reads to the end to recover `prev_hash` and
-    /// `sequence` so new appends continue the chain.
+    /// [`verify_chain`]). [`ChainStatus::Intact`] and [`ChainStatus::Empty`]
+    /// resume directly; [`ChainStatus::Unsealed`] also resumes — it is only
+    /// reachable by the chain-key holder (akroasis#285) — and this call
+    /// re-seals to the true, now-recovered count before returning. Anything
+    /// else is refused with [`TamperLogError::ChainCompromised`] rather
+    /// than resumed, which would launder the tampering into an
+    /// apparently-shorter-but-valid chain. Otherwise reads to the end to
+    /// recover `prev_hash` and `sequence` so new appends continue the
+    /// chain.
+    ///
+    /// Acquires and holds an exclusive lock on `{path}.lock` for the
+    /// returned handle's lifetime (akroasis#226); a concurrent `open` on
+    /// the same path fails with [`TamperLogError::Locked`] instead of
+    /// racing this call's state recovery.
     ///
     /// # Errors
     ///
-    /// Returns [`TamperLogError::ChainCompromised`] if an existing file
-    /// fails pre-resume verification. Returns [`TamperLogError::Io`] on
-    /// filesystem errors, or [`TamperLogError::CborDecode`] /
-    /// [`TamperLogError::Corrupted`] if an existing file cannot be parsed.
+    /// Returns [`TamperLogError::Locked`] if another writer already holds
+    /// the path. Returns [`TamperLogError::ChainCompromised`] if an
+    /// existing file fails pre-resume verification. Returns
+    /// [`TamperLogError::Io`] on filesystem errors, or
+    /// [`TamperLogError::CborDecode`] / [`TamperLogError::Corrupted`] if an
+    /// existing file cannot be parsed.
     pub fn open(path: impl AsRef<Path>, chain_key: ChainKey) -> Result<Self, TamperLogError> {
         Self::open_with_config(path, chain_key, &TamperLogConfig::default())
     }
@@ -513,10 +378,12 @@ impl TamperLog {
     ///
     /// # Errors
     ///
-    /// Returns [`TamperLogError::ChainCompromised`] if an existing file
-    /// fails pre-resume verification. Returns [`TamperLogError::Io`] on
-    /// filesystem errors, or [`TamperLogError::CborDecode`] /
-    /// [`TamperLogError::Corrupted`] if an existing file cannot be parsed.
+    /// Returns [`TamperLogError::Locked`] if another writer already holds
+    /// the path. Returns [`TamperLogError::ChainCompromised`] if an
+    /// existing file fails pre-resume verification. Returns
+    /// [`TamperLogError::Io`] on filesystem errors, or
+    /// [`TamperLogError::CborDecode`] / [`TamperLogError::Corrupted`] if an
+    /// existing file cannot be parsed.
     pub fn open_with_config(
         path: impl AsRef<Path>,
         chain_key: ChainKey,
@@ -524,15 +391,47 @@ impl TamperLog {
     ) -> Result<Self, TamperLogError> {
         let path = path.as_ref().to_owned();
 
+        // WHY (#226): acquire the exclusive single-writer lock before any
+        // state recovery touches `path` — a second writer that loses this
+        // race fails here, rather than independently recovering the same
+        // stale tail and forking the chain onto the same
+        // prev_hash/sequence. Held for the returned handle's lifetime; the
+        // OS drops it automatically if this process dies (see
+        // `tamper_log_lock`).
+        let held_lock = lock::acquire(&path)?;
+
         if path.exists() {
             let verification = verify_chain(&path, &chain_key)?;
             match verification.status {
                 ChainStatus::Intact | ChainStatus::Empty => {}
+                // WHY (#285): the stream verified MORE entries than a
+                // validly-authenticated seal claims — reachable only by
+                // whoever holds `chain_key`, so this is a safe-to-resume
+                // seal-refresh failure, not tampering. Fall through:
+                // recover_state below reads the TRUE (larger) tail
+                // straight from the verified content, and the
+                // refresh_seal call at the end of this function re-seals
+                // to that count before any further append is accepted.
+                ChainStatus::Unsealed { .. } => {}
                 status => return ChainCompromisedSnafu { path, status }.fail(),
             }
         }
 
-        let (prev_hash, sequence, bytes_written) = Self::recover_state(&path, &chain_key)?;
+        // WHY: gated on `path.exists()`, matching the compromise check
+        // above — a log file that does not exist starts at genesis
+        // unconditionally, never from a leftover `.seal` sidecar surviving
+        // a deleted `.log` (an admin/attacker action that removes both
+        // together in the normal case). Reading a stale seal here would be
+        // harmless — still cryptographically self-consistent, forgeable by
+        // nobody without `chain_key` — but would silently make this fresh
+        // log fail closed under `verify_segment_chain`'s genesis-anchored
+        // walk later, for no benefit.
+        let segment_start_hash = if path.exists() {
+            verify::resolve_start_hash(seal::read_seal(&path, &chain_key), &chain_key)
+        } else {
+            seal::genesis_hash(&chain_key)
+        };
+        let (prev_hash, sequence, bytes_written) = Self::recover_state(&path, segment_start_hash)?;
 
         let file = OpenOptions::new()
             .create(true)
@@ -544,10 +443,12 @@ impl TamperLog {
             writer: BufWriter::new(file),
             path,
             prev_hash,
+            segment_start_hash,
             sequence,
             bytes_written,
             max_file_bytes: config.max_file_bytes,
             chain_key,
+            _lock: held_lock,
         };
         log.refresh_seal()?;
 
@@ -561,8 +462,10 @@ impl TamperLog {
         self
     }
 
-    /// Returns the hash of the last written entry (or the keyed genesis
-    /// root for a fresh log).
+    /// Returns the hash of the last written entry, or this segment's start
+    /// hash if none has been written yet — the keyed genesis root for a
+    /// never-rotated log, or the outgoing segment's terminal hash for one
+    /// just created by rotation (akroasis#211).
     pub const fn last_hash(&self) -> &[u8; 32] {
         &self.prev_hash
     }
@@ -623,7 +526,12 @@ impl TamperLog {
 
     /// Rewrites the sidecar seal to authenticate the log's current state.
     fn refresh_seal(&self) -> Result<(), TamperLogError> {
-        seal::write_seal(&self.path, &self.chain_key, self.sequence)
+        seal::write_seal(
+            &self.path,
+            &self.chain_key,
+            self.sequence,
+            &self.segment_start_hash,
+        )
     }
 
     /// Reads an existing log file to recover `(prev_hash, next_sequence, bytes_written)`.
@@ -631,22 +539,28 @@ impl TamperLog {
     /// Trusts stored hashes structurally (no re-verification) — callers
     /// that need cryptographic assurance the file was not tampered with
     /// must call [`verify_chain`] first, as [`Self::open_with_config`] does.
+    ///
+    /// `segment_start_hash` seeds `prev_hash` for a file with zero entries
+    /// (nonexistent, or empty because it is a freshly-rotated segment) —
+    /// the caller resolves it from the seal (or genesis, for a brand new
+    /// file) via `verify::resolve_start_hash`, since an empty file carries
+    /// no information of its own to recover it from (akroasis#211).
     fn recover_state(
         path: &Path,
-        chain_key: &ChainKey,
+        segment_start_hash: [u8; 32],
     ) -> Result<([u8; 32], u64, u64), TamperLogError> {
         if !path.exists() {
-            return Ok((seal::genesis_hash(chain_key), 0, 0));
+            return Ok((segment_start_hash, 0, 0));
         }
 
         let file = File::open(path).context(IoSnafu { path })?;
         let file_len = file.metadata().context(IoSnafu { path })?.len();
         if file_len == 0 {
-            return Ok((seal::genesis_hash(chain_key), 0, 0));
+            return Ok((segment_start_hash, 0, 0));
         }
 
         let mut reader = BufReader::new(file);
-        let mut prev_hash = seal::genesis_hash(chain_key);
+        let mut prev_hash = segment_start_hash;
         let mut sequence: u64 = 0;
         let mut bytes_read: u64 = 0;
 
@@ -692,6 +606,14 @@ impl TamperLog {
     /// Renames the current log file to `{stem}.{n}.log` (and its seal
     /// sidecar alongside it) and opens a fresh one, keyed the same as the
     /// original.
+    ///
+    /// The new segment's chain is NOT reset to genesis: it is seeded from
+    /// the outgoing segment's terminal hash, and that seed is authenticated
+    /// in the new segment's own seal as `segment_start_hash` so the link
+    /// survives both a later restart and cross-segment verification (see
+    /// [`verify_segment_chain`], akroasis#211). The single-writer lock (on
+    /// `{self.path}.lock`, a fixed sidecar untouched by rotation) is held
+    /// throughout without any extra work here.
     fn rotate(&mut self) -> Result<(), TamperLogError> {
         self.writer.flush().context(IoSnafu { path: &self.path })?;
 
@@ -708,7 +630,7 @@ impl TamperLog {
             .context(IoSnafu { path: &self.path })?;
 
         self.writer = BufWriter::new(file);
-        self.prev_hash = seal::genesis_hash(&self.chain_key);
+        self.segment_start_hash = self.prev_hash;
         self.sequence = 0;
         self.bytes_written = 0;
 
@@ -738,3 +660,13 @@ mod tests;
 )]
 #[path = "tamper_log_codec_tests.rs"]
 mod codec_tests;
+
+#[cfg(test)]
+#[expect(
+    clippy::unwrap_used,
+    clippy::indexing_slicing,
+    clippy::panic,
+    reason = "test code: panics and unwraps acceptable in assertions"
+)]
+#[path = "tamper_log_recovery_tests.rs"]
+mod recovery_tests;

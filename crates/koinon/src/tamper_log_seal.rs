@@ -12,9 +12,19 @@
 //! [`write_seal`] persists an authenticated entry count beside the log,
 //! refreshed on every open and append; [`read_seal`] re-authenticates it
 //! during verification so [`super::verify_chain`] can tell "ends here" from
-//! "was made to look like it ends here." The MAC covers the count alone —
-//! content integrity for every entry up to that count is already the hash
-//! chain's job, not the seal's.
+//! "was made to look like it ends here."
+//!
+//! The seal also carries `segment_start_hash` (akroasis#211): the hash this
+//! segment's own chain was linked from — the keyed genesis root for a
+//! never-rotated log, or the terminal hash of the segment rotated out
+//! immediately before this one. Authenticating it in the same MAC as the
+//! count is what lets a deleted whole segment be detected: its successor's
+//! seal still cryptographically commits to the deleted segment's terminal
+//! hash, which no other surviving segment can supply (`tamper_log_segments`
+//! walks the set and checks it). Content integrity for every entry up to
+//! the sealed count is already the hash chain's job, not the seal's — the
+//! seal exists for the two things a hash chain alone cannot see: where its
+//! own file ends, and where it began.
 
 use std::fmt;
 use std::fs::{self, File};
@@ -39,11 +49,14 @@ const SEAL_DOMAIN: &[u8] = b"koinon/tamper-log/seal/v1";
 /// Length in bytes of the on-disk seal entry-count field.
 const SEAL_COUNT_LEN: usize = 8;
 
+/// Length in bytes of the on-disk seal's cross-segment link field.
+const SEAL_LINK_LEN: usize = 32;
+
 /// Length in bytes of the on-disk seal MAC.
 const SEAL_MAC_LEN: usize = 32;
 
-/// Total on-disk seal file length: count || MAC.
-const SEAL_FILE_LEN: usize = SEAL_COUNT_LEN + SEAL_MAC_LEN;
+/// Total on-disk seal file length: count || segment_start_hash || MAC.
+const SEAL_FILE_LEN: usize = SEAL_COUNT_LEN + SEAL_LINK_LEN + SEAL_MAC_LEN;
 
 /// Secret key that binds a tamper log's hash chain to its owner.
 ///
@@ -107,8 +120,17 @@ pub(super) enum SealState {
     /// `chain_key` — corrupted, forged, or written under a different key.
     Invalid,
     /// A seal file exists and its MAC authenticates; carries the sealed
-    /// entry count.
-    Valid(u64),
+    /// entry count and the segment's authenticated chain-start hash (see
+    /// [`super::rotation`] — genesis for a never-rotated segment, or the
+    /// prior segment's terminal hash for one that carries a rotation
+    /// boundary).
+    Valid {
+        /// Authenticated entry count.
+        entry_count: u64,
+        /// Authenticated chain-start hash this segment's first entry was
+        /// linked from.
+        segment_start_hash: [u8; 32],
+    },
 }
 
 /// Derives the sidecar seal path for a log file: `{path}.seal`.
@@ -118,12 +140,19 @@ pub(super) fn seal_path(log_path: &Path) -> PathBuf {
     PathBuf::from(name)
 }
 
-/// Computes the authenticated MAC over `entry_count`, domain-separated
-/// from entry and genesis hashing.
-fn seal_mac(chain_key: &ChainKey, entry_count: u64) -> [u8; 32] {
+/// Computes the authenticated MAC over `entry_count` and `segment_start_hash`,
+/// domain-separated from entry and genesis hashing.
+///
+/// Authenticating `segment_start_hash` alongside the count is what makes the
+/// cross-segment link tamper-evident: without the key, an attacker who
+/// deletes a rotated segment cannot forge a replacement seal for its
+/// successor that still claims the deleted segment's terminal hash as its
+/// start (see `tamper_log_segments`).
+fn seal_mac(chain_key: &ChainKey, entry_count: u64, segment_start_hash: &[u8; 32]) -> [u8; 32] {
     let mut hasher = blake3::Hasher::new_keyed(chain_key.as_bytes());
     hasher.update(SEAL_DOMAIN);
     hasher.update(&entry_count.to_le_bytes());
+    hasher.update(segment_start_hash);
     hasher.finalize().into()
 }
 
@@ -140,18 +169,25 @@ pub(super) fn read_seal(log_path: &Path, chain_key: &ChainKey) -> SealState {
     count_bytes.copy_from_slice(&raw[..SEAL_COUNT_LEN]);
     let count = u64::from_le_bytes(count_bytes);
 
-    let mut stored_mac = [0u8; SEAL_MAC_LEN];
-    stored_mac.copy_from_slice(&raw[SEAL_COUNT_LEN..]);
+    let mut segment_start_hash = [0u8; SEAL_LINK_LEN];
+    segment_start_hash.copy_from_slice(&raw[SEAL_COUNT_LEN..SEAL_COUNT_LEN + SEAL_LINK_LEN]);
 
-    let expected_mac = seal_mac(chain_key, count);
+    let mut stored_mac = [0u8; SEAL_MAC_LEN];
+    stored_mac.copy_from_slice(&raw[SEAL_COUNT_LEN + SEAL_LINK_LEN..]);
+
+    let expected_mac = seal_mac(chain_key, count, &segment_start_hash);
     if bool::from(expected_mac.ct_eq(&stored_mac)) {
-        SealState::Valid(count)
+        SealState::Valid {
+            entry_count: count,
+            segment_start_hash,
+        }
     } else {
         SealState::Invalid
     }
 }
 
-/// Writes the seal sidecar for `log_path`, authenticating `entry_count`.
+/// Writes the seal sidecar for `log_path`, authenticating `entry_count` and
+/// `segment_start_hash` together.
 ///
 /// Writes to a `.tmp` sibling and renames into place so a concurrent
 /// reader (or a crash mid-write) never observes a partially-written seal.
@@ -159,15 +195,17 @@ pub(super) fn write_seal(
     log_path: &Path,
     chain_key: &ChainKey,
     entry_count: u64,
+    segment_start_hash: &[u8; 32],
 ) -> Result<(), TamperLogError> {
     let target = seal_path(log_path);
     let mut tmp_name = target.clone().into_os_string();
     tmp_name.push(".tmp");
     let tmp = PathBuf::from(tmp_name);
 
-    let mac = seal_mac(chain_key, entry_count);
+    let mac = seal_mac(chain_key, entry_count, segment_start_hash);
     let mut payload = Vec::with_capacity(SEAL_FILE_LEN);
     payload.extend_from_slice(&entry_count.to_le_bytes());
+    payload.extend_from_slice(segment_start_hash);
     payload.extend_from_slice(&mac);
 
     {
@@ -202,6 +240,7 @@ pub(super) fn rename_seal(from_log: &Path, to_log: &Path) -> Result<(), TamperLo
 #[expect(
     clippy::unwrap_used,
     clippy::indexing_slicing,
+    clippy::panic,
     reason = "test code: panics and unwraps acceptable in assertions"
 )]
 mod tests {
@@ -209,6 +248,10 @@ mod tests {
 
     fn key(byte: u8) -> ChainKey {
         ChainKey::from_bytes([byte; CHAIN_KEY_LEN])
+    }
+
+    fn link(byte: u8) -> [u8; SEAL_LINK_LEN] {
+        [byte; SEAL_LINK_LEN]
     }
 
     #[test]
@@ -263,10 +306,38 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let log_path = dir.path().join("audit.log");
         let k = key(0x55);
+        let start = link(0x01);
 
-        write_seal(&log_path, &k, 7).unwrap();
+        write_seal(&log_path, &k, 7, &start).unwrap();
         let state = read_seal(&log_path, &k);
-        assert_eq!(state, SealState::Valid(7));
+        assert_eq!(
+            state,
+            SealState::Valid {
+                entry_count: 7,
+                segment_start_hash: start,
+            }
+        );
+    }
+
+    #[test]
+    fn write_then_read_seal_round_trips_segment_start_hash() {
+        // WHY: entry_count round-tripping alone wouldn't catch the link
+        // field being dropped, truncated, or silently zeroed — assert it
+        // explicitly rather than just checking equality against the whole
+        // struct (which the prior test already does).
+        let dir = tempfile::tempdir().unwrap();
+        let log_path = dir.path().join("linked.log");
+        let k = key(0x59);
+        let start = link(0xAB);
+
+        write_seal(&log_path, &k, 2, &start).unwrap();
+        let state = read_seal(&log_path, &k);
+        match state {
+            SealState::Valid {
+                segment_start_hash, ..
+            } => assert_eq!(segment_start_hash, start),
+            other => panic!("expected Valid, got {other:?}"),
+        }
     }
 
     #[test]
@@ -282,7 +353,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let log_path = dir.path().join("audit.log");
 
-        write_seal(&log_path, &key(0xAA), 3).unwrap();
+        write_seal(&log_path, &key(0xAA), 3, &link(0x01)).unwrap();
         let state = read_seal(&log_path, &key(0xBB));
         assert_eq!(state, SealState::Invalid);
     }
@@ -293,7 +364,7 @@ mod tests {
         let log_path = dir.path().join("audit.log");
         let k = key(0x77);
 
-        write_seal(&log_path, &k, 4).unwrap();
+        write_seal(&log_path, &k, 4, &link(0x01)).unwrap();
         let mut bytes = fs::read(seal_path(&log_path)).unwrap();
         let last = bytes.len() - 1;
         bytes[last] ^= 0xFF;
@@ -313,9 +384,29 @@ mod tests {
         let log_path = dir.path().join("audit.log");
         let k = key(0x66);
 
-        write_seal(&log_path, &k, 4).unwrap();
+        write_seal(&log_path, &k, 4, &link(0x01)).unwrap();
         let mut bytes = fs::read(seal_path(&log_path)).unwrap();
         bytes[0] = 99; // low byte of the little-endian count
+        fs::write(seal_path(&log_path), &bytes).unwrap();
+
+        let state = read_seal(&log_path, &k);
+        assert_eq!(state, SealState::Invalid);
+    }
+
+    #[test]
+    fn read_seal_tampered_segment_start_hash_is_invalid() {
+        // WHY (#211): the MAC must cover segment_start_hash too — an
+        // attacker who hand-edits only the link field (leaving count and
+        // MAC untouched) must still be caught, or a deleted segment's
+        // successor could be re-pointed at an arbitrary start hash without
+        // the key.
+        let dir = tempfile::tempdir().unwrap();
+        let log_path = dir.path().join("audit.log");
+        let k = key(0x68);
+
+        write_seal(&log_path, &k, 4, &link(0x01)).unwrap();
+        let mut bytes = fs::read(seal_path(&log_path)).unwrap();
+        bytes[SEAL_COUNT_LEN] ^= 0xFF; // first byte of segment_start_hash
         fs::write(seal_path(&log_path), &bytes).unwrap();
 
         let state = read_seal(&log_path, &k);
@@ -327,7 +418,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let from = dir.path().join("a.log");
         let to = dir.path().join("a.1.log");
-        write_seal(&from, &key(0x01), 1).unwrap();
+        write_seal(&from, &key(0x01), 1, &link(0x02)).unwrap();
 
         rename_seal(&from, &to).unwrap();
 
