@@ -140,7 +140,8 @@ mod tests {
         // already used under the same key.
         let mut counter = PacketIdCounter::resume(u32::MAX - 1);
         #[expect(clippy::unwrap_used, reason = "test-only: one below the ceiling")]
-        assert_eq!(counter.next().unwrap(), u32::MAX);
+        let one_below_ceiling = counter.next().unwrap();
+        assert_eq!(one_below_ceiling, u32::MAX);
         assert!(
             matches!(counter.next(), Err(Error::PacketIdSpaceExhausted { .. })),
             "next() must refuse rather than wrap to a low, already-issued value"
