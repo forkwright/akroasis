@@ -22,10 +22,19 @@ pub const NONCE_LEN: usize = 12;
 /// WARNING: bumping this is a hard break, not a migration point — `open`
 /// rejects any header whose `version` does not match exactly, so a vault
 /// written under a prior version simply fails to open under a newer one.
-/// v2 changed `StoredEntry`'s on-disk shape: names, types, tags, status, and
-/// history moved from plaintext fields into `encrypted_metadata`, and the
-/// fjall record key changed from the plaintext name to a keyed-hash lookup
-/// key, so a v1 store has neither the fields nor the keys v2 code expects.
+/// v2 folds together two independent changes that landed close together:
+/// names, types, tags, status, and history moved from plaintext fields into
+/// `encrypted_metadata`, the fjall record key changed from the plaintext
+/// name to a keyed-hash lookup key (forkwright/akroasis#215), AND entry
+/// ciphertexts are now bound to their identity via AEAD associated data
+/// (forkwright/akroasis#283). A v1 store has neither the fields, the keys,
+/// nor the AAD binding v2 code expects; its migration path is
+/// re-initialization: read out entries with the prior release, create a
+/// fresh vault, re-add them. `envelope_version` (a per-ENTRY field, distinct
+/// from this header-level version — see
+/// [`crate::crypto::ENTRY_ENVELOPE_VERSION`]) is the finer-grained axis that
+/// DOES support transparent migration, for entries written under a v2
+/// header before the AAD binding existed.
 pub const VAULT_VERSION: u32 = 2;
 
 /// The kind of credential stored in a [`VaultEntry`].

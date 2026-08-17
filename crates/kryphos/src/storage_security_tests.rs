@@ -148,6 +148,17 @@ fn mutated_envelope_version_field_fails_authentication() {
 // -----------------------------------------------------------------
 
 #[test]
+// WHY expect not allow, and why the collect is NOT needless despite the
+// lint: `.collect()` into `handles` is what forces every `thread::spawn`
+// to run before any `.join()` starts. Taking clippy's suggested fix —
+// chaining spawn and join in one lazy iterator — would join thread 0
+// before thread 1 ever spawns, serializing the race this test exists to
+// observe. A test that always passes because it never actually
+// contends is decoration, not a fixture.
+#[expect(
+    clippy::needless_collect,
+    reason = "eager collect forces every thread to spawn (and reach the barrier) before any is joined — required for a real race, not needless"
+)]
 fn concurrent_add_same_name_yields_one_winner_and_duplicate_losers() {
     const THREADS: usize = 16;
     const ITERATIONS: usize = 10;
