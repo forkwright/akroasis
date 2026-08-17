@@ -117,7 +117,7 @@ impl PacketProcessor {
                 self.handle_telemetry(from, &decoded.payload, &mut events);
             }
             p if p == portnum::NEIGHBORINFO_APP => {
-                self.handle_neighborinfo(&decoded.payload, &mut events);
+                self.handle_neighborinfo(from, &decoded.payload, &mut events);
             }
             p if p == portnum::TRACEROUTE_APP => {
                 self.handle_traceroute(from, packet, &decoded.payload, &mut events);
@@ -138,9 +138,10 @@ impl PacketProcessor {
         }
 
         // WHY: an event names its own subject, which is not always the packet
-        // sender. NEIGHBORINFO reports carry a reporter id from the payload, so
-        // locating every signal at `from` puts a relayed report at the relay
-        // rather than at the node the report is about.
+        // sender. TRACEROUTE reports name every hop along the discovered
+        // route, so locating every signal at `from` would put each
+        // intermediate hop's link at the packet's own sender instead of the
+        // hop it actually describes.
         for event in &events {
             let position = event
                 .subject()
@@ -366,7 +367,20 @@ impl PacketProcessor {
         }
     }
 
-    fn handle_neighborinfo(&mut self, payload: &[u8], events: &mut Vec<MeshEvent>) {
+    /// Handles a `NEIGHBORINFO_APP` payload, attributing the reported links
+    /// to `from` (the packet's actual sender) rather than the payload's own
+    /// `node_id` claim.
+    ///
+    /// The payload's `node_id` is a SECOND, independently forgeable identity
+    /// assertion embedded inside the packet body — Meshtastic gives no
+    /// channel-level guarantee it agrees with `from`. Trusting it
+    /// unconditionally lets any sender attribute fabricated neighbor links
+    /// to whichever victim node number it names, on that victim's behalf
+    /// (#207). When the two disagree the report is dropped rather than
+    /// silently reattributed to `from`: a mismatch does not distinguish a
+    /// forged claim from a payload describing a genuinely different node, so
+    /// neither identity can be trusted for this report.
+    fn handle_neighborinfo(&mut self, from: NodeNum, payload: &[u8], events: &mut Vec<MeshEvent>) {
         let ni = match NeighborInfo::decode(payload) {
             Ok(n) => n,
             Err(e) => {
@@ -375,15 +389,23 @@ impl PacketProcessor {
             }
         };
 
-        let reporter = NodeNum(ni.node_id);
-        self.topology.add_node(reporter);
+        let claimed = NodeNum(ni.node_id);
+        if claimed != from {
+            tracing::warn!(
+                claimed = claimed.0,
+                sender = from.0,
+                "NEIGHBORINFO payload node_id disagrees with packet sender; dropping report"
+            );
+            return;
+        }
+
+        self.topology.add_node(from);
 
         for neighbor in &ni.neighbors {
             let neighbor_num = NodeNum(neighbor.node_id);
-            self.topology
-                .update_link(reporter, neighbor_num, neighbor.snr);
+            self.topology.update_link(from, neighbor_num, neighbor.snr);
             events.push(MeshEvent::TopologyChange {
-                from: reporter,
+                from,
                 to: neighbor_num,
                 snr: neighbor.snr,
             });
