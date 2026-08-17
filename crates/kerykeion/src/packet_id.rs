@@ -64,7 +64,7 @@ impl PacketIdCounter {
     }
 
     /// The most recently issued id. Callers persist this after every
-    /// [`Self::next`] and pass it to [`Self::resume`] on the next start.
+    /// [`Self::next_id`] and pass it to [`Self::resume`] on the next start.
     #[must_use]
     pub const fn current(&self) -> u32 {
         self.last_issued
@@ -79,8 +79,12 @@ impl PacketIdCounter {
     /// instance (or, via `resume`, a prior one) may already have issued
     /// under the same key — reproducing #209 at the 32-bit boundary instead
     /// of the birthday bound the raw-random design failed at. Exhaustion
-    /// means the PSK must rotate; retrying `next` cannot recover.
-    pub fn next(&mut self) -> Result<u32, Error> {
+    /// means the PSK must rotate; retrying `next_id` cannot recover.
+    //
+    // WHY not named `next`: `clippy::should_implement_trait` -- a
+    // `Result`-returning `next(&mut self)` reads as `Iterator::next`
+    // (`Option`-returning) and invites exactly that confusion.
+    pub fn next_id(&mut self) -> Result<u32, Error> {
         let next = self
             .last_issued
             .checked_add(1)
@@ -103,7 +107,7 @@ mod tests {
         let mut prev = 0u32;
         for i in 0..10_000u32 {
             #[expect(clippy::unwrap_used, reason = "test-only: far from u32::MAX")]
-            let id = counter.next().unwrap();
+            let id = counter.next_id().unwrap();
             assert!(seen.insert(id), "packet id {id} repeated at iteration {i}");
             if i > 0 {
                 assert_eq!(id, prev + 1, "counter must advance by exactly 1 per call");
@@ -121,7 +125,7 @@ mod tests {
         let persisted_last_used = 4_242u32;
         let mut resumed = PacketIdCounter::resume(persisted_last_used);
         #[expect(clippy::unwrap_used, reason = "test-only")]
-        let first_after_restart = resumed.next().unwrap();
+        let first_after_restart = resumed.next_id().unwrap();
         assert_eq!(
             first_after_restart,
             persisted_last_used + 1,
@@ -140,11 +144,11 @@ mod tests {
         // already used under the same key.
         let mut counter = PacketIdCounter::resume(u32::MAX - 1);
         #[expect(clippy::unwrap_used, reason = "test-only: one below the ceiling")]
-        let one_below_ceiling = counter.next().unwrap();
+        let one_below_ceiling = counter.next_id().unwrap();
         assert_eq!(one_below_ceiling, u32::MAX);
         assert!(
-            matches!(counter.next(), Err(Error::PacketIdSpaceExhausted { .. })),
-            "next() must refuse rather than wrap to a low, already-issued value"
+            matches!(counter.next_id(), Err(Error::PacketIdSpaceExhausted { .. })),
+            "next_id() must refuse rather than wrap to a low, already-issued value"
         );
     }
 

@@ -139,11 +139,7 @@ impl NodeDb {
             .nodes
             .iter()
             .filter(|&(&num, _)| Some(num) != self.my_node)
-            .min_by_key(|&(_, node)| {
-                node.last_heard
-                    .map(Timestamp::as_millisecond)
-                    .unwrap_or(i64::MIN)
-            })
+            .min_by_key(|&(_, node)| node.last_heard.map_or(i64::MIN, Timestamp::as_millisecond))
             .map(|(&num, _)| num);
         if let Some(victim) = victim {
             self.nodes.remove(&victim);
