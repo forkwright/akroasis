@@ -48,6 +48,10 @@ pub enum VaultError {
     #[snafu(display("wrong passphrase: decryption of key check failed"))]
     WrongPassphrase,
 
+    /// The passphrase is empty, so the derived key carries no entropy.
+    #[snafu(display("passphrase must not be empty"))]
+    EmptyPassphrase,
+
     /// The vault is already locked by another process.
     #[snafu(display("vault is locked by another process: {path}", path = path.display()))]
     Locked {
@@ -106,6 +110,25 @@ pub enum VaultError {
     TamperLog {
         /// Underlying tamper-log failure.
         source: koinon::TamperLogError,
+    },
+
+    /// A field passed to [`crate::crypto::entry_aad`] is too long to encode
+    /// under its 4-byte length prefix.
+    ///
+    /// INVARIANT guard, not a realistic runtime case: every current caller
+    /// passes a fixed-size salt, a vault entry name, or a JSON-serialized
+    /// `CredentialType`, none of which approach `u32::MAX` bytes. Erroring
+    /// here is what keeps the AAD's length-prefix encoding canonical —
+    /// silently truncating the length instead would let two different
+    /// (field, length) pairs collide on the same encoded bytes.
+    #[snafu(display(
+        "AAD field '{field}' is {len} bytes, which exceeds the u32 length-prefix limit"
+    ))]
+    FieldTooLarge {
+        /// Which field overflowed the length prefix.
+        field: &'static str,
+        /// The field's actual byte length.
+        len: usize,
     },
 }
 

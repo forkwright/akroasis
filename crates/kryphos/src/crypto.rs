@@ -3,15 +3,26 @@
 //! Argon2id key derivation and ChaCha20-Poly1305 authenticated encryption.
 
 use chacha20poly1305::ChaCha20Poly1305;
-use chacha20poly1305::aead::{Aead, AeadCore, KeyInit};
+use chacha20poly1305::aead::{Aead, AeadCore, KeyInit, Payload};
 use rand_core::{OsRng, RngCore};
 
-use crate::error::CryptoError;
+use snafu::ResultExt;
+
+use crate::error::{CryptoError, SerializationSnafu, VaultError};
 use crate::key::VaultKey;
-use crate::vault::NONCE_LEN;
+use crate::vault::{CredentialType, NONCE_LEN};
 
 /// Salt length for Argon2id key derivation (256 bits).
 pub const SALT_LEN: usize = 32;
+
+/// Format version of the per-entry AEAD associated-data binding built by
+/// [`entry_aad`].
+///
+/// Distinct from [`crate::vault::VAULT_VERSION`] (the vault header/on-disk
+/// format): this versions only the identity binding baked into each
+/// entry's ciphertext (forkwright/akroasis#283), so a future change to the
+/// binding scheme does not force every unrelated header field to bump.
+pub(crate) const ENTRY_ENVELOPE_VERSION: u8 = 1;
 
 /// Argon2id memory cost: 64 MiB.
 const KDF_M_COST: u32 = 65_536;
@@ -62,22 +73,31 @@ pub fn derive_key(passphrase: &[u8], salt: &[u8]) -> VaultKey {
 
 /// Encrypts plaintext with ChaCha20-Poly1305.
 ///
+/// `aad` is authenticated but not encrypted or stored in the output — the
+/// caller must supply the identical bytes to [`decrypt`], or authentication
+/// fails. Pass `b""` when there is nothing to bind.
+///
 /// Returns `nonce || ciphertext || tag` (12 + `plaintext.len()` + 16 bytes).
 /// The nonce is randomly generated per call.
 ///
 /// # Errors
 ///
 /// Returns [`CryptoError::EncryptionFailed`] if the AEAD operation fails.
-pub fn encrypt(key: &VaultKey, plaintext: &[u8]) -> Result<Vec<u8>, CryptoError> {
+pub fn encrypt(key: &VaultKey, plaintext: &[u8], aad: &[u8]) -> Result<Vec<u8>, CryptoError> {
     let cipher = ChaCha20Poly1305::new(key.as_bytes().into());
     let nonce = ChaCha20Poly1305::generate_nonce(&mut OsRng);
 
-    let ciphertext =
-        cipher
-            .encrypt(&nonce, plaintext)
-            .map_err(|_| CryptoError::EncryptionFailed {
-                reason: String::from("ChaCha20-Poly1305 encryption failed"),
-            })?;
+    let ciphertext = cipher
+        .encrypt(
+            &nonce,
+            Payload {
+                msg: plaintext,
+                aad,
+            },
+        )
+        .map_err(|_| CryptoError::EncryptionFailed {
+            reason: String::from("ChaCha20-Poly1305 encryption failed"),
+        })?;
 
     let mut output = Vec::with_capacity(NONCE_LEN + ciphertext.len());
     output.extend_from_slice(&nonce);
@@ -87,14 +107,22 @@ pub fn encrypt(key: &VaultKey, plaintext: &[u8]) -> Result<Vec<u8>, CryptoError>
 
 /// Decrypts ciphertext produced by [`encrypt`].
 ///
+/// `aad` must be byte-identical to the value passed to the original
+/// [`encrypt`] call. A mismatch — a different entry's binding, a tampered
+/// bound field, or simply the wrong bytes — fails authentication exactly
+/// like a wrong key or a corrupted ciphertext; the caller cannot distinguish
+/// which. This is the property that binds a ciphertext to its identity
+/// rather than to the key alone.
+///
 /// Expects the input format `nonce (12 bytes) || ciphertext || tag (16 bytes)`.
 ///
 /// # Errors
 ///
 /// Returns [`CryptoError::InvalidNonceLength`] if the input is too short.
-/// Returns [`CryptoError::DecryptionFailed`] if the key is wrong or the
-/// ciphertext was tampered with.
-pub fn decrypt(key: &VaultKey, ciphertext: &[u8]) -> Result<Vec<u8>, CryptoError> {
+/// Returns [`CryptoError::DecryptionFailed`] if the key is wrong, `aad`
+/// does not match what was used to encrypt, or the ciphertext was
+/// tampered with.
+pub fn decrypt(key: &VaultKey, ciphertext: &[u8], aad: &[u8]) -> Result<Vec<u8>, CryptoError> {
     if ciphertext.len() < NONCE_LEN {
         return Err(CryptoError::InvalidNonceLength {
             expected: NONCE_LEN,
@@ -107,8 +135,74 @@ pub fn decrypt(key: &VaultKey, ciphertext: &[u8]) -> Result<Vec<u8>, CryptoError
     let cipher = ChaCha20Poly1305::new(key.as_bytes().into());
 
     cipher
-        .decrypt(nonce, encrypted)
+        .decrypt(
+            nonce,
+            Payload {
+                msg: encrypted,
+                aad,
+            },
+        )
         .map_err(|_| CryptoError::DecryptionFailed)
+}
+
+/// Builds the AEAD associated data binding a vault entry's ciphertext to
+/// its identity: this vault instance, the entry's name (its fjall key),
+/// its declared credential type, and the envelope version.
+///
+/// Verified on every [`decrypt`] call site alongside the ciphertext itself
+/// (forkwright/akroasis#283) — moving a valid ciphertext beneath a
+/// different name, or editing its stored `credential_type` /
+/// `envelope_version` independently of the secret, changes this binding
+/// and fails authentication instead of decrypting into the wrong slot.
+///
+/// # Errors
+///
+/// Returns [`VaultError::Serialization`] if `credential_type` cannot be
+/// encoded — `CredentialType` derives `Serialize` over plain data, so this
+/// does not fail in practice.
+/// Returns [`VaultError::FieldTooLarge`] if `vault_salt`, `name`, or the
+/// serialized `credential_type` exceeds `u32::MAX` bytes.
+///
+/// INVARIANT: every variable-length field is 4-byte-length-prefixed before
+/// concatenation. Without this, e.g. `(name="ab", type="c")` and
+/// `(name="a", type="bc")` would produce identical AAD bytes, letting a
+/// relocated ciphertext smuggle a different name/type split through
+/// authentication. [`checked_len_prefix`] is what actually holds this
+/// property: it ERRORS on a field too long to prefix rather than silently
+/// writing a wrong-but-plausible `u32::MAX` prefix, which would itself
+/// collide two different lengths onto the same encoded bytes.
+pub(crate) fn entry_aad(
+    vault_salt: &[u8],
+    name: &str,
+    credential_type: &CredentialType,
+    envelope_version: u8,
+) -> Result<Vec<u8>, VaultError> {
+    let type_bytes = serde_json::to_vec(credential_type).context(SerializationSnafu)?;
+
+    let mut aad =
+        Vec::with_capacity(1 + 4 + vault_salt.len() + 4 + name.len() + 4 + type_bytes.len());
+    aad.push(envelope_version);
+    aad.extend_from_slice(&checked_len_prefix("vault_salt", vault_salt.len())?);
+    aad.extend_from_slice(vault_salt);
+    aad.extend_from_slice(&checked_len_prefix("name", name.len())?);
+    aad.extend_from_slice(name.as_bytes());
+    aad.extend_from_slice(&checked_len_prefix("credential_type", type_bytes.len())?);
+    aad.extend_from_slice(&type_bytes);
+    Ok(aad)
+}
+
+/// Encodes `len` as a big-endian 4-byte length prefix for [`entry_aad`].
+///
+/// # Errors
+///
+/// Returns [`VaultError::FieldTooLarge`] if `len` exceeds `u32::MAX` — a
+/// value this function must reject rather than clamp, since clamping would
+/// let two different lengths encode to the identical prefix (see
+/// [`entry_aad`]'s INVARIANT doc).
+fn checked_len_prefix(field: &'static str, len: usize) -> Result<[u8; 4], VaultError> {
+    u32::try_from(len)
+        .map(u32::to_be_bytes)
+        .map_err(|_| VaultError::FieldTooLarge { field, len })
 }
 
 #[cfg(test)]
@@ -168,8 +262,8 @@ mod tests {
         let key = derive_key(b"test-passphrase", &[0x42; SALT_LEN]);
         let plaintext = b"secret vault entry data";
 
-        let ciphertext = encrypt(&key, plaintext).unwrap();
-        let decrypted = decrypt(&key, &ciphertext).unwrap();
+        let ciphertext = encrypt(&key, plaintext, b"").unwrap();
+        let decrypted = decrypt(&key, &ciphertext, b"").unwrap();
 
         assert_eq!(
             decrypted, plaintext,
@@ -181,8 +275,8 @@ mod tests {
     fn encrypt_decrypt_empty_plaintext() {
         let key = derive_key(b"test-passphrase", &[0x42; SALT_LEN]);
 
-        let ciphertext = encrypt(&key, b"").unwrap();
-        let decrypted = decrypt(&key, &ciphertext).unwrap();
+        let ciphertext = encrypt(&key, b"", b"").unwrap();
+        let decrypted = decrypt(&key, &ciphertext, b"").unwrap();
 
         assert!(
             decrypted.is_empty(),
@@ -195,8 +289,8 @@ mod tests {
         let key = derive_key(b"test-passphrase", &[0x42; SALT_LEN]);
         let plaintext = vec![0xAB; 1_000_000];
 
-        let ciphertext = encrypt(&key, &plaintext).unwrap();
-        let decrypted = decrypt(&key, &ciphertext).unwrap();
+        let ciphertext = encrypt(&key, &plaintext, b"").unwrap();
+        let decrypted = decrypt(&key, &ciphertext, b"").unwrap();
 
         assert_eq!(
             decrypted, plaintext,
@@ -209,8 +303,8 @@ mod tests {
         let key1 = derive_key(b"correct-passphrase", &[0x42; SALT_LEN]);
         let key2 = derive_key(b"wrong-passphrase", &[0x42; SALT_LEN]);
 
-        let ciphertext = encrypt(&key1, b"secret data").unwrap();
-        let result = decrypt(&key2, &ciphertext);
+        let ciphertext = encrypt(&key1, b"secret data", b"").unwrap();
+        let result = decrypt(&key2, &ciphertext, b"");
 
         assert!(
             result.is_err(),
@@ -222,17 +316,62 @@ mod tests {
     fn tampered_ciphertext_returns_error() {
         let key = derive_key(b"test-passphrase", &[0x42; SALT_LEN]);
 
-        let mut ciphertext = encrypt(&key, b"secret data").unwrap();
+        let mut ciphertext = encrypt(&key, b"secret data", b"").unwrap();
 
         // WHY: Flip a byte in the encrypted portion (after the nonce) to
         // simulate tampering. The authentication tag check must reject this.
         let last = ciphertext.len() - 1;
         ciphertext[last] ^= 0xFF;
 
-        let result = decrypt(&key, &ciphertext);
+        let result = decrypt(&key, &ciphertext, b"");
         assert!(
             result.is_err(),
             "tampered ciphertext must return CryptoError"
+        );
+    }
+
+    #[test]
+    fn encrypt_decrypt_round_trip_with_associated_data() {
+        let key = derive_key(b"test-passphrase", &[0x42; SALT_LEN]);
+        let plaintext = b"secret vault entry data";
+        let aad = b"entry-identity-binding";
+
+        let ciphertext = encrypt(&key, plaintext, aad).unwrap();
+        let decrypted = decrypt(&key, &ciphertext, aad).unwrap();
+
+        assert_eq!(
+            decrypted, plaintext,
+            "decrypted output must match original plaintext under matching AAD"
+        );
+    }
+
+    #[test]
+    fn decrypt_with_mismatched_associated_data_fails() {
+        let key = derive_key(b"test-passphrase", &[0x42; SALT_LEN]);
+        let plaintext = b"secret vault entry data";
+
+        let ciphertext = encrypt(&key, plaintext, b"entry-a").unwrap();
+        let result = decrypt(&key, &ciphertext, b"entry-b");
+
+        assert!(
+            result.is_err(),
+            "decryption with mismatched associated data must fail — this is the \
+             AEAD property forkwright/akroasis#283 relies on to bind ciphertext \
+             to its entry identity"
+        );
+    }
+
+    #[test]
+    fn decrypt_with_empty_aad_against_bound_ciphertext_fails() {
+        let key = derive_key(b"test-passphrase", &[0x42; SALT_LEN]);
+
+        let ciphertext = encrypt(&key, b"secret data", b"entry-a").unwrap();
+        let result = decrypt(&key, &ciphertext, b"");
+
+        assert!(
+            result.is_err(),
+            "omitting AAD on decrypt must not silently succeed against a \
+             ciphertext that was bound at encrypt time"
         );
     }
 
@@ -241,8 +380,8 @@ mod tests {
         let key = derive_key(b"test-passphrase", &[0x42; SALT_LEN]);
         let plaintext = b"identical plaintext";
 
-        let ct1 = encrypt(&key, plaintext).unwrap();
-        let ct2 = encrypt(&key, plaintext).unwrap();
+        let ct1 = encrypt(&key, plaintext, b"").unwrap();
+        let ct2 = encrypt(&key, plaintext, b"").unwrap();
 
         assert_ne!(
             ct1, ct2,
@@ -262,7 +401,7 @@ mod tests {
         let key = derive_key(b"test-passphrase", &[0x42; SALT_LEN]);
         let plaintext = b"hello";
 
-        let ciphertext = encrypt(&key, plaintext).unwrap();
+        let ciphertext = encrypt(&key, plaintext, b"").unwrap();
 
         // nonce (12) + plaintext (5) + tag (16) = 33
         assert_eq!(
@@ -276,10 +415,43 @@ mod tests {
     fn decrypt_rejects_too_short_input() {
         let key = derive_key(b"test-passphrase", &[0x42; SALT_LEN]);
 
-        let result = decrypt(&key, &[0u8; 5]);
+        let result = decrypt(&key, &[0u8; 5], b"");
         assert!(
             result.is_err(),
             "input shorter than nonce length must be rejected"
+        );
+    }
+
+    // -----------------------------------------------------------------
+    // AAD length-prefix guard (checked_len_prefix)
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn checked_len_prefix_accepts_u32_max() {
+        let result = checked_len_prefix("field", u32::MAX as usize);
+        assert_eq!(
+            result.unwrap(),
+            u32::MAX.to_be_bytes(),
+            "the largest representable length must encode, not error"
+        );
+    }
+
+    #[test]
+    fn checked_len_prefix_rejects_one_past_u32_max() {
+        // WHY exercised via the helper directly rather than a real
+        // >4GiB-length `entry_aad` call: allocating gigabytes in a unit test
+        // is impractical, and this arithmetic boundary needs no allocation
+        // to exercise — `checked_len_prefix` IS the shipped guard `entry_aad`
+        // calls, not a re-implementation of it.
+        let result = checked_len_prefix("field", u32::MAX as usize + 1);
+        assert!(
+            matches!(
+                result,
+                Err(VaultError::FieldTooLarge { field: "field", len }) if len == u32::MAX as usize + 1
+            ),
+            "a length that cannot be represented in 4 bytes must error \
+             rather than silently clamp to u32::MAX (which would collide \
+             two different lengths onto the same AAD prefix), got {result:?}"
         );
     }
 
