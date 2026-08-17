@@ -21,8 +21,19 @@ on:
 permissions:
   contents: read
 
+# WHY the SHA on a push (#375): `github.event.pull_request.number` is empty
+# on a `push` event, so the old key here fell back to `github.ref`, constant
+# for `main` -- two pushes to main inside the cancel window collided, and
+# `cargo audit`/`cargo deny` reported `cancelled`, not red, for the loser.
+# Confirmed live on 60f97de and b5c8071 (`gh api
+# repos/forkwright/akroasis/commits/<sha>/check-runs`), the same two commits
+# `gate-attestation.yml`'s identical fix cites as its own evidence -- this
+# file carries the exact same bug, standalone (no reusable-workflow fallback
+# to catch it). `schedule`/`workflow_dispatch` keep falling back to
+# `github.ref`: a superseding scheduled/manual run cancelling an older one of
+# its own kind is the desired behavior, unchanged here.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name == 'push' && github.sha || github.ref }}
   cancel-in-progress: true
 
 env:
