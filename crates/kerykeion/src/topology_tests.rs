@@ -462,3 +462,65 @@ fn update_link_never_evicts_its_own_two_new_endpoints() {
     );
     assert_eq!(topo.node_count(), MAX_LIVE_NODES);
 }
+
+#[test]
+fn load_from_bytes_never_evicts_its_own_two_new_endpoints() {
+    // WHY: regression sibling to `update_link_never_evicts_its_own_two_new_endpoints`
+    // (#204). `load_from_bytes`'s link-restore loop predates `add_node`'s
+    // eviction capability and was not re-audited when that capability was
+    // added: it called plain `add_node` for both of a link's endpoints
+    // instead of `add_node_protecting`, so the second `add_node` call for
+    // `to` could evict the node the first call just inserted for `from` --
+    // before their edge exists -- leaving a dangling `NodeIndex` and
+    // panicking `StableGraph::add_edge`.
+    //
+    // Construction: a chain of `MAX_LIVE_NODES - 1` links spanning node ids
+    // `0..MAX_LIVE_NODES` fills the graph to exactly the cap with every
+    // node warmed by an edge (`freshness = Some(_)`), zero `None`-freshness
+    // entries. One more link between two brand-new ids then forces two
+    // evictions back to back while restoring: the first `add_node` call for
+    // that link evicts some warm chain node and inserts `from` -- now the
+    // UNIQUE `None`-freshness (zero-edge) entry, hence deterministically
+    // the coldest. The second `add_node` call for `to` then evicts `from`
+    // itself, and `add_edge` on the now-stale `from_idx` panics.
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "test-only: indices are far below u32::MAX"
+    )]
+    let cap = MAX_LIVE_NODES as u32;
+    let mut links: Vec<LinkSnapshot> = (0..cap - 1)
+        .map(|i| LinkSnapshot {
+            from: n(i),
+            to: n(i + 1),
+            snr: 1.0,
+            packet_count: 1,
+        })
+        .collect();
+    links.push(LinkSnapshot {
+        from: n(cap),
+        to: n(cap + 1),
+        snr: 1.0,
+        packet_count: 1,
+    });
+    let snapshot = TopologySnapshot {
+        nodes: Vec::new(),
+        links,
+    };
+    let bytes = serde_json::to_vec(&snapshot).unwrap();
+
+    let topo = MeshTopology::load_from_bytes(&bytes).unwrap(); // must not panic
+
+    assert_eq!(topo.node_count(), MAX_LIVE_NODES);
+    assert!(
+        topo.contains_node(n(cap)),
+        "the new link's own source must survive its own restore"
+    );
+    assert!(
+        topo.contains_node(n(cap + 1)),
+        "the new link's own target must survive its own restore"
+    );
+    assert!(
+        topo.neighbors(n(cap)).iter().any(|&(num, _)| num == n(cap + 1)),
+        "the new edge between the two brand-new endpoints must exist"
+    );
+}
