@@ -5,9 +5,13 @@ Akroasis is a Rust workspace for multi-domain signal intelligence - radio, mesh,
 ## Push target
 
 ```
-origin = http://kanon.lan/forkwright/akroasis.git   (authoritative)
+origin = <forge>/forkwright/akroasis.git            (authoritative)
 github = git@github.com:forkwright/akroasis.git     (mirror)
 ```
+
+`<forge>` is this box's forge address. It is per-box state, not a property of this repository, so
+it is not written down here — read it from your own `git remote -v`, or from the kanon MCP
+binding that the session-start topology probe reports.
 
 Push to `origin`. The forge post-receive hook runs CI (`.kanon-ci.toml`) and mirrors merge commits to GitHub via the pr-sync worker.
 
@@ -15,7 +19,7 @@ Push to `origin`. The forge post-receive hook runs CI (`.kanon-ci.toml`) and mir
 
 Two paths, same effect:
 
-**Stoa UI.** Open `http://kanon.lan/prs/forkwright/akroasis`, click "New PR", pick base + head refs, review diff, submit.
+**Stoa UI.** Open `<forge>/prs/forkwright/akroasis`, click "New PR", pick base + head refs, review diff, submit.
 
 **CLI.**
 
@@ -50,7 +54,7 @@ The GitHub mirror at `github.com/forkwright/akroasis` works as before. A PR open
 
 ## Fallback
 
-If the forge is unreachable, push to `github` and open a GitHub PR. When the forge is back, its pr-sync worker picks up the PR and continues from there. This is an escape hatch, not a preferred path - use it only when kanon.lan is actually down.
+If the forge is unreachable, push to `github` and open a GitHub PR. When the forge is back, its pr-sync worker picks up the PR and continues from there. This is an escape hatch, not a preferred path - use it only when the forge is actually down.
 
 ## CI configuration
 
