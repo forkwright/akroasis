@@ -6,6 +6,7 @@ use compact_str::CompactString;
 use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use snafu::ResultExt;
+use zeroize::Zeroizing;
 
 use crate::error::{CryptoError, KeyParseSnafu};
 use crate::key::{InstallationIdentity, SigningKey, VaultKey};
@@ -17,7 +18,15 @@ pub const SALT_LEN: usize = 16;
 pub const NONCE_LEN: usize = 12;
 
 /// Current vault format version.
-pub const VAULT_VERSION: u32 = 1;
+///
+/// WARNING: bumping this is a hard break, not a migration point — `open`
+/// rejects any header whose `version` does not match exactly, so a vault
+/// written under a prior version simply fails to open under a newer one.
+/// v2 changed `StoredEntry`'s on-disk shape: names, types, tags, status, and
+/// history moved from plaintext fields into `encrypted_metadata`, and the
+/// fjall record key changed from the plaintext name to a keyed-hash lookup
+/// key, so a v1 store has neither the fields nor the keys v2 code expects.
+pub const VAULT_VERSION: u32 = 2;
 
 /// The kind of credential stored in a [`VaultEntry`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -244,9 +253,17 @@ pub fn unseal_signing_key(
     let cipher = ChaCha20Poly1305::new(vault_key.as_bytes().into());
     let nonce = Nonce::from_slice(nonce);
 
-    let plaintext = cipher
-        .decrypt(nonce, ciphertext)
-        .map_err(|_| CryptoError::DecryptionFailed)?;
+    // WHY: wrap at the point of allocation — `decrypt`'s return (the raw
+    // Ed25519 signing key bytes) is moved straight into `Zeroizing::new`
+    // with no intermediate unwrapped binding, so this ephemeral copy is
+    // scrubbed on drop rather than left in freed heap memory. `SigningKey`
+    // itself protects the key it constructs (ZeroizeOnDrop, RUST/#218); this
+    // covers the plaintext buffer that exists only until then.
+    let plaintext = Zeroizing::new(
+        cipher
+            .decrypt(nonce, ciphertext)
+            .map_err(|_| CryptoError::DecryptionFailed)?,
+    );
 
     let signing = SigningKey::from_bytes(&plaintext).context(KeyParseSnafu)?;
 

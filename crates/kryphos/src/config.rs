@@ -2,6 +2,7 @@
 
 use figment::value::{Dict, Map, Value};
 use figment::{Error, Metadata, Profile, Provider};
+use zeroize::Zeroizing;
 
 use crate::storage::Vault;
 
@@ -82,13 +83,25 @@ impl<P> VaultProvider<P> {
                         .get(entry_name)
                         .map_err(|e| Error::from(e.to_string()))?;
 
-                    let secret_str = String::from_utf8(decrypted.secret).map_err(|_| {
+                    // WHY: `decrypted.secret` is `Zeroizing<Vec<u8>>` and has
+                    // no public escape hatch to a bare `Vec<u8>`/`String` —
+                    // `str::from_utf8` borrows instead of consuming, so the
+                    // validated bytes never leave the zeroizing wrapper.
+                    // `decrypted` (and its `secret` field) is scrubbed on
+                    // drop at the end of this function.
+                    let validated = std::str::from_utf8(&decrypted.secret).map_err(|_| {
                         Error::from(format!(
                             "vault entry '{entry_name}' contains non-UTF-8 data"
                         ))
                     })?;
+                    let secret_str = Zeroizing::new(validated.to_owned());
 
-                    Ok(Value::String(tag, secret_str))
+                    // NOTE: `figment::Value::String` requires an owned,
+                    // non-zeroizing `String` — this clone (deref past the
+                    // `Zeroizing` wrapper first) is the one unavoidable copy
+                    // that crosses into a type we don't control. `secret_str`
+                    // itself still zeroizes on drop immediately after.
+                    Ok(Value::String(tag, (*secret_str).clone()))
                 } else {
                     Ok(Value::String(tag, s))
                 }

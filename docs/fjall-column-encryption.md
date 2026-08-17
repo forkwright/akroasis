@@ -3,7 +3,8 @@
 Issue #132 tracks a future declarative encryption layer for fjall-backed
 stores. Current main does not have a generic table/column store abstraction:
 the only fjall-backed runtime store is `kryphos::Vault`, and it already
-encrypts credential secrets through a typed field before serializing the row.
+encrypts every field of a credential record — secret, name, type, metadata,
+status, and history — through two typed fields before serializing the row.
 
 This note defines the boundary to use when akroasis adds its first mixed
 plaintext/ciphertext fjall schema for signals, references, or other indexed
@@ -12,11 +13,18 @@ runtime data. It is not an implementation of #132.
 ## Current State
 
 - `crates/kryphos/src/storage.rs` owns one fjall keyspace named `entries`.
-- `StoredEntry` keeps `encrypted_secret` as the only encrypted field; metadata,
-  status, and history remain structured so vault listing and lifecycle logic can
-  run without decrypting secret material.
-- `Vault::add`, `Vault::get`, and `Vault::rotate` call the existing
-  ChaCha20-Poly1305 helpers directly for that one field.
+- `StoredEntry` holds two independently-nonced ChaCha20-Poly1305 ciphertexts:
+  `encrypted_secret` and `encrypted_metadata`. `encrypted_metadata` decrypts to
+  an `EntryMetadataRecord` carrying name, credential type, metadata, status,
+  and history (akroasis#215) — nothing about a credential is plaintext at
+  rest. The fjall record KEY is a keyed-BLAKE3 hash of the name, not the name
+  itself, so no credential name appears verbatim in the fjall data directory.
+- `Vault::list` decrypts only `encrypted_metadata`, never `encrypted_secret` —
+  callers already hold the vault key (an unlocked `Vault`), so this is the
+  "explicit decrypted view" the Non-Goals below require, not a bypass of it.
+- `Vault::add`, `Vault::get`, `Vault::rotate`, `Vault::revoke`, and
+  `Vault::history` call the existing ChaCha20-Poly1305 helpers directly for
+  both fields via `Vault::encrypt_metadata`/`Vault::decrypt_metadata`.
 - There is no fjall-backed signal store in current main. Mesh signals are
   produced in memory and forwarded through the collector/processor path.
 
@@ -44,8 +52,10 @@ fields may remain plaintext for indexing, filtering, or redacted display.
 
 ## Non-Goals
 
-- Do not retrofit `kryphos::Vault` only to satisfy the shape. Its existing typed
-  `encrypted_secret` model is clearer than a generic map until another store
+- Do not retrofit `kryphos::Vault` onto the generic `ColumnCodec`/
+  `ENCRYPTED_FIELDS` shape only for consistency with future stores. Its
+  existing typed-field model (now two fields: `encrypted_secret` and
+  `encrypted_metadata`) is clearer than a generic map until another store
   proves the abstraction.
 - Do not encrypt fields that are required for safe listing or lifecycle checks
   unless the caller has an explicit decrypted view.
