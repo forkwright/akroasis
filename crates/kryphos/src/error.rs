@@ -48,6 +48,10 @@ pub enum VaultError {
     #[snafu(display("wrong passphrase: decryption of key check failed"))]
     WrongPassphrase,
 
+    /// The passphrase is empty, so the derived key carries no entropy.
+    #[snafu(display("passphrase must not be empty"))]
+    EmptyPassphrase,
+
     /// The vault is already locked by another process.
     #[snafu(display("vault is locked by another process: {path}", path = path.display()))]
     Locked {

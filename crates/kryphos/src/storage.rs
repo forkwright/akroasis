@@ -747,3 +747,17 @@ fn fjall_err(e: impl std::fmt::Display) -> VaultError {
 )]
 #[path = "storage_tests.rs"]
 mod tests;
+
+// WHY this module exists as an isolated commit before the fix lands: these
+// tests pin the exact defects in forkwright/akroasis#287, #283, and #214.
+// Watched red against this commit (pre-fix), watched green against the
+// commit that follows it (the actual fix) — see the PR body's negative
+// fixture section.
+#[cfg(test)]
+#[expect(
+    clippy::unwrap_used,
+    clippy::indexing_slicing,
+    reason = "test code: panics and unwraps acceptable in assertions"
+)]
+#[path = "storage_security_tests.rs"]
+mod security_tests;
