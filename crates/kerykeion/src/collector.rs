@@ -30,7 +30,7 @@ use crate::router::MeshRouter;
 use crate::store_forward::StoreForward;
 use crate::topology::MeshTopology;
 use crate::transport::{self, ConnectionHandle};
-use crate::types::{ClaimedNodeNum, NodeNum};
+use crate::types::ClaimedNodeNum;
 
 // Historical default (1 s) now lives in [`CollectorConfig::default`].
 
