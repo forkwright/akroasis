@@ -4,7 +4,7 @@ use std::fmt;
 
 use serde::{Deserialize, Serialize};
 use subtle::ConstantTimeEq;
-use zeroize::{Zeroize, ZeroizeOnDrop};
+use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
 use ed25519_dalek::Signer;
 
@@ -44,11 +44,7 @@ impl SigningKey {
     ///
     /// Returns [`KeyError::WrongKeyLength`] if `bytes` is not 32 bytes.
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, KeyError> {
-        let arr: [u8; SIGNING_KEY_LEN] =
-            bytes.try_into().map_err(|_| KeyError::WrongKeyLength {
-                expected: SIGNING_KEY_LEN,
-                actual: bytes.len(),
-            })?;
+        let arr = zeroizing_key_array(bytes)?;
         Ok(Self {
             inner: ed25519_dalek::SigningKey::from_bytes(&arr),
         })
@@ -81,6 +77,26 @@ impl SigningKey {
     pub const fn as_inner(&self) -> &ed25519_dalek::SigningKey {
         &self.inner
     }
+}
+
+/// Copies `bytes` into a fixed-size array wrapped for zero-on-drop.
+///
+/// WHY: `TryInto<[u8; N]>` makes an unavoidable copy crossing from the
+/// caller's slice into a stack array; `SigningKey::from_bytes` is the
+/// call-frame directly above `unseal_signing_key` (vault.rs), whose own
+/// decrypt-output copy is `Zeroizing`-wrapped (RUST/#218) — this closes the
+/// next frame so that coverage does not stop one call short.
+///
+/// # Errors
+///
+/// Returns [`KeyError::WrongKeyLength`] if `bytes` is not `SIGNING_KEY_LEN`
+/// bytes.
+fn zeroizing_key_array(bytes: &[u8]) -> Result<Zeroizing<[u8; SIGNING_KEY_LEN]>, KeyError> {
+    let arr: [u8; SIGNING_KEY_LEN] = bytes.try_into().map_err(|_| KeyError::WrongKeyLength {
+        expected: SIGNING_KEY_LEN,
+        actual: bytes.len(),
+    })?;
+    Ok(Zeroizing::new(arr))
 }
 
 impl fmt::Debug for SigningKey {
@@ -317,6 +333,25 @@ mod tests {
     fn signing_key_from_bytes_rejects_wrong_length() {
         let result = SigningKey::from_bytes(&[0u8; 16]);
         assert!(result.is_err());
+    }
+
+    /// Dispositive by construction, same mechanism as
+    /// `decrypted_secret_is_zeroized_on_drop_by_type` (kryphos storage
+    /// tests): `[u8; N]` alone does not implement `ZeroizeOnDrop` (only
+    /// `Zeroize`), so this specific bound fails to compile against a bare
+    /// array and passes only because `zeroizing_key_array` returns
+    /// `Zeroizing<[u8; N]>`.
+    #[test]
+    fn signing_key_from_bytes_intermediate_array_is_zeroize_on_drop_by_type() {
+        fn assert_zeroizes_on_drop<T: ZeroizeOnDrop>(_: &T) {}
+
+        let bytes = [0x11; SIGNING_KEY_LEN];
+        let arr = zeroizing_key_array(&bytes).unwrap();
+        assert_zeroizes_on_drop(&arr);
+        assert_eq!(
+            *arr, bytes,
+            "wrapped array must carry the same bytes through"
+        );
     }
 
     #[test]
