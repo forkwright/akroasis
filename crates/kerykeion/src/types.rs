@@ -149,6 +149,20 @@ pub const MAX_HOP_LIMIT: u8 = 7;
 /// Maximum protobuf payload size enforced by Meshtastic firmware.
 pub const MAX_PACKET_SIZE: usize = 512;
 
+/// Hard ceiling on live-tracked node identities, shared by [`crate::node_db::NodeDb`]
+/// and [`crate::topology::MeshTopology`] for both OTA-learned insertion and
+/// persisted-snapshot restore.
+///
+// WHY one shared constant rather than one per call site (#204): `from` on an
+// inbound frame is unauthenticated, so nothing stops a hostile peer from
+// announcing distinct node identities without bound; a real Meshtastic mesh
+// runs low hundreds of nodes, so this ceiling is far above any real mesh
+// while still bounding worst-case memory. Single fact, both structures derive.
+pub const MAX_LIVE_NODES: usize = 4096;
+
+/// Hard ceiling on live-tracked topology links. See [`MAX_LIVE_NODES`].
+pub const MAX_LIVE_LINKS: usize = 16384;
+
 /// Two-byte magic header that begins every Meshtastic serial frame.
 pub const FRAME_MAGIC: [u8; 2] = [0x94, 0xC3];
 

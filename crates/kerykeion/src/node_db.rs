@@ -6,7 +6,7 @@ use std::time::Duration;
 use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 
-use crate::types::{NodeIdStr, NodeNum};
+use crate::types::{MAX_LIVE_NODES, NodeIdStr, NodeNum};
 
 /// In-memory store of all mesh nodes seen during a session.
 #[derive(Debug, Default, Clone)]
@@ -105,6 +105,7 @@ impl NodeDb {
     }
 
     /// Inserts or replaces a node record.
+    // TODO(#204): cardinality bound lands in the next commit.
     pub fn insert(&mut self, node: MeshNode) {
         self.nodes.insert(node.num, node);
     }
@@ -222,5 +223,74 @@ mod tests {
         db.insert(updated);
         assert_eq!(db.len(), 1);
         assert_eq!(db.get(NodeNum(1)).and_then(|n| n.snr), Some(4.5));
+    }
+
+    fn make_node_heard(num: u32, secs: i64) -> MeshNode {
+        let mut node = make_node(num);
+        #[expect(clippy::unwrap_used, reason = "test-only: secs is a small fixed value")]
+        {
+            node.last_heard = Some(Timestamp::from_second(secs).unwrap());
+        }
+        node
+    }
+
+    #[test]
+    fn insert_bounds_live_cardinality_at_the_cap() {
+        // WHY(#204): `from` on an inbound frame is unauthenticated, so an
+        // OTA peer announcing MAX_LIVE_NODES+N distinct identities must
+        // never grow the table past the cap.
+        let mut db = NodeDb::new();
+        for i in 0..(MAX_LIVE_NODES as u32 + 500) {
+            db.insert(make_node(i));
+        }
+        assert!(
+            db.len() <= MAX_LIVE_NODES,
+            "len()={} exceeds MAX_LIVE_NODES={MAX_LIVE_NODES}",
+            db.len()
+        );
+    }
+
+    #[test]
+    fn insert_evicts_the_stalest_node_and_protects_my_node() {
+        let mut db = NodeDb::new();
+        let my_num = NodeNum(0xAAAA);
+        db.set_my_node(my_num);
+        // my_node is the freshest entry — if eviction ever picked it despite
+        // that, this test still would not catch a staleness-ordering bug;
+        // the explicit `my_node` protection is what's under test here.
+        db.insert(make_node_heard(my_num.0, 1_000_000_000));
+
+        // Fill to the cap with MAX_LIVE_NODES-1 more distinct, strictly
+        // increasing-freshness nodes (node `i` has timestamp `i`), so node 0
+        // is the single stalest entry and no eviction has fired yet.
+        for i in 0..(MAX_LIVE_NODES as u32 - 1) {
+            db.insert(make_node_heard(i + 1, i64::from(i)));
+        }
+        assert_eq!(db.len(), MAX_LIVE_NODES, "setup must reach the cap");
+        assert!(
+            db.get(NodeNum(1)).is_some(),
+            "setup must not have evicted node 1 yet"
+        );
+
+        db.insert(make_node_heard(0xFFFF, 2_000_000_000));
+
+        assert!(
+            db.get(NodeNum(1)).is_none(),
+            "the stalest node (timestamp 0) must be the one evicted"
+        );
+        assert_eq!(
+            db.my_node(),
+            Some(my_num),
+            "my_node identity must survive eviction pressure"
+        );
+        assert!(
+            db.get(my_num).is_some(),
+            "my_node's own record must survive"
+        );
+        assert!(
+            db.get(NodeNum(0xFFFF)).is_some(),
+            "the new node must be present"
+        );
+        assert_eq!(db.len(), MAX_LIVE_NODES);
     }
 }

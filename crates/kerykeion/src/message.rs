@@ -1,11 +1,11 @@
 //! Outbound message construction for Meshtastic mesh packets.
 
 use prost::Message as _;
-use rand_core::{OsRng, RngCore as _};
 
 use crate::config::MessageConfig;
 use crate::crypto;
 use crate::error::Error;
+use crate::packet_id::PacketIdCounter;
 use crate::proto::mesh_packet::Priority;
 use crate::proto::{AdminMessage, Data, MeshPacket, PortNum, Position, mesh_packet};
 use crate::types::{ChannelIndex, MAX_HOP_LIMIT, NodeNum};
@@ -17,9 +17,10 @@ use crate::types::{ChannelIndex, MAX_HOP_LIMIT, NodeNum};
 /// # Examples
 ///
 /// ```ignore
+/// let mut packet_ids = PacketIdCounter::resume(persisted_last_id);
 /// let packet = MessageBuilder::text(NodeNum(0x1234), "hello")
 ///     .with_ack()
-///     .build(NodeNum(0xABCD), &[0x01])?;
+///     .build(NodeNum(0xABCD), &[0x01], &mut packet_ids)?;
 /// ```
 pub struct MessageBuilder {
     dest: NodeNum,
@@ -157,14 +158,23 @@ impl MessageBuilder {
 
     /// Consume the builder and produce an encrypted [`MeshPacket`].
     ///
-    /// A random `packet_id` is assigned. The payload is encrypted using
-    /// AES-CTR with the provided PSK.
+    /// `packet_id` is drawn FROM `packet_ids` (see [`PacketIdCounter`] — it
+    /// doubles as the AES-CTR nonce counter for this PSK, so its
+    /// non-repetition guarantee is what keeps the nonce from repeating;
+    /// see #209). The payload is encrypted using AES-CTR with the provided PSK.
     ///
     /// # Errors
     ///
-    /// Returns [`Error::Encryption`] if encryption fails (e.g. invalid PSK length).
-    pub fn build(self, from: NodeNum, psk: &[u8]) -> Result<MeshPacket, Error> {
-        let packet_id = OsRng.next_u32();
+    /// Returns [`Error::Encryption`] if encryption fails (e.g. invalid PSK
+    /// length). Returns [`Error::PacketIdSpaceExhausted`] if `packet_ids`
+    /// has issued every value in its space — see [`PacketIdCounter::next`].
+    pub fn build(
+        self,
+        from: NodeNum,
+        psk: &[u8],
+        packet_ids: &mut PacketIdCounter,
+    ) -> Result<MeshPacket, Error> {
+        let packet_id = packet_ids.next()?;
 
         let data = Data {
             portnum: i32::from(self.portnum),
@@ -206,7 +216,10 @@ impl MessageBuilder {
 
     /// Consume the builder and produce an encrypted [`MeshPacket`] with a deterministic packet ID.
     ///
-    /// Useful for testing. Production code should use [`build`](Self::build).
+    /// Test-only: deliberately bypasses [`PacketIdCounter`] to let a test
+    /// pick an exact `packet_id`/nonce. Production code MUST use
+    /// [`build`](Self::build) — a caller reachable outside `#[cfg(test)]`
+    /// has no such bypass.
     ///
     /// # Errors
     ///
@@ -267,7 +280,7 @@ mod tests {
     fn text_message_sets_portnum_and_encrypts() {
         #[expect(clippy::unwrap_used, reason = "test-only")]
         let pkt = MessageBuilder::text(DEST, "hello mesh")
-            .build(FROM_NODE, &[0x01])
+            .build(FROM_NODE, &[0x01], &mut PacketIdCounter::resume(0))
             .unwrap();
 
         assert_eq!(pkt.from, FROM_NODE.0);
@@ -284,7 +297,7 @@ mod tests {
     fn text_message_unencrypted_when_empty_psk() {
         #[expect(clippy::unwrap_used, reason = "test-only")]
         let pkt = MessageBuilder::text(DEST, "cleartext")
-            .build(FROM_NODE, &[])
+            .build(FROM_NODE, &[], &mut PacketIdCounter::resume(0))
             .unwrap();
 
         assert!(
@@ -297,7 +310,7 @@ mod tests {
     fn position_message_encodes_lat_lon() {
         #[expect(clippy::unwrap_used, reason = "test-only")]
         let pkt = MessageBuilder::position(DEST, 37.7749, -122.4194)
-            .build(FROM_NODE, &[])
+            .build(FROM_NODE, &[], &mut PacketIdCounter::resume(0))
             .unwrap();
 
         let Some(PayloadVariant::Decoded(data)) = &pkt.payload_variant else {
@@ -321,7 +334,7 @@ mod tests {
         };
         #[expect(clippy::unwrap_used, reason = "test-only")]
         let pkt = MessageBuilder::admin(DEST, &admin)
-            .build(FROM_NODE, &[])
+            .build(FROM_NODE, &[], &mut PacketIdCounter::resume(0))
             .unwrap();
         assert_eq!(pkt.priority, i32::from(Priority::Reliable));
         assert!(pkt.want_ack, "admin messages should request ACK");
@@ -331,7 +344,7 @@ mod tests {
     fn traceroute_uses_max_hop_limit() {
         #[expect(clippy::unwrap_used, reason = "test-only")]
         let pkt = MessageBuilder::traceroute(DEST)
-            .build(FROM_NODE, &[])
+            .build(FROM_NODE, &[], &mut PacketIdCounter::resume(0))
             .unwrap();
         assert_eq!(pkt.hop_limit, u32::from(MAX_HOP_LIMIT));
         assert!(pkt.want_ack, "traceroute should request ACK");
@@ -345,7 +358,7 @@ mod tests {
             .with_ack()
             .hop_limit(5)
             .priority(Priority::Reliable)
-            .build(FROM_NODE, &[])
+            .build(FROM_NODE, &[], &mut PacketIdCounter::resume(0))
             .unwrap();
 
         assert_eq!(pkt.channel, 2);
@@ -359,7 +372,7 @@ mod tests {
         #[expect(clippy::unwrap_used, reason = "test-only")]
         let pkt = MessageBuilder::text(DEST, "test")
             .hop_limit(100)
-            .build(FROM_NODE, &[])
+            .build(FROM_NODE, &[], &mut PacketIdCounter::resume(0))
             .unwrap();
         assert_eq!(pkt.hop_limit, u32::from(MAX_HOP_LIMIT));
     }
@@ -374,7 +387,7 @@ mod tests {
         };
         #[expect(clippy::unwrap_used, reason = "test-only")]
         let pkt = MessageBuilder::text_with_config(DEST, "test", &cfg)
-            .build(FROM_NODE, &[])
+            .build(FROM_NODE, &[], &mut PacketIdCounter::resume(0))
             .unwrap();
         assert_eq!(pkt.hop_limit, 1);
         assert_eq!(pkt.hop_start, 1);
@@ -390,7 +403,7 @@ mod tests {
         };
         #[expect(clippy::unwrap_used, reason = "test-only")]
         let pkt = MessageBuilder::text_with_config(DEST, "test", &cfg)
-            .build(FROM_NODE, &[])
+            .build(FROM_NODE, &[], &mut PacketIdCounter::resume(0))
             .unwrap();
         assert_eq!(pkt.hop_limit, u32::from(MAX_HOP_LIMIT));
     }
@@ -410,7 +423,11 @@ mod tests {
         // 1..=10 channel index resolves to itself, so a 3-byte PSK reaches
         // AES-CTR as an invalid key length. `build` must surface that as
         // Error::Encryption rather than emitting an unencrypted packet.
-        let result = MessageBuilder::text(DEST, "test").build(FROM_NODE, &[0xAA, 0xBB, 0xCC]);
+        let result = MessageBuilder::text(DEST, "test").build(
+            FROM_NODE,
+            &[0xAA, 0xBB, 0xCC],
+            &mut PacketIdCounter::resume(0),
+        );
 
         assert!(
             matches!(result, Err(Error::Encryption { .. })),
@@ -425,12 +442,49 @@ mod tests {
         // Without this the test above would pass even if `build` always failed.
         #[expect(clippy::unwrap_used, reason = "test-only")]
         let pkt = MessageBuilder::text(DEST, "test")
-            .build(FROM_NODE, &[0x11; 16])
+            .build(FROM_NODE, &[0x11; 16], &mut PacketIdCounter::resume(0))
             .unwrap();
 
         assert!(matches!(
             pkt.payload_variant,
             Some(mesh_packet::PayloadVariant::Encrypted(_))
         ));
+    }
+
+    #[test]
+    fn sequential_builds_never_share_a_packet_id() {
+        // WHY(#209): the issue's literal Done-when — `build` is the shipped
+        // production entry point, and it must draw `packet_id` from a
+        // shared, advancing counter rather than an independent random draw
+        // per call, or two packets can carry the same AES-CTR nonce.
+        let mut ids = PacketIdCounter::resume(0);
+        #[expect(clippy::unwrap_used, reason = "test-only")]
+        let first = MessageBuilder::text(DEST, "one")
+            .build(FROM_NODE, &[0x01], &mut ids)
+            .unwrap();
+        #[expect(clippy::unwrap_used, reason = "test-only")]
+        let second = MessageBuilder::text(DEST, "two")
+            .build(FROM_NODE, &[0x01], &mut ids)
+            .unwrap();
+
+        assert_ne!(
+            first.id, second.id,
+            "two builds sharing one counter must not share a packet_id/nonce"
+        );
+        assert_eq!(second.id, first.id + 1);
+    }
+
+    #[test]
+    fn build_surfaces_packet_id_space_exhaustion() {
+        // WHY(#209): `build` must propagate the counter's refusal rather
+        // than silently wrapping the nonce — see `packet_id::tests::next_refuses_to_wrap_past_u32_max`
+        // for the underlying counter behavior this exercises through the
+        // production entry point.
+        let mut ids = PacketIdCounter::resume(u32::MAX);
+        let result = MessageBuilder::text(DEST, "test").build(FROM_NODE, &[0x01], &mut ids);
+        assert!(
+            matches!(result, Err(Error::PacketIdSpaceExhausted { .. })),
+            "build must surface exhaustion rather than emit a wrapped packet_id, got {result:?}"
+        );
     }
 }

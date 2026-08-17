@@ -12,21 +12,9 @@ use serde::{Deserialize, Serialize};
 use tokio::time::Instant;
 
 use crate::config::TopologyConfig;
-use crate::types::NodeNum;
+use crate::types::{MAX_LIVE_LINKS, MAX_LIVE_NODES, NodeNum};
 
 // Historical default (30.0) now lives in [`TopologyConfig::default`].
-
-/// Maximum nodes accepted from a persisted topology snapshot.
-///
-// WHY: `load_from_bytes` allocates one graph node per entry from a file that
-// may be truncated, corrupt or attacker-written. A Meshtastic node DB holds low
-// hundreds of nodes, so this ceiling is far above any real mesh while still
-// bounding the allocation. Exceeding it is recoverable: passive learning
-// re-observes live links, so a truncated restore self-heals.
-const MAX_SNAPSHOT_NODES: usize = 4096;
-
-/// Maximum links accepted from a persisted topology snapshot.
-const MAX_SNAPSHOT_LINKS: usize = 16384;
 
 /// Directed edge weight representing radio link quality between two nodes.
 #[derive(Debug, Clone)]
@@ -64,6 +52,7 @@ impl MeshTopology {
     }
 
     /// Insert a node or return its existing index.
+    // TODO(#204): cardinality bound lands in the next commit.
     pub fn add_node(&mut self, node: NodeNum) -> NodeIndex {
         if let Some(&idx) = self.node_index.get(&node) {
             return idx;
@@ -107,6 +96,7 @@ impl MeshTopology {
                 weight.packet_count = weight.packet_count.saturating_add(1);
             }
         } else {
+            // TODO(#204): cardinality bound lands in the next commit.
             self.graph.add_edge(
                 from_idx,
                 to_idx,
@@ -386,7 +376,10 @@ impl MeshTopology {
     /// Restore topology from a serialized snapshot. All links are marked as observed now.
     ///
     /// Repeated `(from, to)` pairs are folded into a single edge, and the
-    /// restore is bounded at [`MAX_SNAPSHOT_NODES`] / [`MAX_SNAPSHOT_LINKS`].
+    /// restore is bounded at [`MAX_LIVE_NODES`] / [`MAX_LIVE_LINKS`] — the
+    /// same live-cardinality ceiling [`Self::add_node`] / [`Self::update_link`]
+    /// enforce (#204), so a restored topology can never exceed what the live
+    /// insertion path would ever admit.
     ///
     /// # Errors
     ///
@@ -400,26 +393,26 @@ impl MeshTopology {
 
         // WHY: never truncate silently  -  a restore that dropped half the mesh
         // without saying so reads as a small mesh rather than a bad snapshot.
-        if snapshot.nodes.len() > MAX_SNAPSHOT_NODES {
+        if snapshot.nodes.len() > MAX_LIVE_NODES {
             tracing::warn!(
                 present = snapshot.nodes.len(),
-                cap = MAX_SNAPSHOT_NODES,
+                cap = MAX_LIVE_NODES,
                 "topology snapshot exceeds node cap; restoring a prefix"
             );
         }
-        if snapshot.links.len() > MAX_SNAPSHOT_LINKS {
+        if snapshot.links.len() > MAX_LIVE_LINKS {
             tracing::warn!(
                 present = snapshot.links.len(),
-                cap = MAX_SNAPSHOT_LINKS,
+                cap = MAX_LIVE_LINKS,
                 "topology snapshot exceeds link cap; restoring a prefix"
             );
         }
 
         let mut topo = Self::new();
-        for node in snapshot.nodes.iter().take(MAX_SNAPSHOT_NODES) {
+        for node in snapshot.nodes.iter().take(MAX_LIVE_NODES) {
             topo.add_node(*node);
         }
-        for link in snapshot.links.iter().take(MAX_SNAPSHOT_LINKS) {
+        for link in snapshot.links.iter().take(MAX_LIVE_LINKS) {
             let from_idx = topo.add_node(link.from);
             let to_idx = topo.add_node(link.to);
 

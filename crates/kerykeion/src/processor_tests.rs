@@ -319,6 +319,63 @@ fn nak_max_retransmit_detected() {
 }
 
 #[test]
+fn unrecognized_error_code_is_never_classified_as_ack() {
+    // WHY(#208): the fail-open defect. Neither `NOT_AUTHORIZED` (33) nor any
+    // code above it is defined in the vendored routing::Error enum, so 999
+    // is guaranteed out-of-enum without depending on the proto staying
+    // fixed at its current variant count. The pre-fix
+    // `unwrap_or(routing::Error::None)` fallback read this as `Error::None`
+    // -> Ack, i.e. delivery confirmed for a code the build never decoded.
+    let pkt = make_routing_packet(0x9999, 999);
+    let result = RoutingProcessor::process_routing(&pkt);
+    assert_ne!(
+        result,
+        RoutingResult::Ack {
+            request_id: PacketId(0x9999)
+        },
+        "an unrecognized routing error code must never read as delivery confirmation"
+    );
+    assert_eq!(
+        result,
+        RoutingResult::UnknownError {
+            request_id: PacketId(0x9999),
+            code: 999,
+        }
+    );
+}
+
+#[test]
+fn apply_unknown_error_marks_failed_when_no_inflight_and_never_acks() {
+    // WHY(#208): exercises the write path, not just the classification —
+    // `apply_routing_result` must route `UnknownError` through the same
+    // not-delivered pipeline as `Nak`, never call `mark_acknowledged`.
+    let mut delivery = DeliveryTracker::new();
+    let mut outbound = OutboundQueue::new();
+    let id = PacketId(0xBEEF);
+
+    delivery.track(id, 0x5678);
+    delivery.mark_sent(id);
+
+    let result = RoutingResult::UnknownError {
+        request_id: id,
+        code: 999,
+    };
+    RoutingProcessor::apply_routing_result(&result, &mut delivery, &mut outbound);
+
+    assert!(
+        !matches!(
+            delivery.delivery_status(id),
+            Some(crate::delivery::DeliveryStatus::Acknowledged { .. })
+        ),
+        "an unrecognized routing error code must never mark delivery acknowledged"
+    );
+    assert!(matches!(
+        delivery.delivery_status(id),
+        Some(crate::delivery::DeliveryStatus::Failed { .. })
+    ));
+}
+
+#[test]
 fn non_routing_packet_ignored() {
     let data = Data {
         portnum: i32::from(PortNum::TextMessageApp),
