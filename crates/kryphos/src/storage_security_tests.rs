@@ -143,6 +143,183 @@ fn mutated_envelope_version_field_fails_authentication() {
     );
 }
 
+#[test]
+fn envelope_version_downgraded_to_legacy_fails_authentication() {
+    // WHY: the migration branch (LEGACY_ENVELOPE_VERSION => empty AAD) is
+    // itself a new attack surface if it can be reached for an entry that was
+    // NOT actually sealed under empty AAD. Tamper a genuinely #283-bound
+    // entry's `envelope_version` DOWN to the legacy sentinel and confirm
+    // `get` still fails — its ciphertext was authenticated under a non-empty
+    // AAD at encrypt time, so decrypting with `b""` cannot succeed either.
+    let dir = tempfile::tempdir().unwrap();
+    let vault_path = dir.path().join("aad-downgrade-tamper-vault");
+
+    let vault = Vault::create(&vault_path, TEST_PASSPHRASE).unwrap();
+    vault
+        .add("entry", CredentialType::ApiKey, b"secret")
+        .unwrap();
+
+    let raw = vault.keyspace.get("entry").unwrap().unwrap();
+    let mut value: serde_json::Value = serde_json::from_slice(&raw).unwrap();
+    assert_eq!(
+        value["envelope_version"],
+        serde_json::json!(1),
+        "precondition: a freshly-added entry is bound under the current envelope"
+    );
+    value["envelope_version"] = serde_json::json!(0);
+    let tampered = serde_json::to_vec(&value).unwrap();
+    vault.keyspace.insert("entry", tampered).unwrap();
+
+    let result = vault.get("entry");
+    assert!(
+        result.is_err(),
+        "downgrading a #283-bound entry's envelope_version to the legacy \
+         sentinel must not let it decrypt under empty AAD, got {result:?}"
+    );
+}
+
+// -----------------------------------------------------------------
+// Legacy vault migration (akroasis#283 Desired Correction)
+// -----------------------------------------------------------------
+
+#[test]
+fn legacy_v1_vault_opens_and_decrypts_pre_283_entries() {
+    // WHY hand-assembled rather than produced by calling `Vault::create`:
+    // no code in this binary writes a v1 header or an envelope_version-0
+    // entry anymore, so a pre-#283 vault can only be reconstructed by
+    // replicating what the OLD code actually wrote — a header with
+    // `version: 1` and an entry whose secret was sealed with
+    // `crypto::encrypt(key, secret, b"")` (empty AAD; see the RFC 8439 test
+    // vector's postfix-tag format that `encrypt`/`decrypt` still implement
+    // unchanged). This uses the SAME production `crypto`/`fjall` primitives
+    // `Vault::create`/`add` use internally, not a reimplementation.
+    let dir = tempfile::tempdir().unwrap();
+    let vault_path = dir.path().join("legacy-v1-vault");
+
+    create_owner_only_dir(&vault_path).unwrap();
+    let salt = crypto::generate_salt();
+    let key = crypto::derive_key(TEST_PASSPHRASE, &salt);
+    let key_check = encrypt(&key, KEY_CHECK_PLAINTEXT, b"").unwrap();
+    let header = StoredHeader {
+        version: 1,
+        salt: salt.to_vec(),
+        kdf_params: KdfParams::default(),
+        key_check,
+    };
+    write_owner_only_file(
+        &vault_path.join(HEADER_FILE),
+        serde_json::to_string_pretty(&header).unwrap().as_bytes(),
+    )
+    .unwrap();
+
+    create_owner_only_dir(&vault_path.join(DATA_DIR)).unwrap();
+    let (db, keyspace) = open_fjall(&vault_path.join(DATA_DIR)).unwrap();
+
+    let encrypted_secret = encrypt(&key, b"legacy-secret", b"").unwrap();
+    let now = Timestamp::now();
+    let legacy_entry = StoredEntry {
+        envelope_version: 0,
+        credential_type: CredentialType::ApiKey,
+        encrypted_secret,
+        metadata: EntryMetadata {
+            created_at: now,
+            rotated_at: None,
+            revoked_at: None,
+            rotation_count: 0,
+            tags: Vec::new(),
+        },
+        status: EntryStatus::Active,
+        history: vec![HistoryEvent {
+            timestamp: now,
+            kind: HistoryEventKind::Created,
+        }],
+    };
+    keyspace
+        .insert("legacy-entry", serde_json::to_vec(&legacy_entry).unwrap())
+        .unwrap();
+    db.persist(fjall::PersistMode::SyncAll).unwrap();
+    drop(keyspace);
+    drop(db);
+
+    // The production open path: must accept a v1 header rather than
+    // rejecting every vault created before this PR outright.
+    let vault = Vault::open(&vault_path, TEST_PASSPHRASE).unwrap();
+
+    // The production get path: must transparently decrypt a pre-#283
+    // (envelope_version 0, empty-AAD) entry with no migrate command and no
+    // operator round-trip through an old binary.
+    let decrypted = vault.get("legacy-entry").unwrap();
+    assert_eq!(decrypted.secret, b"legacy-secret");
+    assert_eq!(decrypted.credential_type, CredentialType::ApiKey);
+}
+
+#[test]
+fn legacy_v1_vault_rotate_opportunistically_upgrades_the_envelope() {
+    // A legacy entry that gets rotated must come out bound under the
+    // current envelope, so it stops depending on the legacy branch on every
+    // subsequent read.
+    let dir = tempfile::tempdir().unwrap();
+    let vault_path = dir.path().join("legacy-v1-vault-rotate");
+
+    create_owner_only_dir(&vault_path).unwrap();
+    let salt = crypto::generate_salt();
+    let key = crypto::derive_key(TEST_PASSPHRASE, &salt);
+    let key_check = encrypt(&key, KEY_CHECK_PLAINTEXT, b"").unwrap();
+    let header = StoredHeader {
+        version: 1,
+        salt: salt.to_vec(),
+        kdf_params: KdfParams::default(),
+        key_check,
+    };
+    write_owner_only_file(
+        &vault_path.join(HEADER_FILE),
+        serde_json::to_string_pretty(&header).unwrap().as_bytes(),
+    )
+    .unwrap();
+
+    create_owner_only_dir(&vault_path.join(DATA_DIR)).unwrap();
+    let (db, keyspace) = open_fjall(&vault_path.join(DATA_DIR)).unwrap();
+    let encrypted_secret = encrypt(&key, b"v0", b"").unwrap();
+    let now = Timestamp::now();
+    let legacy_entry = StoredEntry {
+        envelope_version: 0,
+        credential_type: CredentialType::ApiKey,
+        encrypted_secret,
+        metadata: EntryMetadata {
+            created_at: now,
+            rotated_at: None,
+            revoked_at: None,
+            rotation_count: 0,
+            tags: Vec::new(),
+        },
+        status: EntryStatus::Active,
+        history: vec![HistoryEvent {
+            timestamp: now,
+            kind: HistoryEventKind::Created,
+        }],
+    };
+    keyspace
+        .insert("legacy-entry", serde_json::to_vec(&legacy_entry).unwrap())
+        .unwrap();
+    db.persist(fjall::PersistMode::SyncAll).unwrap();
+    drop(keyspace);
+    drop(db);
+
+    let vault = Vault::open(&vault_path, TEST_PASSPHRASE).unwrap();
+    vault.rotate("legacy-entry", b"v1").unwrap();
+
+    let raw = vault.keyspace.get("legacy-entry").unwrap().unwrap();
+    let value: serde_json::Value = serde_json::from_slice(&raw).unwrap();
+    assert_eq!(
+        value["envelope_version"],
+        serde_json::json!(1),
+        "rotate must stamp the current envelope on a legacy entry it rewrites"
+    );
+
+    let decrypted = vault.get("legacy-entry").unwrap();
+    assert_eq!(decrypted.secret, b"v1");
+}
+
 // -----------------------------------------------------------------
 // Concurrent mutation atomicity (akroasis#214)
 // -----------------------------------------------------------------

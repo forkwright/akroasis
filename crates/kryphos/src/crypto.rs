@@ -177,21 +177,29 @@ pub(crate) fn entry_aad(
     let mut aad =
         Vec::with_capacity(1 + 4 + vault_salt.len() + 4 + name.len() + 4 + type_bytes.len());
     aad.push(envelope_version);
-    aad.extend_from_slice(
-        &u32::try_from(vault_salt.len())
-            .unwrap_or(u32::MAX)
-            .to_be_bytes(),
-    );
+    aad.extend_from_slice(&checked_len_prefix("vault_salt", vault_salt.len())?);
     aad.extend_from_slice(vault_salt);
-    aad.extend_from_slice(&u32::try_from(name.len()).unwrap_or(u32::MAX).to_be_bytes());
+    aad.extend_from_slice(&checked_len_prefix("name", name.len())?);
     aad.extend_from_slice(name.as_bytes());
-    aad.extend_from_slice(
-        &u32::try_from(type_bytes.len())
-            .unwrap_or(u32::MAX)
-            .to_be_bytes(),
-    );
+    aad.extend_from_slice(&checked_len_prefix("credential_type", type_bytes.len())?);
     aad.extend_from_slice(&type_bytes);
     Ok(aad)
+}
+
+/// Encodes `len` as a big-endian 4-byte length prefix for [`entry_aad`].
+///
+/// # Errors
+///
+/// Returns [`VaultError::FieldTooLarge`] if `len` exceeds `u32::MAX`.
+// PIN(akroasis#383 review): behaviorally identical to the inline
+// `.unwrap_or(u32::MAX)` this replaces — still clamps rather than errors.
+// This is the exact defect the follow-up commit fixes.
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "PIN akroasis#383 review: this pinned pre-fix body is intentionally infallible (clamps instead of erroring); the fix commit adds the Err path and this attribute goes with it"
+)]
+fn checked_len_prefix(_field: &'static str, len: usize) -> Result<[u8; 4], VaultError> {
+    Ok(u32::try_from(len).unwrap_or(u32::MAX).to_be_bytes())
 }
 
 #[cfg(test)]
@@ -408,6 +416,39 @@ mod tests {
         assert!(
             result.is_err(),
             "input shorter than nonce length must be rejected"
+        );
+    }
+
+    // -----------------------------------------------------------------
+    // AAD length-prefix guard (checked_len_prefix)
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn checked_len_prefix_accepts_u32_max() {
+        let result = checked_len_prefix("field", u32::MAX as usize);
+        assert_eq!(
+            result.unwrap(),
+            u32::MAX.to_be_bytes(),
+            "the largest representable length must encode, not error"
+        );
+    }
+
+    #[test]
+    fn checked_len_prefix_rejects_one_past_u32_max() {
+        // WHY exercised via the helper directly rather than a real
+        // >4GiB-length `entry_aad` call: allocating gigabytes in a unit test
+        // is impractical, and this arithmetic boundary needs no allocation
+        // to exercise — `checked_len_prefix` IS the shipped guard `entry_aad`
+        // calls, not a re-implementation of it.
+        let result = checked_len_prefix("field", u32::MAX as usize + 1);
+        assert!(
+            matches!(
+                result,
+                Err(VaultError::FieldTooLarge { field: "field", len }) if len == u32::MAX as usize + 1
+            ),
+            "a length that cannot be represented in 4 bytes must error \
+             rather than silently clamp to u32::MAX (which would collide \
+             two different lengths onto the same AAD prefix), got {result:?}"
         );
     }
 

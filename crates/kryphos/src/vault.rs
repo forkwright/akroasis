@@ -546,6 +546,34 @@ mod tests {
     }
 
     #[test]
+    fn unseal_rejects_ciphertext_sealed_for_a_different_purpose() {
+        // WHY: proves domain separation. A ciphertext produced under the
+        // SAME VaultKey+nonce for an unrelated purpose (any other
+        // same-key/same-nonce caller — a vault entry, a header key-check, a
+        // future consumer) must not unseal as a signing key. Before this
+        // fix, seal/unseal used no AAD at all, so any same-key ciphertext of
+        // the right plaintext length was interchangeable — the same
+        // unauthenticated-context defect forkwright/akroasis#283 fixed for
+        // vault entries, surviving in this sibling function.
+        let vault_key = VaultKey::from_bytes([0x42; 32]);
+        let nonce = [0x01; NONCE_LEN];
+
+        // A foreign ciphertext: same key, same nonce, no domain-separation
+        // tag, 32-byte plaintext (the exact length a signing key seed is).
+        let cipher = ChaCha20Poly1305::new(vault_key.as_bytes().into());
+        let foreign_ciphertext = cipher
+            .encrypt(Nonce::from_slice(&nonce), &[0x11u8; 32][..])
+            .unwrap();
+
+        let result = unseal_signing_key(&foreign_ciphertext, &vault_key, &nonce);
+        assert!(
+            result.is_err(),
+            "a ciphertext sealed without the signing-key domain tag must \
+             not unseal as a signing key, got {result:?}"
+        );
+    }
+
+    #[test]
     fn unseal_tampered_ciphertext_fails() {
         let identity = InstallationIdentity::generate();
         let vault_key = VaultKey::from_bytes([0x42; 32]);
