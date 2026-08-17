@@ -160,12 +160,17 @@ pub fn decrypt(key: &VaultKey, ciphertext: &[u8], aad: &[u8]) -> Result<Vec<u8>,
 /// Returns [`VaultError::Serialization`] if `credential_type` cannot be
 /// encoded — `CredentialType` derives `Serialize` over plain data, so this
 /// does not fail in practice.
+/// Returns [`VaultError::FieldTooLarge`] if `vault_salt`, `name`, or the
+/// serialized `credential_type` exceeds `u32::MAX` bytes.
 ///
 /// INVARIANT: every variable-length field is 4-byte-length-prefixed before
 /// concatenation. Without this, e.g. `(name="ab", type="c")` and
 /// `(name="a", type="bc")` would produce identical AAD bytes, letting a
 /// relocated ciphertext smuggle a different name/type split through
-/// authentication.
+/// authentication. [`checked_len_prefix`] is what actually holds this
+/// property: it ERRORS on a field too long to prefix rather than silently
+/// writing a wrong-but-plausible `u32::MAX` prefix, which would itself
+/// collide two different lengths onto the same encoded bytes.
 pub(crate) fn entry_aad(
     vault_salt: &[u8],
     name: &str,
@@ -190,16 +195,14 @@ pub(crate) fn entry_aad(
 ///
 /// # Errors
 ///
-/// Returns [`VaultError::FieldTooLarge`] if `len` exceeds `u32::MAX`.
-// PIN(akroasis#383 review): behaviorally identical to the inline
-// `.unwrap_or(u32::MAX)` this replaces — still clamps rather than errors.
-// This is the exact defect the follow-up commit fixes.
-#[expect(
-    clippy::unnecessary_wraps,
-    reason = "PIN akroasis#383 review: this pinned pre-fix body is intentionally infallible (clamps instead of erroring); the fix commit adds the Err path and this attribute goes with it"
-)]
-fn checked_len_prefix(_field: &'static str, len: usize) -> Result<[u8; 4], VaultError> {
-    Ok(u32::try_from(len).unwrap_or(u32::MAX).to_be_bytes())
+/// Returns [`VaultError::FieldTooLarge`] if `len` exceeds `u32::MAX` — a
+/// value this function must reject rather than clamp, since clamping would
+/// let two different lengths encode to the identical prefix (see
+/// [`entry_aad`]'s INVARIANT doc).
+fn checked_len_prefix(field: &'static str, len: usize) -> Result<[u8; 4], VaultError> {
+    u32::try_from(len)
+        .map(u32::to_be_bytes)
+        .map_err(|_| VaultError::FieldTooLarge { field, len })
 }
 
 #[cfg(test)]

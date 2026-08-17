@@ -1,8 +1,9 @@
 //! Tests for [`super`]; split out from `storage_tests.rs` to keep both
-//! under the RUST/file-too-long 800-line threshold. Covers the three
-//! security defects fixed together: empty passphrases (akroasis#287),
-//! ciphertext identity binding (akroasis#283), and concurrent mutation
-//! atomicity (akroasis#214).
+//! under the RUST/file-too-long 800-line threshold. Covers the security
+//! defects fixed together: empty passphrases (akroasis#287), ciphertext
+//! identity binding (akroasis#283), concurrent mutation atomicity
+//! (akroasis#214), and transparent legacy-entry migration (akroasis#283
+//! Desired Correction, akroasis#215).
 
 use super::*;
 
@@ -78,9 +79,13 @@ fn moved_ciphertext_between_entries_fails_authentication() {
 
     // Simulate a write-capable attacker (or store corruption): take the raw
     // stored value for `entry-a` — a valid, correctly-authenticated
-    // ciphertext — and place it under `entry-b`'s fjall key.
-    let raw_a = vault.keyspace.get("entry-a").unwrap().unwrap();
-    vault.keyspace.insert("entry-b", raw_a).unwrap();
+    // ciphertext — and place it under `entry-b`'s fjall key. Keys are
+    // looked up via `lookup_key` (forkwright/akroasis#215): the fjall
+    // record key is a keyed hash of the name, not the name itself.
+    let key_a = vault.lookup_key("entry-a");
+    let key_b = vault.lookup_key("entry-b");
+    let raw_a = vault.keyspace.get(key_a).unwrap().unwrap();
+    vault.keyspace.insert(key_b, raw_a).unwrap();
 
     let result = vault.get("entry-b");
     assert!(
@@ -92,30 +97,59 @@ fn moved_ciphertext_between_entries_fails_authentication() {
 
     // The untouched original must still be exactly retrievable.
     let entry_a = vault.get("entry-a").unwrap();
-    assert_eq!(entry_a.secret, b"secret-a");
+    assert_eq!(entry_a.secret.as_slice(), b"secret-a".as_slice());
 }
 
 #[test]
-fn mutated_credential_type_field_fails_authentication() {
+fn secret_ciphertext_paired_with_a_different_entrys_metadata_fails_authentication() {
+    // `credential_type` moved from a plaintext top-level field into the
+    // encrypted `encrypted_metadata` blob (forkwright/akroasis#215), so an
+    // attacker without the vault key can no longer flip it as a bare JSON
+    // field the way #283's original review scenario assumed — editing
+    // `encrypted_metadata` without the key just breaks its own AEAD tag.
+    // What remains reachable without the key: splicing one entry's
+    // `encrypted_secret` into another entry's `StoredEntry`, pairing it with
+    // THAT entry's own (validly-decrypting) metadata — including a
+    // different `credential_type`. `entry_aad` still binds `credential_type`
+    // (sourced from the decrypted metadata) into what `encrypted_secret`
+    // authenticates, so the spliced pair must fail exactly like a
+    // whole-entry relocation does.
     let dir = tempfile::tempdir().unwrap();
-    let vault_path = dir.path().join("aad-type-tamper-vault");
+    let vault_path = dir.path().join("aad-type-splice-vault");
 
     let vault = Vault::create(&vault_path, TEST_PASSPHRASE).unwrap();
     vault
-        .add("entry", CredentialType::ApiKey, b"secret")
+        .add("api-entry", CredentialType::ApiKey, b"secret-api")
+        .unwrap();
+    vault
+        .add("psk-entry", CredentialType::Psk, b"secret-psk")
         .unwrap();
 
-    let raw = vault.keyspace.get("entry").unwrap().unwrap();
-    let mut value: serde_json::Value = serde_json::from_slice(&raw).unwrap();
-    value["credential_type"] = serde_json::to_value(CredentialType::Psk).unwrap();
-    let tampered = serde_json::to_vec(&value).unwrap();
-    vault.keyspace.insert("entry", tampered).unwrap();
+    let key_api = vault.lookup_key("api-entry");
+    let key_psk = vault.lookup_key("psk-entry");
 
-    let result = vault.get("entry");
+    let raw_api = vault.keyspace.get(key_api).unwrap().unwrap();
+    let raw_psk = vault.keyspace.get(key_psk).unwrap().unwrap();
+
+    let mut value_api: serde_json::Value = serde_json::from_slice(&raw_api).unwrap();
+    let value_psk: serde_json::Value = serde_json::from_slice(&raw_psk).unwrap();
+
+    // Splice psk-entry's encrypted_secret into api-entry's StoredEntry,
+    // keeping api-entry's own encrypted_metadata/envelope_version — so
+    // decrypt_metadata still succeeds (it decrypts api-entry's own,
+    // untouched blob) and reports credential_type == ApiKey, while the
+    // secret ciphertext was actually bound under credential_type == Psk at
+    // encrypt time.
+    value_api["encrypted_secret"] = value_psk["encrypted_secret"].clone();
+    let spliced = serde_json::to_vec(&value_api).unwrap();
+    vault.keyspace.insert(key_api, spliced).unwrap();
+
+    let result = vault.get("api-entry");
     assert!(
         result.is_err(),
-        "a credential_type edited independently of encrypted_secret must \
-         fail authentication, got {result:?}"
+        "a secret ciphertext bound under a different entry's credential_type \
+         must fail authentication even when paired with metadata that \
+         decrypts cleanly on its own, got {result:?}"
     );
 }
 
@@ -129,11 +163,12 @@ fn mutated_envelope_version_field_fails_authentication() {
         .add("entry", CredentialType::ApiKey, b"secret")
         .unwrap();
 
-    let raw = vault.keyspace.get("entry").unwrap().unwrap();
+    let key = vault.lookup_key("entry");
+    let raw = vault.keyspace.get(key).unwrap().unwrap();
     let mut value: serde_json::Value = serde_json::from_slice(&raw).unwrap();
     value["envelope_version"] = serde_json::json!(99);
     let tampered = serde_json::to_vec(&value).unwrap();
-    vault.keyspace.insert("entry", tampered).unwrap();
+    vault.keyspace.insert(key, tampered).unwrap();
 
     let result = vault.get("entry");
     assert!(
@@ -159,7 +194,8 @@ fn envelope_version_downgraded_to_legacy_fails_authentication() {
         .add("entry", CredentialType::ApiKey, b"secret")
         .unwrap();
 
-    let raw = vault.keyspace.get("entry").unwrap().unwrap();
+    let key = vault.lookup_key("entry");
+    let raw = vault.keyspace.get(key).unwrap().unwrap();
     let mut value: serde_json::Value = serde_json::from_slice(&raw).unwrap();
     assert_eq!(
         value["envelope_version"],
@@ -168,7 +204,7 @@ fn envelope_version_downgraded_to_legacy_fails_authentication() {
     );
     value["envelope_version"] = serde_json::json!(0);
     let tampered = serde_json::to_vec(&value).unwrap();
-    vault.keyspace.insert("entry", tampered).unwrap();
+    vault.keyspace.insert(key, tampered).unwrap();
 
     let result = vault.get("entry");
     assert!(
@@ -179,48 +215,33 @@ fn envelope_version_downgraded_to_legacy_fails_authentication() {
 }
 
 // -----------------------------------------------------------------
-// Legacy vault migration (akroasis#283 Desired Correction)
+// Legacy entry migration (akroasis#283 Desired Correction)
 // -----------------------------------------------------------------
 
 #[test]
-fn legacy_v1_vault_opens_and_decrypts_pre_283_entries() {
-    // WHY hand-assembled rather than produced by calling `Vault::create`:
-    // no code in this binary writes a v1 header or an envelope_version-0
-    // entry anymore, so a pre-#283 vault can only be reconstructed by
-    // replicating what the OLD code actually wrote — a header with
-    // `version: 1` and an entry whose secret was sealed with
-    // `crypto::encrypt(key, secret, b"")` (empty AAD; see the RFC 8439 test
-    // vector's postfix-tag format that `encrypt`/`decrypt` still implement
-    // unchanged). This uses the SAME production `crypto`/`fjall` primitives
-    // `Vault::create`/`add` use internally, not a reimplementation.
+fn legacy_pre_envelope_entry_opens_and_decrypts_under_the_current_vault_format() {
+    // WHY hand-assembled rather than produced by `Vault::add`: no code in
+    // this binary writes an envelope_version-0 entry anymore (`add` always
+    // stamps `ENTRY_ENVELOPE_VERSION`), so an entry sealed before
+    // forkwright/akroasis#283's AAD binding existed can only be
+    // reconstructed by replicating what that OLDER code actually wrote:
+    // `encrypted_secret` sealed with `crypto::encrypt(key, secret, b"")`
+    // (empty AAD). VAULT_VERSION itself never changed for the AAD-binding
+    // fix alone — see its doc — so this vault's HEADER is the CURRENT
+    // format (forkwright/akroasis#215's encrypted-metadata + hashed-lookup
+    // shape) throughout; only this one entry predates entry_aad. Built with
+    // the vault's own `key`/`lookup_key`/`encrypt_metadata` (accessible
+    // here as a descendant module of `storage`), not a reimplementation of
+    // them.
     let dir = tempfile::tempdir().unwrap();
-    let vault_path = dir.path().join("legacy-v1-vault");
+    let vault_path = dir.path().join("legacy-pre-envelope-vault");
 
-    create_owner_only_dir(&vault_path).unwrap();
-    let salt = crypto::generate_salt();
-    let key = crypto::derive_key(TEST_PASSPHRASE, &salt);
-    let key_check = encrypt(&key, KEY_CHECK_PLAINTEXT, b"").unwrap();
-    let header = StoredHeader {
-        version: 1,
-        salt: salt.to_vec(),
-        kdf_params: KdfParams::default(),
-        key_check,
-    };
-    write_owner_only_file(
-        &vault_path.join(HEADER_FILE),
-        serde_json::to_string_pretty(&header).unwrap().as_bytes(),
-    )
-    .unwrap();
+    let vault = Vault::create(&vault_path, TEST_PASSPHRASE).unwrap();
 
-    create_owner_only_dir(&vault_path.join(DATA_DIR)).unwrap();
-    let (db, keyspace) = open_fjall(&vault_path.join(DATA_DIR)).unwrap();
-
-    let encrypted_secret = encrypt(&key, b"legacy-secret", b"").unwrap();
     let now = Timestamp::now();
-    let legacy_entry = StoredEntry {
-        envelope_version: 0,
+    let record = EntryMetadataRecord {
+        name: CompactString::from("legacy-entry"),
         credential_type: CredentialType::ApiKey,
-        encrypted_secret,
         metadata: EntryMetadata {
             created_at: now,
             rotated_at: None,
@@ -234,57 +255,44 @@ fn legacy_v1_vault_opens_and_decrypts_pre_283_entries() {
             kind: HistoryEventKind::Created,
         }],
     };
-    keyspace
-        .insert("legacy-entry", serde_json::to_vec(&legacy_entry).unwrap())
+    let encrypted_metadata = vault.encrypt_metadata(&record).unwrap();
+    let encrypted_secret = encrypt(&vault.key, b"legacy-secret", b"").unwrap();
+    let legacy_entry = StoredEntry {
+        envelope_version: 0,
+        encrypted_secret,
+        encrypted_metadata,
+    };
+    vault
+        .keyspace
+        .insert(
+            vault.lookup_key("legacy-entry"),
+            serde_json::to_vec(&legacy_entry).unwrap(),
+        )
         .unwrap();
-    db.persist(fjall::PersistMode::SyncAll).unwrap();
-    drop(keyspace);
-    drop(db);
+    vault.db.persist(fjall::PersistMode::SyncAll).unwrap();
 
-    // The production open path: must accept a v1 header rather than
-    // rejecting every vault created before this PR outright.
-    let vault = Vault::open(&vault_path, TEST_PASSPHRASE).unwrap();
-
-    // The production get path: must transparently decrypt a pre-#283
+    // The production get path: must transparently decrypt a pre-AAD-binding
     // (envelope_version 0, empty-AAD) entry with no migrate command and no
     // operator round-trip through an old binary.
     let decrypted = vault.get("legacy-entry").unwrap();
-    assert_eq!(decrypted.secret, b"legacy-secret");
+    assert_eq!(decrypted.secret.as_slice(), b"legacy-secret".as_slice());
     assert_eq!(decrypted.credential_type, CredentialType::ApiKey);
 }
 
 #[test]
-fn legacy_v1_vault_rotate_opportunistically_upgrades_the_envelope() {
-    // A legacy entry that gets rotated must come out bound under the
-    // current envelope, so it stops depending on the legacy branch on every
-    // subsequent read.
+fn legacy_pre_envelope_entry_rotate_opportunistically_upgrades_the_envelope() {
+    // A legacy (pre-AAD-binding) entry that gets rotated must come out
+    // bound under the current envelope, so it stops depending on the
+    // legacy branch on every subsequent read.
     let dir = tempfile::tempdir().unwrap();
-    let vault_path = dir.path().join("legacy-v1-vault-rotate");
+    let vault_path = dir.path().join("legacy-pre-envelope-vault-rotate");
 
-    create_owner_only_dir(&vault_path).unwrap();
-    let salt = crypto::generate_salt();
-    let key = crypto::derive_key(TEST_PASSPHRASE, &salt);
-    let key_check = encrypt(&key, KEY_CHECK_PLAINTEXT, b"").unwrap();
-    let header = StoredHeader {
-        version: 1,
-        salt: salt.to_vec(),
-        kdf_params: KdfParams::default(),
-        key_check,
-    };
-    write_owner_only_file(
-        &vault_path.join(HEADER_FILE),
-        serde_json::to_string_pretty(&header).unwrap().as_bytes(),
-    )
-    .unwrap();
+    let vault = Vault::create(&vault_path, TEST_PASSPHRASE).unwrap();
 
-    create_owner_only_dir(&vault_path.join(DATA_DIR)).unwrap();
-    let (db, keyspace) = open_fjall(&vault_path.join(DATA_DIR)).unwrap();
-    let encrypted_secret = encrypt(&key, b"v0", b"").unwrap();
     let now = Timestamp::now();
-    let legacy_entry = StoredEntry {
-        envelope_version: 0,
+    let record = EntryMetadataRecord {
+        name: CompactString::from("legacy-entry"),
         credential_type: CredentialType::ApiKey,
-        encrypted_secret,
         metadata: EntryMetadata {
             created_at: now,
             rotated_at: None,
@@ -298,17 +306,23 @@ fn legacy_v1_vault_rotate_opportunistically_upgrades_the_envelope() {
             kind: HistoryEventKind::Created,
         }],
     };
-    keyspace
-        .insert("legacy-entry", serde_json::to_vec(&legacy_entry).unwrap())
+    let encrypted_metadata = vault.encrypt_metadata(&record).unwrap();
+    let encrypted_secret = encrypt(&vault.key, b"v0", b"").unwrap();
+    let legacy_entry = StoredEntry {
+        envelope_version: 0,
+        encrypted_secret,
+        encrypted_metadata,
+    };
+    let key = vault.lookup_key("legacy-entry");
+    vault
+        .keyspace
+        .insert(key, serde_json::to_vec(&legacy_entry).unwrap())
         .unwrap();
-    db.persist(fjall::PersistMode::SyncAll).unwrap();
-    drop(keyspace);
-    drop(db);
+    vault.db.persist(fjall::PersistMode::SyncAll).unwrap();
 
-    let vault = Vault::open(&vault_path, TEST_PASSPHRASE).unwrap();
     vault.rotate("legacy-entry", b"v1").unwrap();
 
-    let raw = vault.keyspace.get("legacy-entry").unwrap().unwrap();
+    let raw = vault.keyspace.get(key).unwrap().unwrap();
     let value: serde_json::Value = serde_json::from_slice(&raw).unwrap();
     assert_eq!(
         value["envelope_version"],
@@ -317,7 +331,7 @@ fn legacy_v1_vault_rotate_opportunistically_upgrades_the_envelope() {
     );
 
     let decrypted = vault.get("legacy-entry").unwrap();
-    assert_eq!(decrypted.secret, b"v1");
+    assert_eq!(decrypted.secret.as_slice(), b"v1".as_slice());
 }
 
 // -----------------------------------------------------------------

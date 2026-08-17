@@ -1,6 +1,6 @@
 //! Vault data model: entries, headers, and credential types.
 
-use chacha20poly1305::aead::Aead;
+use chacha20poly1305::aead::{Aead, Payload};
 use chacha20poly1305::{ChaCha20Poly1305, KeyInit, Nonce};
 use compact_str::CompactString;
 use jiff::Timestamp;
@@ -17,25 +17,54 @@ pub const SALT_LEN: usize = 16;
 /// Size of the ChaCha20-Poly1305 nonce in bytes.
 pub const NONCE_LEN: usize = 12;
 
-/// Current vault format version.
+/// Current vault format version, written by [`VaultHeader::new`] into every
+/// newly created vault.
 ///
-/// WARNING: bumping this is a hard break, not a migration point — `open`
-/// rejects any header whose `version` does not match exactly, so a vault
-/// written under a prior version simply fails to open under a newer one.
-/// v2 folds together two independent changes that landed close together:
-/// names, types, tags, status, and history moved from plaintext fields into
-/// `encrypted_metadata`, the fjall record key changed from the plaintext
-/// name to a keyed-hash lookup key (forkwright/akroasis#215), AND entry
-/// ciphertexts are now bound to their identity via AEAD associated data
-/// (forkwright/akroasis#283). A v1 store has neither the fields, the keys,
-/// nor the AAD binding v2 code expects; its migration path is
-/// re-initialization: read out entries with the prior release, create a
-/// fresh vault, re-add them. `envelope_version` (a per-ENTRY field, distinct
-/// from this header-level version — see
-/// [`crate::crypto::ENTRY_ENVELOPE_VERSION`]) is the finer-grained axis that
-/// DOES support transparent migration, for entries written under a v2
-/// header before the AAD binding existed.
+/// WARNING: bumping this is a hard break for anything below
+/// [`MIN_SUPPORTED_VAULT_VERSION`] — `open` rejects any header whose
+/// `version` falls outside `MIN_SUPPORTED_VAULT_VERSION..=VAULT_VERSION`, so
+/// a vault written under an older format simply fails to open under a newer
+/// one. v2 folds together two independent changes that landed close
+/// together: names, types, tags, status, and history moved from plaintext
+/// fields into `encrypted_metadata`, and the fjall record key changed from
+/// the plaintext name to a keyed-hash lookup key (forkwright/akroasis#215);
+/// entry ciphertexts are ALSO now bound to their identity via AEAD
+/// associated data (forkwright/akroasis#283). A true v1 store (predating
+/// both changes) has neither the fields, the keys, nor the AAD binding v2
+/// code expects — its migration path is re-initialization: read out entries
+/// with the prior release, create a fresh vault, re-add them.
+/// `envelope_version` (a per-ENTRY field, distinct from this header-level
+/// version — see [`crate::crypto::ENTRY_ENVELOPE_VERSION`]) is the
+/// finer-grained axis that DOES support transparent migration, for entries
+/// written under a v2 header before the AAD binding existed: it defaults to
+/// 0 via serde on a record that never had the field, and
+/// [`crate::storage::Vault::get`] selects the correct AAD from it at decrypt
+/// time. This IS the migration path forkwright/akroasis#283's Desired
+/// Correction asked for, scoped to what it can actually promise once v2's
+/// OWN entry/key-layout change (forkwright/akroasis#215) is accounted for:
+/// a v2-header vault whose entries predate AAD binding opens and decrypts
+/// transparently, with no separate `migrate` command and no operator
+/// round-trip through an old release; a true v1 vault does not, because its
+/// entry shape and fjall key derivation are unrelated to what this crate
+/// reads today.
 pub const VAULT_VERSION: u32 = 2;
+
+/// Oldest vault header version [`crate::storage::Vault::open`] still
+/// accepts.
+///
+/// Equal to [`VAULT_VERSION`], not lower: unlike the AAD-binding change,
+/// v2's entry-shape and fjall-key-derivation change
+/// (forkwright/akroasis#215) has no transparent migration path (see
+/// [`VAULT_VERSION`]'s doc) — accepting a header below this floor would let
+/// `open` succeed on a vault whose entries this build cannot correctly
+/// locate or parse, failing confusingly deep in `get`/`list` instead of with
+/// a clear, up-front `InvalidHeader`. A header above [`VAULT_VERSION`] is
+/// from a NEWER binary's format this build predates; reject that too rather
+/// than open it partially. Kept as a distinct constant (not inlined as
+/// `VAULT_VERSION`) because the range-check pattern itself is real: a future
+/// header-shape change that FUNDAMENTALLY differs from a floor-required
+/// exact match again gives this room to widen.
+pub const MIN_SUPPORTED_VAULT_VERSION: u32 = 2;
 
 /// The kind of credential stored in a [`VaultEntry`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -221,6 +250,34 @@ impl VaultHeader {
     }
 }
 
+/// Format version of the domain-separation AEAD associated data built by
+/// [`seal_signing_key`]/[`unseal_signing_key`].
+///
+/// Distinct from [`VAULT_VERSION`] and [`crate::crypto::ENTRY_ENVELOPE_VERSION`]:
+/// this versions only the signing-key seal's own binding, independent of the
+/// header format and of any vault entry's envelope.
+const SIGNING_KEY_ENVELOPE_VERSION: u8 = 1;
+
+/// Domain-separation tag baked into the signing key seal's AEAD associated
+/// data.
+///
+/// WHY: without this, a ciphertext produced by [`seal_signing_key`] and any
+/// OTHER ciphertext encrypted under the same [`VaultKey`] (a vault entry via
+/// [`crate::crypto::entry_aad`], the header's key-check plaintext, or any
+/// future caller) authenticate identically wherever the key matches — the
+/// same unauthenticated-context defect forkwright/akroasis#283 fixed for
+/// vault entries, surviving in the one sibling function that reuses the
+/// same key material for a different purpose.
+const SIGNING_KEY_AAD_TAG: &[u8] = b"kryphos/vault/signing-key";
+
+/// Builds the fixed AEAD associated data for a signing-key seal.
+fn signing_key_aad() -> Vec<u8> {
+    let mut aad = Vec::with_capacity(1 + SIGNING_KEY_AAD_TAG.len());
+    aad.push(SIGNING_KEY_ENVELOPE_VERSION);
+    aad.extend_from_slice(SIGNING_KEY_AAD_TAG);
+    aad
+}
+
 /// Encrypts the signing key of an [`InstallationIdentity`] with the given vault
 /// key and nonce, returning the ciphertext.
 ///
@@ -242,9 +299,16 @@ pub fn seal_signing_key(
     // coverage `unseal_signing_key` gives the decrypt direction below
     // (RUST/#218).
     let plaintext = zeroizing_signing_key_bytes(identity);
+    let aad = signing_key_aad();
 
     cipher
-        .encrypt(nonce, plaintext.as_ref())
+        .encrypt(
+            nonce,
+            Payload {
+                msg: plaintext.as_ref(),
+                aad: &aad,
+            },
+        )
         .map_err(|e| CryptoError::EncryptionFailed {
             reason: e.to_string(),
         })
@@ -262,8 +326,9 @@ fn zeroizing_signing_key_bytes(
 ///
 /// # Errors
 ///
-/// Returns [`CryptoError::DecryptionFailed`] if decryption fails (wrong key
-/// or tampered ciphertext).
+/// Returns [`CryptoError::DecryptionFailed`] if decryption fails (wrong key,
+/// tampered ciphertext, or ciphertext sealed for a different purpose under
+/// the same key — see [`SIGNING_KEY_AAD_TAG`]).
 /// Returns [`CryptoError::KeyParse`] if the decrypted bytes are not a valid
 /// Ed25519 key.
 pub fn unseal_signing_key(
@@ -273,6 +338,7 @@ pub fn unseal_signing_key(
 ) -> Result<InstallationIdentity, CryptoError> {
     let cipher = ChaCha20Poly1305::new(vault_key.as_bytes().into());
     let nonce = Nonce::from_slice(nonce);
+    let aad = signing_key_aad();
 
     // WHY: wrap at the point of allocation — `decrypt`'s return (the raw
     // Ed25519 signing key bytes) is moved straight into `Zeroizing::new`
@@ -286,7 +352,13 @@ pub fn unseal_signing_key(
     // (RUST/#218).
     let plaintext = Zeroizing::new(
         cipher
-            .decrypt(nonce, ciphertext)
+            .decrypt(
+                nonce,
+                Payload {
+                    msg: ciphertext,
+                    aad: &aad,
+                },
+            )
             .map_err(|_| CryptoError::DecryptionFailed)?,
     );
 
@@ -530,11 +602,27 @@ mod tests {
 
     #[test]
     fn unseal_wrong_length_plaintext_is_key_parse_error() {
+        // WHY sealed under `signing_key_aad()` rather than the raw cipher
+        // with no AAD: decryption must actually SUCCEED for this test to
+        // reach the length check it targets. Since unseal_signing_key now
+        // requires the domain-separation tag (this same test file's
+        // `unseal_rejects_ciphertext_sealed_for_a_different_purpose`
+        // verifies that requirement), a ciphertext sealed without it no
+        // longer decrypts at all — it fails authentication before
+        // `SigningKey::from_bytes` ever runs, which would make this
+        // assertion pass for the wrong reason.
         let vault_key = VaultKey::from_bytes([0x42; 32]);
         let nonce = [0x01; NONCE_LEN];
         let cipher = ChaCha20Poly1305::new(vault_key.as_bytes().into());
+        let aad = signing_key_aad();
         let ciphertext = cipher
-            .encrypt(Nonce::from_slice(&nonce), &[0u8; 16][..])
+            .encrypt(
+                Nonce::from_slice(&nonce),
+                Payload {
+                    msg: &[0u8; 16][..],
+                    aad: &aad,
+                },
+            )
             .unwrap();
 
         let result = unseal_signing_key(&ciphertext, &vault_key, &nonce);

@@ -21,8 +21,14 @@ use crate::error::{
 use crate::key::VaultKey;
 use crate::vault::{
     CredentialType, EntryMetadata, EntryStatus, HistoryEvent, HistoryEventKind, KdfParams,
-    VAULT_VERSION,
+    MIN_SUPPORTED_VAULT_VERSION, VAULT_VERSION,
 };
+
+/// Sentinel `envelope_version` marking a pre-#283 entry: no `envelope_version`
+/// key existed in that on-disk shape at all, so `#[serde(default)]` fills
+/// this in on read. Never written by `add`/`rotate` — see
+/// [`crate::crypto::ENTRY_ENVELOPE_VERSION`].
+const LEGACY_ENVELOPE_VERSION: u8 = 0;
 
 /// Well-known plaintext used to verify the passphrase on open.
 const KEY_CHECK_PLAINTEXT: &[u8] = b"kryphos-vault-key-check-v1";
@@ -295,7 +301,9 @@ impl Vault {
     /// Returns [`VaultError::NotInitialized`] if no vault exists at `path`.
     /// Returns [`VaultError::WrongPassphrase`] if the passphrase is incorrect.
     /// Returns [`VaultError::Locked`] if another process holds the lock.
-    /// Returns [`VaultError::InvalidHeader`] if the header is malformed.
+    /// Returns [`VaultError::InvalidHeader`] if the header is malformed, or
+    /// its version is outside
+    /// `MIN_SUPPORTED_VAULT_VERSION..=VAULT_VERSION`.
     pub fn open(path: impl AsRef<Path>, passphrase: &[u8]) -> Result<Self, VaultError> {
         let path = path.as_ref();
 
@@ -322,10 +330,19 @@ impl Vault {
         let header: StoredHeader =
             serde_json::from_slice(&header_bytes).context(SerializationSnafu)?;
 
-        if header.version != VAULT_VERSION {
+        // WHY a range, not an exact match against VAULT_VERSION: the header
+        // shape is unchanged between MIN_SUPPORTED_VAULT_VERSION and
+        // VAULT_VERSION (see VAULT_VERSION's doc) — a v1 vault opens exactly
+        // like a v2 one. What differs is per-entry: `get` below selects the
+        // AAD from each entry's own `envelope_version` rather than assuming
+        // one scheme for the whole vault. Below the floor is a version this
+        // crate never wrote; above the ceiling is a newer format this build
+        // predates. Both remain hard rejections (forkwright/akroasis#283's
+        // Desired Correction is an in-place migration, not "accept anything").
+        if !(MIN_SUPPORTED_VAULT_VERSION..=VAULT_VERSION).contains(&header.version) {
             return Err(VaultError::InvalidHeader {
                 reason: format!(
-                    "unsupported version {}, expected {VAULT_VERSION}",
+                    "unsupported version {}, expected {MIN_SUPPORTED_VAULT_VERSION}..={VAULT_VERSION}",
                     header.version
                 ),
             });
@@ -443,26 +460,46 @@ impl Vault {
             return EntryRevokedSnafu { name }.fail();
         }
 
-        // WHY: rebuilt from the CALLER's `name` plus this entry's OWN
-        // decrypted `credential_type` (from `encrypted_metadata`) and stored
-        // `envelope_version`, not trusted verbatim from elsewhere. A
-        // ciphertext relocated from a different entry (or with its
-        // `envelope_version` edited independently of `encrypted_secret`) was
-        // bound under a different AAD at encrypt time, so it fails
-        // authentication here instead of decrypting into this slot
-        // (forkwright/akroasis#283).
-        let aad = entry_aad(
-            &self.salt,
-            name,
-            &record.credential_type,
-            entry.envelope_version,
-        )?;
-        // WHY: wrap at the point of allocation — `decrypt`'s return is moved
-        // straight into `Zeroizing::new` with no intermediate unwrapped
-        // binding, so there is no plaintext copy that this fix leaves
-        // unscrubbed on drop.
-        let secret =
-            Zeroizing::new(decrypt(&self.key, &entry.encrypted_secret, &aad).context(EntryCryptoSnafu)?);
+        // WHY branch on envelope_version rather than always building an AAD:
+        // a LEGACY_ENVELOPE_VERSION (0) entry is one written before
+        // forkwright/akroasis#283's AAD binding existed — its ciphertext was
+        // sealed with `crypto::encrypt(key, secret, b"")` (empty AAD; see
+        // VAULT_VERSION's doc). Building a non-empty `entry_aad` for it
+        // would authenticate against bytes the original encryption never
+        // used, permanently failing every `get` on such an entry — exactly
+        // the access loss #283's Desired Correction asked to avoid. Any
+        // OTHER version (the current ENTRY_ENVELOPE_VERSION, or a tampered
+        // value) goes through the full identity-bound AAD: rebuilt from the
+        // CALLER's `name` plus this entry's OWN decrypted `credential_type`
+        // (from `encrypted_metadata`) and stored `envelope_version`, never
+        // trusted verbatim. A ciphertext relocated from a different entry
+        // (or with its `envelope_version` edited independently of
+        // `encrypted_secret`) was bound under a different AAD at encrypt
+        // time, so it fails authentication here instead of decrypting into
+        // this slot (forkwright/akroasis#283) — including a downgrade
+        // attempt that tampers a bound entry's `envelope_version` DOWN to
+        // 0, since its ciphertext was never sealed under empty AAD in the
+        // first place.
+        //
+        // WHY: wrap at the point of allocation in BOTH branches —
+        // `decrypt`'s return is moved straight into `Zeroizing::new` with no
+        // intermediate unwrapped binding, so there is no plaintext copy that
+        // this fix leaves unscrubbed on drop.
+        let secret = if entry.envelope_version == LEGACY_ENVELOPE_VERSION {
+            Zeroizing::new(
+                decrypt(&self.key, &entry.encrypted_secret, b"").context(EntryCryptoSnafu)?,
+            )
+        } else {
+            let aad = entry_aad(
+                &self.salt,
+                name,
+                &record.credential_type,
+                entry.envelope_version,
+            )?;
+            Zeroizing::new(
+                decrypt(&self.key, &entry.encrypted_secret, &aad).context(EntryCryptoSnafu)?,
+            )
+        };
 
         Ok(DecryptedEntry {
             name: record.name,
