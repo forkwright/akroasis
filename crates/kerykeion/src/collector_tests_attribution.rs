@@ -60,11 +60,11 @@ async fn process_packet_ignores_zero_from_sentinel() {
     c.process_packet(&pkt).await;
 
     let db = c.node_db().lock().await;
-    assert!(
-        db.get(crate::types::NodeNum(0)).is_none(),
-        "from == 0 must never create a node-DB entry"
-    );
-    assert!(db.is_empty(), "from == 0 must not touch the node DB at all");
+    let has_entry = db.get(crate::types::NodeNum(0)).is_some();
+    let db_is_empty = db.is_empty();
+    drop(db);
+    assert!(!has_entry, "from == 0 must never create a node-DB entry");
+    assert!(db_is_empty, "from == 0 must not touch the node DB at all");
 }
 
 #[tokio::test]
@@ -90,11 +90,14 @@ async fn process_packet_ignores_broadcast_from_sentinel() {
     c.process_packet(&pkt).await;
 
     let db = c.node_db().lock().await;
+    let has_entry = db.get(crate::types::NodeNum(0xFFFF_FFFF)).is_some();
+    let db_is_empty = db.is_empty();
+    drop(db);
     assert!(
-        db.get(crate::types::NodeNum(0xFFFF_FFFF)).is_none(),
+        !has_entry,
         "from == broadcast must never create a node-DB entry"
     );
-    assert!(db.is_empty());
+    assert!(db_is_empty);
 }
 
 #[tokio::test]
@@ -120,5 +123,7 @@ async fn process_packet_still_admits_a_real_node_num() {
     c.process_packet(&pkt).await;
 
     let db = c.node_db().lock().await;
-    assert!(db.get(crate::types::NodeNum(0xDEAD)).is_some());
+    let has_entry = db.get(crate::types::NodeNum(0xDEAD)).is_some();
+    drop(db);
+    assert!(has_entry);
 }
