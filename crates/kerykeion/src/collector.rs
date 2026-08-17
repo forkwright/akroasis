@@ -62,6 +62,40 @@ pub trait Collector: Send + Sync {
     ) -> impl std::future::Future<Output = Result<(), Error>> + Send;
 }
 
+/// A node number as CLAIMED by a raw, over-the-air `MeshPacket.from` field.
+///
+/// Meshtastic carries no cryptographic sender binding at this layer in this
+/// proto subset (no signature, no `relay_node`) — any node holding the
+/// channel key can set `from` to any value, including another node's number.
+/// This wrapper keeps that fact visible at the one place a raw wire header
+/// turns into a [`NodeNum`] used to CREATE or UPDATE a node-DB entry, so the
+/// conversion reads as a stated trust decision rather than a bare cast that
+/// looks like an established fact (#246).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ClaimedNodeNum(NodeNum);
+
+impl ClaimedNodeNum {
+    /// Wraps a raw wire `from` value, rejecting the two values that are
+    /// never a real originating node: `0` (unset) and the broadcast address
+    /// `0xFFFF_FFFF`. A packet claiming either is dropped before it reaches
+    /// the node DB rather than creating or updating an entry under it.
+    fn from_wire(raw: u32) -> Option<Self> {
+        let candidate = NodeNum(raw);
+        (raw != 0 && !candidate.is_broadcast()).then_some(Self(candidate))
+    }
+
+    /// Accepts the claim as a [`NodeNum`] for node-DB attribution.
+    ///
+    /// Named explicitly rather than via `From`/`Into` so every call site
+    /// states, in its own name, that it is accepting an UNAUTHENTICATED
+    /// identity claim, not a verified fact — akroasis has no channel key or
+    /// out-of-band anchor to check `from` against at this layer, so this is
+    /// the strongest attribution available, not proof.
+    const fn accept_unauthenticated(self) -> NodeNum {
+        self.0
+    }
+}
+
 /// Meshtastic mesh networking collector.
 ///
 /// Manages connections to one or more Meshtastic radios, receives mesh packets,
@@ -152,8 +186,23 @@ impl MeshCollector {
     }
 
     /// Handles a received mesh packet by updating the node database.
+    ///
+    /// `mesh_packet.from` is the sender this layer actually received the
+    /// packet attributed to — the strongest identity signal available here —
+    /// but it is an unauthenticated claim, not a verified fact (see
+    /// [`ClaimedNodeNum`]). A packet claiming the non-node sentinels (`0` or
+    /// broadcast) is dropped before it can create or update a node-DB entry
+    /// (#246).
     async fn handle_mesh_packet(&self, mesh_packet: &crate::proto::MeshPacket) {
-        let node_num = NodeNum(mesh_packet.from);
+        let Some(node_num) =
+            ClaimedNodeNum::from_wire(mesh_packet.from).map(ClaimedNodeNum::accept_unauthenticated)
+        else {
+            tracing::trace!(
+                from = mesh_packet.from,
+                "ignoring mesh packet with sentinel `from` (unset or broadcast)"
+            );
+            return;
+        };
         let snr = if mesh_packet.rx_snr == 0.0 {
             None
         } else {
@@ -675,3 +724,7 @@ where
 #[cfg(test)]
 #[path = "collector_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "collector_tests_attribution.rs"]
+mod tests_attribution;
