@@ -12,21 +12,9 @@ use serde::{Deserialize, Serialize};
 use tokio::time::Instant;
 
 use crate::config::TopologyConfig;
-use crate::types::NodeNum;
+use crate::types::{MAX_LIVE_LINKS, MAX_LIVE_NODES, NodeNum};
 
 // Historical default (30.0) now lives in [`TopologyConfig::default`].
-
-/// Maximum nodes accepted from a persisted topology snapshot.
-///
-// WHY: `load_from_bytes` allocates one graph node per entry from a file that
-// may be truncated, corrupt or attacker-written. A Meshtastic node DB holds low
-// hundreds of nodes, so this ceiling is far above any real mesh while still
-// bounding the allocation. Exceeding it is recoverable: passive learning
-// re-observes live links, so a truncated restore self-heals.
-const MAX_SNAPSHOT_NODES: usize = 4096;
-
-/// Maximum links accepted from a persisted topology snapshot.
-const MAX_SNAPSHOT_LINKS: usize = 16384;
 
 /// Directed edge weight representing radio link quality between two nodes.
 #[derive(Debug, Clone)]
@@ -64,13 +52,89 @@ impl MeshTopology {
     }
 
     /// Insert a node or return its existing index.
+    ///
+    /// If `node` is not already tracked and the graph is at
+    /// [`MAX_LIVE_NODES`], the coldest tracked node is evicted first (#204).
     pub fn add_node(&mut self, node: NodeNum) -> NodeIndex {
+        self.add_node_protecting(node, &[])
+    }
+
+    /// [`Self::add_node`], excluding `protect` from eviction candidacy.
+    ///
+    // WHY this split exists (#204 self-eviction, caught in review before
+    // shipping): every caller that must add TWO nodes (`from` and `to`)
+    // before creating their edge -- `update_link`, and `load_from_bytes`'s
+    // link-restore loop -- hits the same hazard. A node that was JUST
+    // inserted by the first call has zero edges yet — `freshness` reports
+    // `None`, the coldest possible key — so a second, independent `add_node`
+    // call for the other endpoint could evict the first one before the edge
+    // is ever created, leaving a dangling `NodeIndex` and panicking
+    // `StableGraph::add_edge`. Protecting the sibling endpoint closes that.
+    // See `update_link_never_evicts_its_own_two_new_endpoints` and
+    // `load_from_bytes_never_evicts_its_own_two_new_endpoints`.
+    fn add_node_protecting(&mut self, node: NodeNum, protect: &[NodeNum]) -> NodeIndex {
         if let Some(&idx) = self.node_index.get(&node) {
             return idx;
+        }
+        if self.node_index.len() >= MAX_LIVE_NODES {
+            self.evict_coldest_node(protect);
         }
         let idx = self.graph.add_node(node);
         self.node_index.insert(node, idx);
         idx
+    }
+
+    /// Most recent `last_observed` across all of `node`'s edges (either
+    /// direction), or `None` if it has none.
+    ///
+    // WHY `None` sorts coldest via `Option`'s derived `Ord` (`None < Some(_)`):
+    // this matches `remove_stale_nodes`'s existing "no edges is stale" rule
+    // rather than introducing a second policy for the same question.
+    fn freshness(&self, idx: NodeIndex) -> Option<Instant> {
+        self.graph
+            .edges_directed(idx, Direction::Incoming)
+            .chain(self.graph.edges_directed(idx, Direction::Outgoing))
+            .map(|e| e.weight().last_observed)
+            .max()
+    }
+
+    /// Remove the coldest tracked node not in `protect` to make room for an insertion.
+    ///
+    // WHY freshness-by-edge-activity rather than insertion order (#204): an
+    // attacker who knows the eviction policy could target a specific real
+    // node by insertion position; picking the coldest node instead means an
+    // attacker can only ever evict entries THEY stopped refreshing (their
+    // own flood, once it exceeds the cap) or a real node that has
+    // genuinely gone quiet — the same tradeoff `remove_stale_nodes` already
+    // makes on a timer. No explicit "protect my own identity" field exists
+    // on `MeshTopology` (unlike `NodeDb::my_node`): the local radio's own
+    // node is the target of every direct-neighbor `update_link` call
+    // (`processor::apply_passive_learning`), so its edges are refreshed on
+    // essentially every received packet and it naturally stays warm.
+    fn evict_coldest_node(&mut self, protect: &[NodeNum]) {
+        let victim = self
+            .node_index
+            .iter()
+            .filter(|&(num, _)| !protect.contains(num))
+            .min_by_key(|&(_, &idx)| self.freshness(idx))
+            .map(|(&num, &idx)| (num, idx));
+        if let Some((num, idx)) = victim {
+            self.node_index.remove(&num);
+            self.graph.remove_node(idx);
+        }
+    }
+
+    /// Remove the coldest tracked edge to make room for a new one.
+    fn evict_coldest_edge(&mut self) {
+        let victim = self
+            .graph
+            .edge_indices()
+            .filter_map(|idx| self.graph.edge_weight(idx).map(|w| (idx, w.last_observed)))
+            .min_by_key(|&(_, last_observed)| last_observed)
+            .map(|(idx, _)| idx);
+        if let Some(idx) = victim {
+            self.graph.remove_edge(idx);
+        }
     }
 
     /// Add or update a directed edge from `from` to `to` with the given SNR.
@@ -90,8 +154,11 @@ impl MeshTopology {
             return;
         }
 
-        let from_idx = self.add_node(from);
-        let to_idx = self.add_node(to);
+        // WHY `add_node_protecting` (not `add_node`) with each other as the
+        // protected node: see the WHY on `add_node_protecting` — the second
+        // call must not evict the node the first call just inserted.
+        let from_idx = self.add_node_protecting(from, &[to]);
+        let to_idx = self.add_node_protecting(to, &[from]);
 
         // WHY: search existing edges to update rather than create duplicates.
         let existing = self
@@ -107,6 +174,12 @@ impl MeshTopology {
                 weight.packet_count = weight.packet_count.saturating_add(1);
             }
         } else {
+            // WHY: a NEW edge is what grows cardinality (#204) — an update to
+            // an existing edge (the branch above) never does, so the cap
+            // check belongs only here.
+            if self.graph.edge_count() >= MAX_LIVE_LINKS {
+                self.evict_coldest_edge();
+            }
             self.graph.add_edge(
                 from_idx,
                 to_idx,
@@ -386,7 +459,10 @@ impl MeshTopology {
     /// Restore topology from a serialized snapshot. All links are marked as observed now.
     ///
     /// Repeated `(from, to)` pairs are folded into a single edge, and the
-    /// restore is bounded at [`MAX_SNAPSHOT_NODES`] / [`MAX_SNAPSHOT_LINKS`].
+    /// restore is bounded at [`MAX_LIVE_NODES`] / [`MAX_LIVE_LINKS`] — the
+    /// same live-cardinality ceiling [`Self::add_node`] / [`Self::update_link`]
+    /// enforce (#204), so a restored topology can never exceed what the live
+    /// insertion path would ever admit.
     ///
     /// # Errors
     ///
@@ -400,28 +476,37 @@ impl MeshTopology {
 
         // WHY: never truncate silently  -  a restore that dropped half the mesh
         // without saying so reads as a small mesh rather than a bad snapshot.
-        if snapshot.nodes.len() > MAX_SNAPSHOT_NODES {
+        if snapshot.nodes.len() > MAX_LIVE_NODES {
             tracing::warn!(
                 present = snapshot.nodes.len(),
-                cap = MAX_SNAPSHOT_NODES,
+                cap = MAX_LIVE_NODES,
                 "topology snapshot exceeds node cap; restoring a prefix"
             );
         }
-        if snapshot.links.len() > MAX_SNAPSHOT_LINKS {
+        if snapshot.links.len() > MAX_LIVE_LINKS {
             tracing::warn!(
                 present = snapshot.links.len(),
-                cap = MAX_SNAPSHOT_LINKS,
+                cap = MAX_LIVE_LINKS,
                 "topology snapshot exceeds link cap; restoring a prefix"
             );
         }
 
         let mut topo = Self::new();
-        for node in snapshot.nodes.iter().take(MAX_SNAPSHOT_NODES) {
+        for node in snapshot.nodes.iter().take(MAX_LIVE_NODES) {
             topo.add_node(*node);
         }
-        for link in snapshot.links.iter().take(MAX_SNAPSHOT_LINKS) {
-            let from_idx = topo.add_node(link.from);
-            let to_idx = topo.add_node(link.to);
+        for link in snapshot.links.iter().take(MAX_LIVE_LINKS) {
+            // WHY `add_node_protecting` (not `add_node`): identical hazard to
+            // `update_link`'s (see the WHY on `add_node_protecting`) -- this
+            // loop also inserts two nodes before creating their edge, so an
+            // eviction triggered by the second insertion could otherwise
+            // remove the node the first one just added, leaving `from_idx`
+            // dangling and panicking `graph.add_edge` below. This branch
+            // predates add_node's eviction capability (#204) and was not
+            // re-audited when that capability was added -- see
+            // `load_from_bytes_never_evicts_its_own_two_new_endpoints`.
+            let from_idx = topo.add_node_protecting(link.from, &[link.to]);
+            let to_idx = topo.add_node_protecting(link.to, &[link.from]);
 
             // WHY: `update_link` keeps at most one edge per ordered pair, and
             // `to_bytes` re-emits whatever edges exist. Restoring with a bare

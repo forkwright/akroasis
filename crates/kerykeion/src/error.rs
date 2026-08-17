@@ -249,6 +249,21 @@ pub enum Error {
         #[snafu(implicit)]
         location: snafu::Location,
     },
+
+    /// Outbound packet-id space exhausted for a [`crate::packet_id::PacketIdCounter`].
+    ///
+    /// The AES-CTR nonce is derived FROM `packet_id` (`crypto::build_nonce`),
+    /// so this counter never wraps past `u32::MAX` back toward values it may
+    /// already have issued this run — see `PacketIdCounter::next_id`. Recovery
+    /// requires the caller to rotate to a new key/PSK; retrying does not help.
+    #[snafu(display(
+        "outbound packet-id space exhausted (u32::MAX reached) -- rotate the channel PSK"
+    ))]
+    PacketIdSpaceExhausted {
+        /// Source location for diagnostics.
+        #[snafu(implicit)]
+        location: snafu::Location,
+    },
 }
 
 // WHY: tokio_util::codec::Decoder::Error and Encoder::Error both require

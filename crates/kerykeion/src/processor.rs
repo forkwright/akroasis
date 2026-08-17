@@ -474,6 +474,23 @@ pub enum RoutingResult {
         /// The routing error code.
         error: routing::Error,
     },
+    /// The `ROUTING_APP` packet decoded and carried an `error_reason`, but
+    /// its wire value is not among the `routing::Error` variants this build
+    /// knows.
+    ///
+    // WHY a distinct variant rather than folding into `Nak` or `Ack` (#208):
+    // `routing::Error` cannot represent "unrecognized" without reusing an
+    // existing code, which would misreport the failure reason — and reusing
+    // `Error::None` (the pre-fix `unwrap_or` fallback) is exactly the
+    // fail-open defect this variant exists to prevent. MUST NEVER be treated
+    // as delivery confirmation: an out-of-enum code is exactly what a
+    // forged NAK or an unrecognized future firmware code looks like.
+    UnknownError {
+        /// The packet ID the unrecognized error was reported against.
+        request_id: PacketId,
+        /// The raw wire code that did not match any known `routing::Error` variant.
+        code: i32,
+    },
     /// The packet was not a routing packet or had no actionable variant.
     NotRouting,
 }
@@ -514,19 +531,31 @@ impl RoutingProcessor {
         };
 
         match routing_msg.variant {
-            Some(routing::Variant::ErrorReason(code)) => {
-                let error = routing::Error::try_from(code).unwrap_or(routing::Error::None);
-                if error == routing::Error::None {
-                    RoutingResult::Ack {
+            // WHY match on the decode result directly rather than
+            // `unwrap_or(routing::Error::None)` (#208): the prior fallback
+            // read ANY unrecognized code as `Error::None`, i.e. delivery
+            // confirmed. Only an EXPLICITLY decoded `Error::None` may ACK;
+            // an out-of-enum code falls through to `UnknownError`, never `Ack`.
+            Some(routing::Variant::ErrorReason(code)) => match routing::Error::try_from(code) {
+                Ok(routing::Error::None) => RoutingResult::Ack {
+                    request_id: PacketId(request_id),
+                },
+                Ok(error) => RoutingResult::Nak {
+                    request_id: PacketId(request_id),
+                    error,
+                },
+                Err(_) => {
+                    tracing::warn!(
+                        packet_id = packet.id,
+                        code,
+                        "unrecognized routing error code; treating as undelivered, not ACK"
+                    );
+                    RoutingResult::UnknownError {
                         request_id: PacketId(request_id),
-                    }
-                } else {
-                    RoutingResult::Nak {
-                        request_id: PacketId(request_id),
-                        error,
+                        code,
                     }
                 }
-            }
+            },
             _ => RoutingResult::NotRouting,
         }
     }
@@ -554,6 +583,25 @@ impl RoutingProcessor {
                     delivery.record_retry(*request_id);
                 } else {
                     delivery.mark_failed(*request_id, DeliveryFailure::Nak(*error));
+                }
+            }
+            RoutingResult::UnknownError { request_id, code } => {
+                // WHY the same retry/fail pipeline as `Nak`, not a silent
+                // drop (#208): an unrecognized code is still evidence the
+                // packet was NOT delivered — treating it as inert would
+                // leave `outbound`'s inflight slot and `delivery`'s record
+                // stuck until TTL/timeout instead of retrying or failing
+                // promptly, and would never surface the unrecognized code.
+                tracing::debug!(
+                    packet_id = %request_id,
+                    code,
+                    "delivery NAK received (unrecognized routing error code)"
+                );
+                let retried = outbound.handle_nak(*request_id);
+                if retried {
+                    delivery.record_retry(*request_id);
+                } else {
+                    delivery.mark_failed(*request_id, DeliveryFailure::UnknownNak { code: *code });
                 }
             }
             RoutingResult::NotRouting => {}
