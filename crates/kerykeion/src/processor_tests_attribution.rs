@@ -16,7 +16,7 @@ fn make_processor() -> PacketProcessor {
 }
 
 /// A packet shaped to exercise the passive-learning direct-link write:
-/// `hop_start == hop_limit` (hop_count 0) with a non-zero `rx_snr` is
+/// `hop_start == hop_limit` (`hop_count` 0) with a non-zero `rx_snr` is
 /// exactly what makes pre-fix `apply_passive_learning` call
 /// `topology.update_link` -- the reviewer's crafted attack packet for the
 /// blocking finding on #381.
