@@ -167,14 +167,14 @@ impl MessageBuilder {
     ///
     /// Returns [`Error::Encryption`] if encryption fails (e.g. invalid PSK
     /// length). Returns [`Error::PacketIdSpaceExhausted`] if `packet_ids`
-    /// has issued every value in its space — see [`PacketIdCounter::next`].
+    /// has issued every value in its space — see [`PacketIdCounter::next_id`].
     pub fn build(
         self,
         from: NodeNum,
         psk: &[u8],
         packet_ids: &mut PacketIdCounter,
     ) -> Result<MeshPacket, Error> {
-        let packet_id = packet_ids.next()?;
+        let packet_id = packet_ids.next_id()?;
 
         let data = Data {
             portnum: i32::from(self.portnum),
