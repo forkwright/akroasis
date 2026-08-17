@@ -89,8 +89,10 @@ impl MeshEvent {
     /// The node this event is about, when it names exactly one.
     ///
     /// This is the node whose position locates the emitted signal. It is not
-    /// the packet sender: `NEIGHBORINFO` carries a reporter id in its payload,
-    /// so a relayed report describes links the relay is not an endpoint of.
+    /// always the packet's transmitting sender: a `TRACEROUTE` report names
+    /// every hop along the discovered route, most of which are not the
+    /// sender. (`NEIGHBORINFO`'s reporter id is required to match the
+    /// sender to be admitted at all — see `PacketProcessor::handle_neighborinfo`.)
     ///
     /// Returns `None` for the partition events, which describe a set of nodes
     /// rather than one; their conversions carry no location either.

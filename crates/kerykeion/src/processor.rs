@@ -11,7 +11,7 @@ use crate::proto::mesh_packet::PayloadVariant;
 use crate::proto::{MeshPacket, Routing, routing};
 use crate::signals::{MeshEvent, mesh_event_to_signal};
 use crate::topology::MeshTopology;
-use crate::types::{NodeNum, PacketId};
+use crate::types::{ClaimedNodeNum, NodeNum, PacketId};
 
 /// `NeighborInfo` protobuf (portnum 71)  -  not in vendored protos, decoded manually.
 #[derive(prost::Message)]
@@ -93,12 +93,30 @@ impl PacketProcessor {
     ///
     /// Dispatches based on portnum and updates internal state. Returns any
     /// produced events for external handling.
+    ///
+    /// `packet.from` is an unauthenticated wire claim (see [`ClaimedNodeNum`]).
+    /// A packet claiming the non-node sentinels (`0` or broadcast) is dropped
+    /// HERE, before any node-DB write, topology write, or event emission —
+    /// every write this function (and everything it calls) makes is keyed on
+    /// `from`, so this is the single point that derives `from` FROM the wire
+    /// for `PacketProcessor`. Gating only some of the downstream writes would
+    /// resurface #246 against `PacketProcessor`'s own `NodeDb` + topology
+    /// graph, which are SEPARATE from `MeshCollector`'s display-only copy
+    /// that #246's original fix guards.
     pub fn process_mesh_packet(&mut self, packet: &crate::proto::MeshPacket) -> Vec<MeshEvent> {
         let mut events = Vec::new();
-        let from = NodeNum(packet.from);
+        let Some(from) =
+            ClaimedNodeNum::from_wire(packet.from).map(ClaimedNodeNum::accept_unauthenticated)
+        else {
+            tracing::trace!(
+                from = packet.from,
+                "ignoring mesh packet with sentinel `from` (unset or broadcast)"
+            );
+            return events;
+        };
 
         // WHY: passive learning  -  every received packet provides link metadata.
-        self.apply_passive_learning(packet);
+        self.apply_passive_learning(packet, from);
 
         let Some(crate::proto::mesh_packet::PayloadVariant::Decoded(decoded)) =
             &packet.payload_variant
@@ -117,7 +135,7 @@ impl PacketProcessor {
                 self.handle_telemetry(from, &decoded.payload, &mut events);
             }
             p if p == portnum::NEIGHBORINFO_APP => {
-                self.handle_neighborinfo(&decoded.payload, &mut events);
+                self.handle_neighborinfo(from, &decoded.payload, &mut events);
             }
             p if p == portnum::TRACEROUTE_APP => {
                 self.handle_traceroute(from, packet, &decoded.payload, &mut events);
@@ -138,9 +156,10 @@ impl PacketProcessor {
         }
 
         // WHY: an event names its own subject, which is not always the packet
-        // sender. NEIGHBORINFO reports carry a reporter id from the payload, so
-        // locating every signal at `from` puts a relayed report at the relay
-        // rather than at the node the report is about.
+        // sender. TRACEROUTE reports name every hop along the discovered
+        // route, so locating every signal at `from` would put each
+        // intermediate hop's link at the packet's own sender instead of the
+        // hop it actually describes.
         for event in &events {
             let position = event
                 .subject()
@@ -157,8 +176,14 @@ impl PacketProcessor {
     }
 
     /// Infer link quality FROM packet metadata without explicit topology messages.
-    fn apply_passive_learning(&mut self, packet: &crate::proto::MeshPacket) {
-        let from = NodeNum(packet.from);
+    ///
+    /// `from` must already be a [`ClaimedNodeNum`]-accepted identity —
+    /// this function performs no sentinel check of its own; `from` is
+    /// threaded in from [`Self::process_mesh_packet`]'s single validated
+    /// derivation rather than re-read from `packet.from` here, so there is
+    /// exactly one place in `PacketProcessor` that turns a raw wire `from`
+    /// into a [`NodeNum`].
+    fn apply_passive_learning(&mut self, packet: &crate::proto::MeshPacket, from: NodeNum) {
         let snr = if packet.rx_snr == 0.0 {
             None
         } else {
@@ -366,7 +391,20 @@ impl PacketProcessor {
         }
     }
 
-    fn handle_neighborinfo(&mut self, payload: &[u8], events: &mut Vec<MeshEvent>) {
+    /// Handles a `NEIGHBORINFO_APP` payload, attributing the reported links
+    /// to `from` (the packet's actual sender) rather than the payload's own
+    /// `node_id` claim.
+    ///
+    /// The payload's `node_id` is a SECOND, independently forgeable identity
+    /// assertion embedded inside the packet body — Meshtastic gives no
+    /// channel-level guarantee it agrees with `from`. Trusting it
+    /// unconditionally lets any sender attribute fabricated neighbor links
+    /// to whichever victim node number it names, on that victim's behalf
+    /// (#207). When the two disagree the report is dropped rather than
+    /// silently reattributed to `from`: a mismatch does not distinguish a
+    /// forged claim from a payload describing a genuinely different node, so
+    /// neither identity can be trusted for this report.
+    fn handle_neighborinfo(&mut self, from: NodeNum, payload: &[u8], events: &mut Vec<MeshEvent>) {
         let ni = match NeighborInfo::decode(payload) {
             Ok(n) => n,
             Err(e) => {
@@ -375,15 +413,23 @@ impl PacketProcessor {
             }
         };
 
-        let reporter = NodeNum(ni.node_id);
-        self.topology.add_node(reporter);
+        let claimed = NodeNum(ni.node_id);
+        if claimed != from {
+            tracing::warn!(
+                claimed = claimed.0,
+                sender = from.0,
+                "NEIGHBORINFO payload node_id disagrees with packet sender; dropping report"
+            );
+            return;
+        }
+
+        self.topology.add_node(from);
 
         for neighbor in &ni.neighbors {
             let neighbor_num = NodeNum(neighbor.node_id);
-            self.topology
-                .update_link(reporter, neighbor_num, neighbor.snr);
+            self.topology.update_link(from, neighbor_num, neighbor.snr);
             events.push(MeshEvent::TopologyChange {
-                from: reporter,
+                from,
                 to: neighbor_num,
                 snr: neighbor.snr,
             });
@@ -618,3 +664,11 @@ impl RoutingProcessor {
 )]
 #[path = "processor_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[expect(
+    clippy::unwrap_used,
+    reason = "test code: panics and unwraps acceptable in assertions"
+)]
+#[path = "processor_tests_attribution.rs"]
+mod tests_attribution;

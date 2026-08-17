@@ -4,7 +4,7 @@ use prost::Message as _;
 
 use crate::config::MessageConfig;
 use crate::crypto;
-use crate::error::Error;
+use crate::error::{Error, InvalidPositionSnafu};
 use crate::packet_id::PacketIdCounter;
 use crate::proto::mesh_packet::Priority;
 use crate::proto::{AdminMessage, Data, MeshPacket, PortNum, Position, mesh_packet};
@@ -22,6 +22,7 @@ use crate::types::{ChannelIndex, MAX_HOP_LIMIT, NodeNum};
 ///     .with_ack()
 ///     .build(NodeNum(0xABCD), &[0x01], &mut packet_ids)?;
 /// ```
+#[derive(Debug)]
 pub struct MessageBuilder {
     dest: NodeNum,
     portnum: PortNum,
@@ -57,25 +58,53 @@ impl MessageBuilder {
     ///
     /// Latitude and longitude are in decimal degrees; they are converted to
     /// Meshtastic's `i32` representation (`value * 1e7`).
-    #[must_use]
-    pub fn position(dest: NodeNum, lat: f64, lon: f64) -> Self {
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::InvalidPosition`] if `lat` or `lon` is not finite, or
+    /// outside `[-90, 90]` / `[-180, 180]` respectively (#247).
+    pub fn position(dest: NodeNum, lat: f64, lon: f64) -> Result<Self, Error> {
         Self::position_with_config(dest, lat, lon, &MessageConfig::default())
     }
 
     /// Build a position message with a caller-supplied [`MessageConfig`].
-    #[must_use]
-    pub fn position_with_config(dest: NodeNum, lat: f64, lon: f64, config: &MessageConfig) -> Self {
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::InvalidPosition`] if `lat` or `lon` is not finite, or
+    /// outside `[-90, 90]` / `[-180, 180]` respectively (#247).
+    pub fn position_with_config(
+        dest: NodeNum,
+        lat: f64,
+        lon: f64,
+        config: &MessageConfig,
+    ) -> Result<Self, Error> {
+        // WHY: the `as i32` cast below never panics — Rust saturates NaN to 0
+        // and ±Inf to the i32 extremes — so an unchecked cast turns a failed
+        // GPS read (NaN) or a caller bug (Inf, out-of-range degrees) into a
+        // plausible-looking wire coordinate instead of a build-time error.
+        // Validate BEFORE the cast so the invariant the cast relies on
+        // (finite, in-range degrees) is actually established, not merely
+        // asserted (#247).
+        if !lat.is_finite()
+            || !(-90.0..=90.0).contains(&lat)
+            || !lon.is_finite()
+            || !(-180.0..=180.0).contains(&lon)
+        {
+            return InvalidPositionSnafu { lat, lon }.fail();
+        }
+
         // WHY: Meshtastic firmware stores lat/lon as fixed-point i32 = degrees * 1e7.
         #[expect(
             clippy::as_conversions,
             reason = "f64→i32 via multiplication is the Meshtastic wire format convention"
         )]
         let pos = Position {
-            latitude_i: (lat * 1e7) as i32, // SAFETY: lat ∈ [-90, 90] so lat*1e7 ∈ [-9e8, 9e8] which fits i32 (±2.1e9)
-            longitude_i: (lon * 1e7) as i32, // SAFETY: lon ∈ [-180, 180] so lon*1e7 ∈ [-1.8e9, 1.8e9] which fits i32
+            latitude_i: (lat * 1e7) as i32, // SAFETY: lat validated finite + ∈ [-90, 90] above, so lat*1e7 ∈ [-9e8, 9e8] which fits i32 (±2.1e9)
+            longitude_i: (lon * 1e7) as i32, // SAFETY: lon validated finite + ∈ [-180, 180] above, so lon*1e7 ∈ [-1.8e9, 1.8e9] which fits i32
             ..Default::default()
         };
-        Self {
+        Ok(Self {
             dest,
             portnum: PortNum::PositionApp,
             payload: pos.encode_to_vec(),
@@ -83,7 +112,7 @@ impl MessageBuilder {
             want_ack: false,
             hop_limit: config.default_hop_limit.min(MAX_HOP_LIMIT),
             priority: Priority::Default,
-        }
+        })
     }
 
     /// Build an admin message (`ADMIN_APP`) with the default hop limit.
@@ -310,6 +339,7 @@ mod tests {
     fn position_message_encodes_lat_lon() {
         #[expect(clippy::unwrap_used, reason = "test-only")]
         let pkt = MessageBuilder::position(DEST, 37.7749, -122.4194)
+            .unwrap()
             .build(FROM_NODE, &[], &mut PacketIdCounter::resume(0))
             .unwrap();
 
@@ -325,6 +355,47 @@ mod tests {
             "latitude_i={} expected ~377749000",
             pos.latitude_i
         );
+    }
+
+    #[test]
+    fn position_rejects_nan_latitude() {
+        // WHY(#247): pre-fix, `NaN as i32` saturates to 0 rather than
+        // panicking, so a failed GPS read silently produced a packet at
+        // (0, lon) instead of failing the build.
+        let result = MessageBuilder::position(DEST, f64::NAN, -122.4194);
+        assert!(
+            matches!(result, Err(Error::InvalidPosition { .. })),
+            "NaN latitude must be rejected, got {result:?}"
+        );
+    }
+
+    #[test]
+    fn position_rejects_infinite_longitude() {
+        let result = MessageBuilder::position(DEST, 37.7749, f64::INFINITY);
+        assert!(
+            matches!(result, Err(Error::InvalidPosition { .. })),
+            "infinite longitude must be rejected, got {result:?}"
+        );
+    }
+
+    #[test]
+    fn position_rejects_out_of_range_latitude() {
+        // WHY: distinguishes the range check from the finiteness check --
+        // 91.0 is finite but not a valid latitude.
+        let result = MessageBuilder::position(DEST, 91.0, 0.0);
+        assert!(
+            matches!(result, Err(Error::InvalidPosition { .. })),
+            "out-of-range latitude must be rejected, got {result:?}"
+        );
+    }
+
+    #[test]
+    fn position_accepts_boundary_coordinates() {
+        // WHY: the falsifiable half of the range checks above -- without
+        // this, an inverted comparison (e.g. `>` instead of `>=`) that
+        // rejects everything would also pass the rejection tests.
+        assert!(MessageBuilder::position(DEST, 90.0, 180.0).is_ok());
+        assert!(MessageBuilder::position(DEST, -90.0, -180.0).is_ok());
     }
 
     #[test]

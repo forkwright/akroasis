@@ -89,6 +89,45 @@ impl NodeNum {
     }
 }
 
+/// A node number as CLAIMED by a raw, over-the-air `MeshPacket.from` field.
+///
+/// Meshtastic carries no cryptographic sender binding at this layer in this
+/// proto subset (no signature, no `relay_node`) — any node holding the
+/// channel key can set `from` to any value, including another node's number.
+/// This wrapper is the SINGLE gate every raw wire header must pass through
+/// before it becomes a [`NodeNum`] used to CREATE or UPDATE a node-DB or
+/// topology entry, so the conversion reads as a stated trust decision rather
+/// than a bare cast that looks like an established fact. `MeshCollector` and
+/// `PacketProcessor` each own a SEPARATE `NodeDb` (and `PacketProcessor` also
+/// owns the `MeshTopology` the collector's display DB does not touch) — this
+/// type is shared rather than reimplemented at each site precisely so both
+/// write paths stay gated by the identical rule instead of drifting apart.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ClaimedNodeNum(NodeNum);
+
+impl ClaimedNodeNum {
+    /// Wraps a raw wire `from` value, rejecting the two values that are
+    /// never a real originating node: `0` (unset) and the broadcast address
+    /// `0xFFFF_FFFF`. A packet claiming either must be dropped before it
+    /// reaches ANY node-DB or topology write, at every call site that
+    /// derives an identity from a packet's `from` field.
+    pub(crate) fn from_wire(raw: u32) -> Option<Self> {
+        let candidate = NodeNum(raw);
+        (raw != 0 && !candidate.is_broadcast()).then_some(Self(candidate))
+    }
+
+    /// Accepts the claim as a [`NodeNum`] for node-DB / topology attribution.
+    ///
+    /// Named explicitly rather than via `From`/`Into` so every call site
+    /// states, in its own name, that it is accepting an UNAUTHENTICATED
+    /// identity claim, not a verified fact — akroasis has no channel key or
+    /// out-of-band anchor to check `from` against at this layer, so this is
+    /// the strongest attribution available, not proof.
+    pub(crate) const fn accept_unauthenticated(self) -> NodeNum {
+        self.0
+    }
+}
+
 impl ChannelIndex {
     /// Constructs a `ChannelIndex`, returning an error if `index >= MAX_CHANNELS`.
     ///

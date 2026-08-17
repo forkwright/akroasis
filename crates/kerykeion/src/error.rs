@@ -233,6 +233,21 @@ pub enum Error {
         location: snafu::Location,
     },
 
+    /// Position lat/lon is non-finite or outside Meshtastic's valid
+    /// geographic range, which the fixed-point wire conversion assumes holds.
+    #[snafu(display(
+        "invalid position: lat={lat}, lon={lon} (must be finite, lat ∈ [-90, 90], lon ∈ [-180, 180])"
+    ))]
+    InvalidPosition {
+        /// The rejected latitude in decimal degrees.
+        lat: f64,
+        /// The rejected longitude in decimal degrees.
+        lon: f64,
+        /// Source location for diagnostics.
+        #[snafu(implicit)]
+        location: snafu::Location,
+    },
+
     /// A store-forward snapshot has more distinct destinations than the
     /// running cap allows; loading it verbatim would silently disable the
     /// per-destination resource-exhaustion protection for every over-cap
@@ -315,5 +330,15 @@ mod tests {
             location: snafu::location!(),
         };
         assert!(err.to_string().contains("0xdeadbeef"));
+    }
+
+    #[test]
+    fn invalid_position_message() {
+        let err = Error::InvalidPosition {
+            lat: f64::NAN,
+            lon: 200.0,
+            location: snafu::location!(),
+        };
+        assert!(err.to_string().contains("invalid position"));
     }
 }
