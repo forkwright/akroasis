@@ -520,7 +520,9 @@ fn load_from_bytes_never_evicts_its_own_two_new_endpoints() {
         "the new link's own target must survive its own restore"
     );
     assert!(
-        topo.neighbors(n(cap)).iter().any(|&(num, _)| num == n(cap + 1)),
+        topo.neighbors(n(cap))
+            .iter()
+            .any(|&(num, _)| num == n(cap + 1)),
         "the new edge between the two brand-new endpoints must exist"
     );
 }
