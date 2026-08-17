@@ -1,0 +1,70 @@
+// WHY: routing/delivery diagnostics — traceroute path recording and
+// ack/nak reason decoding. These are two independent decode paths
+// kerykeion dispatches on portnum (TRACEROUTE_APP and ROUTING_APP
+// respectively); neither embeds the other in kerykeion's actual usage, so
+// this file orders the two messages alphabetically rather than by a
+// pipeline relationship that does not exist between them. Authored from
+// kerykeion's own field usage; see packet.proto's header for the general
+// note on how this schema was derived.
+syntax = "proto3";
+
+package meshtastic;
+
+// The manually-decoded TRACEROUTE_APP payload.
+// WHY: read field-by-field by processor.rs::handle_traceroute.
+message RouteDiscovery {
+  // Node numbers of the path taken to the destination.
+  // WHY: read as route.route by processor.rs::handle_traceroute.
+  repeated uint32 route = 2;
+
+  // SNR at each hop toward the destination.
+  // WHY: read as route.snr_towards by processor.rs::handle_traceroute.
+  repeated int32 snr_towards = 3;
+
+  // Node numbers of the return path.
+  // WHY: read as route.back by processor.rs::handle_traceroute.
+  repeated uint32 back = 4;
+
+  // SNR at each hop on the return path.
+  // WHY: read as route.snr_back by processor.rs::handle_traceroute.
+  repeated int32 snr_back = 5;
+}
+
+// Decoded from the payload of a ROUTING_APP Data message.
+// WHY: matched by processor.rs::RoutingProcessor::process_routing.
+message Routing {
+  oneof variant {
+    // The delivery outcome for a prior request_id.
+    // WHY: matched as Some(routing::Variant::ErrorReason(code)) by
+    // RoutingProcessor::process_routing.
+    Error error_reason = 3;
+  }
+
+  // Delivery outcome codes for Routing.error_reason.
+  // WHY: full cardinality (not just the three variants this crate names)
+  // is required. RoutingProcessor::process_routing decodes the wire code
+  // via routing::Error::try_from(code) with an explicit Ok/Err match — the
+  // Err(_) arm already exists (RoutingResult::UnknownError) so this is
+  // not a bare unwrap_or, but trimming the enum to only None/NoRoute/
+  // MaxRetransmit would still route every other real firmware NAK code
+  // into UnknownError instead of its true reason, which is a real
+  // behavioral loss for legitimate wire traffic. None is matched directly
+  // (=> Ack); NoRoute and MaxRetransmit are exercised by
+  // delivery.rs/router.rs/collector_tests.rs tests; the remaining
+  // variants are not named anywhere but must stay decodable so those
+  // wire codes do not fall through to UnknownError.
+  enum Error {
+    NONE = 0;
+    NO_ROUTE = 1;
+    GOT_NAK = 2;
+    TIMEOUT = 3;
+    NO_INTERFACE = 4;
+    MAX_RETRANSMIT = 5;
+    NO_CHANNEL = 6;
+    TOO_LARGE = 7;
+    NO_RESPONSE = 8;
+    DUTY_CYCLE_LIMIT = 9;
+    BAD_REQUEST = 32;
+    NOT_AUTHORIZED = 33;
+  }
+}

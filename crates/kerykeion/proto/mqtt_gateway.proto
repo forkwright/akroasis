@@ -1,0 +1,80 @@
+// WHY: the MQTT gateway/bridge surface — what kerykeion decodes from an
+// MQTT-published mesh bridge topic. Authored from kerykeion's own field
+// usage; see packet.proto's header for the general note on how this
+// schema was derived.
+syntax = "proto3";
+
+package meshtastic;
+
+import "packet.proto";
+
+// The top-level MQTT wrapper.
+// WHY: decoded by mqtt.rs::decode_service_envelope.
+message ServiceEnvelope {
+  // The wrapped mesh packet.
+  // WHY: written by mqtt.rs's decode_service_envelope_roundtrip test;
+  // presence checked via envelope.packet.is_some().
+  MeshPacket packet = 1;
+
+  // The channel name the packet was published under.
+  // WHY: read as envelope.channel_id by mqtt.rs::extract_gateway_info.
+  string channel_id = 2;
+
+  // The publishing gateway's node id, as a hex string.
+  // WHY: read as envelope.gateway_id (parsed as a hex node id) by
+  // mqtt.rs::extract_gateway_info.
+  string gateway_id = 3;
+}
+
+// A gateway's self-reported map presence, decoded from the MQTT map
+// topic.
+// WHY: decoded field-by-field by mqtt.rs::decode_map_report into
+// ParsedMapReport.
+message MapReport {
+  string long_name = 1;
+  string short_name = 2;
+
+  // WHY: read as a raw int32 (report.hw_model) by mqtt.rs; this field is
+  // already int32 on the wire, unlike User.hw_model in
+  // node_inventory.proto, so no enum-to-scalar simplification applies
+  // here — it is simply declared as what it already is.
+  int32 hw_model = 4;
+
+  string firmware_version = 5;
+
+  // Latitude, in the 1e-7-degree fixed encoding.
+  // WHY: read as report.latitude_i with a 0 sentinel, scaled by 1e-7.
+  sfixed32 latitude_i = 9;
+
+  // Longitude, in the 1e-7-degree fixed encoding.
+  // WHY: read as report.longitude_i with a 0 sentinel, scaled by 1e-7.
+  sfixed32 longitude_i = 10;
+
+  // Altitude in meters.
+  // WHY: read as report.altitude with a 0 sentinel.
+  int32 altitude = 11;
+
+  // Count of other nodes the gateway has heard locally.
+  uint32 num_online_local_nodes = 12;
+}
+
+// A single MQTT proxy message.
+// WHY: decoded by mqtt.rs::decode_proxy_message.
+message MqttClientProxyMessage {
+  // The MQTT topic.
+  // WHY: written by mqtt.rs's decode_proxy_message_with_data test;
+  // decoded.topic is checked there.
+  string topic = 1;
+
+  oneof payload_variant {
+    // The raw MQTT payload bytes.
+    // WHY: written as mqtt_client_proxy_message::PayloadVariant::Data by
+    // mqtt.rs's decode_proxy_message_with_data test.
+    bytes data = 2;
+  }
+
+  // Whether the MQTT broker should retain this message.
+  // WHY: only ever written (as false) by an mqtt.rs test literal; not
+  // read anywhere in kerykeion's production code.
+  bool retained = 4;
+}

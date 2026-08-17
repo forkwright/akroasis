@@ -1,0 +1,146 @@
+// WHY: what kerykeion learns and records about mesh peers — identity,
+// position, and telemetry. Authored from kerykeion's own field usage; see
+// packet.proto's header for the general note on how this schema was
+// derived.
+syntax = "proto3";
+
+package meshtastic;
+
+// A known mesh peer's record, converted to a MeshNode by
+// handshake.rs::node_info_to_mesh_node and consumed by
+// collector.rs::process_packet.
+message NodeInfo {
+  // The peer's node number.
+  // WHY: read as ni.num by handshake.rs::node_info_to_mesh_node.
+  uint32 num = 1;
+
+  // The peer's identity.
+  // WHY: read as ni.user.as_ref() by handshake.rs::node_info_to_mesh_node.
+  User user = 2;
+
+  // The peer's last-known position.
+  // WHY: read as ni.position.as_ref() by
+  // handshake.rs::node_info_to_mesh_node.
+  Position position = 3;
+
+  // Signal-to-noise ratio of the peer's last-heard transmission.
+  // WHY: read as ni.snr (with a 0.0 sentinel) by
+  // handshake.rs::node_info_to_mesh_node.
+  float snr = 4;
+
+  // Timestamp the peer was last heard from.
+  // WHY: read as ni.last_heard (with a 0 sentinel) by
+  // handshake.rs::node_info_to_mesh_node.
+  uint32 last_heard = 5;
+
+  // Hop distance to the peer.
+  // WHY: read as ni.hops_away (cast to u8) by
+  // handshake.rs::node_info_to_mesh_node.
+  uint32 hops_away = 9;
+}
+
+// A mesh peer's identity, embedded in NodeInfo and reused as an
+// AdminMessage passthrough type (get_owner_response / set_owner).
+// WHY: fields read by handshake.rs::node_info_to_mesh_node and
+// processor.rs::handle_nodeinfo; exercised by handshake.rs test literals.
+message User {
+  // The peer's stable id string.
+  // WHY: read/written by handshake.rs::node_info_to_mesh_node and
+  // processor.rs::handle_nodeinfo.
+  string id = 1;
+
+  // The peer's full display name.
+  // WHY: read/written by handshake.rs::node_info_to_mesh_node and
+  // processor.rs::handle_nodeinfo.
+  string long_name = 2;
+
+  // The peer's short display name.
+  // WHY: read/written by handshake.rs::node_info_to_mesh_node and
+  // processor.rs::handle_nodeinfo.
+  string short_name = 3;
+
+  // The peer's MAC address.
+  // WHY: only ever written (as an empty vec) by handshake.rs's
+  // node_info_converts_position_timestamps_and_snr test; not read
+  // anywhere in kerykeion's production code, kept because it is a real
+  // wire field and User is also an opaque AdminMessage passthrough type.
+  bytes macaddr = 4;
+
+  // The peer's hardware model.
+  // WHY: kerykeion never decodes this into a named HardwareModel enum —
+  // it is read as a raw i32 via u32::try_from and never matched against a
+  // named variant — so it is modeled as plain int32 rather than
+  // reproducing an unused enum this schema has no cardinality facts for.
+  int32 hw_model = 6;
+
+  // Whether the peer is running with a licensed callsign.
+  // WHY: read/written by handshake.rs::node_info_to_mesh_node and
+  // processor.rs::handle_nodeinfo.
+  bool is_licensed = 7;
+
+  // The peer's device role.
+  // WHY: only ever written (as 0) by handshake.rs's test literal; not
+  // read anywhere in kerykeion's production code, kept for the same
+  // passthrough reason as macaddr.
+  uint32 role = 8;
+}
+
+// A geographic position, used both for user-supplied lat/lon encoding and
+// as NodeInfo.position / a decoded POSITION_APP payload.
+// WHY: fields read by processor.rs::handle_position and
+// handshake.rs::node_info_to_mesh_node; written by
+// message.rs::MessageBuilder::position_with_config.
+message Position {
+  // Latitude, in the 1e-7-degree integer encoding.
+  sint32 latitude_i = 1;
+
+  // Longitude, in the 1e-7-degree integer encoding.
+  sint32 longitude_i = 2;
+
+  // Altitude in meters.
+  int32 altitude = 3;
+
+  // Fix timestamp.
+  // WHY: fed to jiff::Timestamp::from_second by
+  // handshake.rs::node_info_to_mesh_node.
+  uint32 time = 4;
+}
+
+// Manually decoded from a TELEMETRY_APP Data payload.
+// WHY: matched by processor.rs::handle_telemetry.
+message Telemetry {
+  // Sample timestamp.
+  // WHY: only ever written by processor_tests.rs test literals; not read
+  // downstream in production code.
+  uint32 time = 1;
+
+  oneof variant {
+    // Device health metrics.
+    // WHY: matched as Some(telemetry::Variant::DeviceMetrics(dm)) by
+    // processor.rs::handle_telemetry.
+    DeviceMetrics device_metrics = 2;
+  }
+}
+
+// Device health metrics, populated into node_db.rs's own DeviceMetrics
+// struct.
+// WHY: fields read (each with a sentinel default) by
+// processor.rs::handle_telemetry.
+message DeviceMetrics {
+  // Battery charge percentage.
+  uint32 battery_level = 1;
+
+  // Battery voltage.
+  float voltage = 2;
+
+  // Channel airtime utilization percentage.
+  float channel_utilization = 3;
+
+  // Transmit airtime utilization percentage.
+  float air_util_tx = 4;
+
+  // Device uptime in seconds.
+  // WHY: only ever written by processor_tests.rs test literals; not read
+  // anywhere in kerykeion's production code.
+  uint32 uptime_seconds = 6;
+}
