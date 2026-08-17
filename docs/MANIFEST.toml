@@ -1,9 +1,12 @@
 # docs/MANIFEST.toml
 # Documentation inventory for akroasis. See standards/DOC-MANIFEST.md.
 #
-# WHY the archive/ subtree is absent rather than listed: git is the archive, and a second index of
-# superseded documents is a copy of what history already guarantees — it grows with no signal because
-# nobody maintains it.
+# The archive/ subtree IS listed, and the reasoning that first left it out is worth recording because
+# it was right in principle and wrong here. Git is the archive, so a second index of superseded
+# documents duplicates what history already guarantees. But `STANDARDS/doc-manifest-orphan` asks a
+# narrower question — is every file under docs/ accounted for — and an unlisted file is
+# indistinguishable from one nobody noticed. Listing them as superseded answers that without
+# pretending they are current.
 
 [[doc]]
 path = "docs/ARCHITECTURE.md"
@@ -54,3 +57,19 @@ path = "docs/akroasis-mesh.toml"
 type = "authored"
 evergreen = false
 description = "Example mesh configuration section, with the supported hardware and transports."
+
+# ── superseded ────────────────────────────────────────────────────────────────────────────────────
+# Listed so the orphan check can account for them, marked non-evergreen because that is what
+# superseded means. Neither is a current statement about this repository.
+
+[[doc]]
+path = "docs/archive/README.md"
+type = "authored"
+evergreen = false
+description = "Index of completed or superseded documentation kept for historical reference."
+
+[[doc]]
+path = "docs/archive/STANDARDS.md"
+type = "authored"
+evergreen = false
+description = "Superseded project standards, retained as the record of what the rules used to be."
