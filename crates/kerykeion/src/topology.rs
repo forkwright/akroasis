@@ -62,14 +62,16 @@ impl MeshTopology {
     /// [`Self::add_node`], excluding `protect` from eviction candidacy.
     ///
     // WHY this split exists (#204 self-eviction, caught in review before
-    // shipping): `update_link` must add TWO nodes (`from` and `to`) before
-    // it can create their edge. A node that was JUST inserted by the first
-    // call has zero edges yet — `freshness` reports `None`, the coldest
-    // possible key — so a second, independent `add_node` call for the
-    // other endpoint could evict the first one before the edge is ever
-    // created, leaving a dangling `NodeIndex` and panicking
+    // shipping): every caller that must add TWO nodes (`from` and `to`)
+    // before creating their edge -- `update_link`, and `load_from_bytes`'s
+    // link-restore loop -- hits the same hazard. A node that was JUST
+    // inserted by the first call has zero edges yet — `freshness` reports
+    // `None`, the coldest possible key — so a second, independent `add_node`
+    // call for the other endpoint could evict the first one before the edge
+    // is ever created, leaving a dangling `NodeIndex` and panicking
     // `StableGraph::add_edge`. Protecting the sibling endpoint closes that.
-    // See `update_link_never_evicts_its_own_two_new_endpoints`.
+    // See `update_link_never_evicts_its_own_two_new_endpoints` and
+    // `load_from_bytes_never_evicts_its_own_two_new_endpoints`.
     fn add_node_protecting(&mut self, node: NodeNum, protect: &[NodeNum]) -> NodeIndex {
         if let Some(&idx) = self.node_index.get(&node) {
             return idx;
@@ -494,8 +496,17 @@ impl MeshTopology {
             topo.add_node(*node);
         }
         for link in snapshot.links.iter().take(MAX_LIVE_LINKS) {
-            let from_idx = topo.add_node(link.from);
-            let to_idx = topo.add_node(link.to);
+            // WHY `add_node_protecting` (not `add_node`): identical hazard to
+            // `update_link`'s (see the WHY on `add_node_protecting`) -- this
+            // loop also inserts two nodes before creating their edge, so an
+            // eviction triggered by the second insertion could otherwise
+            // remove the node the first one just added, leaving `from_idx`
+            // dangling and panicking `graph.add_edge` below. This branch
+            // predates add_node's eviction capability (#204) and was not
+            // re-audited when that capability was added -- see
+            // `load_from_bytes_never_evicts_its_own_two_new_endpoints`.
+            let from_idx = topo.add_node_protecting(link.from, &[link.to]);
+            let to_idx = topo.add_node_protecting(link.to, &[link.from]);
 
             // WHY: `update_link` keeps at most one edge per ordered pair, and
             // `to_bytes` re-emits whatever edges exist. Restoring with a bare
