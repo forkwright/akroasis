@@ -1422,6 +1422,7 @@ dependencies = [
  "blake3",
  "ciborium",
  "compact_str",
+ "fs2",
  "jiff",
  "proptest",
  "serde",

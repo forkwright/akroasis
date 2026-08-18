@@ -267,11 +267,19 @@ fn a_seal_destroyed_by_a_failed_rename_stays_fail_closed() {
     fs::remove_dir(&seal_target).unwrap();
 
     let reopened = TamperLog::open(&path, test_key());
+    // WHY not `{reopened:?}`: `TamperLog` intentionally has no `Debug`
+    // impl (it holds the `ChainKey`; koinon follows
+    // RUST/no-debug-derive-on-public-types), so format the outcome without
+    // naming the Ok payload.
+    let got = match &reopened {
+        Ok(_) => "Ok(TamperLog)".to_owned(),
+        Err(e) => format!("Err({e:?})"),
+    };
     assert!(
         matches!(reopened, Err(TamperLogError::ChainCompromised { .. })),
         "a log whose seal is absent must stay refused even though the \
          content itself is fully valid — an absent seal cannot be told \
-         apart from one an attacker deleted, got {reopened:?}"
+         apart from one an attacker deleted, got {got}"
     );
 }
 
