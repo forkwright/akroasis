@@ -119,6 +119,10 @@ jobs:
       system_packages: "libusb-1.0-0-dev libudev-dev protobuf-compiler"
       needs_fleet_repo_token: false
       rust_cache_key: "gate-attestation"
+      # WHY 90m: the 45m default canceled this repo's proto-reimpl gate at
+      # 45m20s with the build still running (run 32166544512). Ceiling for
+      # runaway jobs, not a target. Same shape as aletheia#6896 this week.
+      full_gate_timeout_minutes: 90
       ai_attribution_check: true
       docs_only_exemption: true
     secrets: inherit
