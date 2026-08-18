@@ -319,7 +319,7 @@ fn load_from_bytes_round_trips_without_multiplying_edges() {
 
 #[test]
 fn load_from_bytes_caps_nodes_and_links() {
-    let over = MAX_SNAPSHOT_NODES + 10;
+    let over = MAX_LIVE_NODES + 10;
     #[expect(
         clippy::cast_possible_truncation,
         reason = "test-only: indices are far below u32::MAX"
@@ -335,7 +335,194 @@ fn load_from_bytes_caps_nodes_and_links() {
 
     assert_eq!(
         topo.node_count(),
-        MAX_SNAPSHOT_NODES,
+        MAX_LIVE_NODES,
         "restore must stop at the node cap"
+    );
+}
+
+#[test]
+fn add_node_bounds_live_cardinality_at_the_cap() {
+    // WHY(#204): `from` on an inbound frame is unauthenticated, so a hostile
+    // peer announcing MAX_LIVE_NODES+N distinct identities via `add_node`
+    // (the LIVE ingestion path, not the snapshot-restore path the sibling
+    // test above already covered) must never grow the graph past the cap.
+    let mut topo = MeshTopology::new();
+    for i in 0..(MAX_LIVE_NODES + 500) as u32 {
+        topo.add_node(n(i));
+    }
+    assert!(
+        topo.node_count() <= MAX_LIVE_NODES,
+        "node_count()={} exceeds MAX_LIVE_NODES={MAX_LIVE_NODES}",
+        topo.node_count()
+    );
+}
+
+#[test]
+fn update_link_bounds_live_edge_cardinality_at_the_cap() {
+    // WHY(#204): one NEIGHBORINFO frame lets an attacker assert edges
+    // between arbitrary node-id pairs it invents; distinct pairs must not
+    // grow the edge set past the cap. Uses a small, FIXED node set (K*K
+    // ordered pairs give far more than MAX_LIVE_LINKS distinct edges) so
+    // the independent, much stricter node cap never triggers and this test
+    // isolates the edge cap specifically.
+    let mut topo = MeshTopology::new();
+    let k: u32 = 200; // 200*199 ordered pairs (39_800) >> MAX_LIVE_LINKS+500
+    let mut created = 0usize;
+    'outer: for i in 0..k {
+        for j in 0..k {
+            if i == j {
+                continue;
+            }
+            topo.update_link(n(i), n(j), 1.0);
+            created += 1;
+            if created >= MAX_LIVE_LINKS + 500 {
+                break 'outer;
+            }
+        }
+    }
+    assert!(
+        topo.node_count() <= k as usize,
+        "node set must stay well under its own cap for this test to isolate the edge cap"
+    );
+    assert!(
+        topo.edge_count() <= MAX_LIVE_LINKS,
+        "edge_count()={} exceeds MAX_LIVE_LINKS={MAX_LIVE_LINKS}",
+        topo.edge_count()
+    );
+}
+
+#[test]
+fn add_node_evicts_the_coldest_node_not_the_newest() {
+    // WHY(#204): the eviction policy must not simply refuse growth (which
+    // would let a flood permanently lock out real, later-observed nodes) —
+    // it must make room by removing the entry with the OLDEST activity, so
+    // a node that keeps transmitting is never the one an attacker's flood
+    // pushes out.
+    let mut topo = MeshTopology::new();
+    let hub = n(u32::MAX);
+    // WHY exactly MAX_LIVE_NODES-1 iterations: each touches one cold node
+    // plus the shared hub, so this fills to EXACTLY the cap (cold nodes +
+    // hub) with no eviction yet triggered — verified below — leaving n(0)
+    // as the single oldest-touched entry and `hub` as the freshest.
+    for i in 0..(MAX_LIVE_NODES as u32 - 1) {
+        topo.update_link(n(i), hub, 1.0);
+    }
+    assert_eq!(
+        topo.node_count(),
+        MAX_LIVE_NODES,
+        "setup must reach the cap with no eviction yet"
+    );
+    assert!(topo.contains_node(n(0)), "setup must not have evicted n(0)");
+
+    topo.add_node(n(MAX_LIVE_NODES as u32));
+
+    assert!(
+        !topo.contains_node(n(0)),
+        "the coldest (least-recently touched) node must be the one evicted"
+    );
+    assert!(
+        topo.contains_node(hub),
+        "the freshest hub node must survive"
+    );
+    assert!(
+        topo.contains_node(n(MAX_LIVE_NODES as u32)),
+        "the newly inserted node must be present"
+    );
+    assert_eq!(topo.node_count(), MAX_LIVE_NODES);
+}
+
+#[test]
+fn update_link_never_evicts_its_own_two_new_endpoints() {
+    // WHY: regression, caught in review before shipping — `update_link`
+    // must insert TWO nodes (`from` and `to`) before their edge can exist.
+    // A node the FIRST insertion just added has zero edges yet
+    // (freshness=None, the coldest possible key), so an eviction triggered
+    // by the SECOND, independent insertion could pick the node the first
+    // one just added — before the edge between them is ever created —
+    // leaving a dangling index and panicking `StableGraph::add_edge`.
+    let mut topo = MeshTopology::new();
+    let hub = n(u32::MAX);
+    for i in 0..(MAX_LIVE_NODES as u32 - 1) {
+        topo.update_link(n(i), hub, 1.0);
+    }
+    assert_eq!(topo.node_count(), MAX_LIVE_NODES);
+
+    let from = n(MAX_LIVE_NODES as u32);
+    let to = n(MAX_LIVE_NODES as u32 + 1);
+    topo.update_link(from, to, 1.0); // must not panic
+
+    assert!(
+        topo.contains_node(from),
+        "the edge's own source must survive its own insertion call"
+    );
+    assert!(topo.contains_node(to), "the edge's own target must survive");
+    assert!(
+        topo.neighbors(from).iter().any(|&(num, _)| num == to),
+        "the new edge between the two brand-new endpoints must exist"
+    );
+    assert_eq!(topo.node_count(), MAX_LIVE_NODES);
+}
+
+#[test]
+fn load_from_bytes_never_evicts_its_own_two_new_endpoints() {
+    // WHY: regression sibling to `update_link_never_evicts_its_own_two_new_endpoints`
+    // (#204). `load_from_bytes`'s link-restore loop predates `add_node`'s
+    // eviction capability and was not re-audited when that capability was
+    // added: it called plain `add_node` for both of a link's endpoints
+    // instead of `add_node_protecting`, so the second `add_node` call for
+    // `to` could evict the node the first call just inserted for `from` --
+    // before their edge exists -- leaving a dangling `NodeIndex` and
+    // panicking `StableGraph::add_edge`.
+    //
+    // Construction: a chain of `MAX_LIVE_NODES - 1` links spanning node ids
+    // `0..MAX_LIVE_NODES` fills the graph to exactly the cap with every
+    // node warmed by an edge (`freshness = Some(_)`), zero `None`-freshness
+    // entries. One more link between two brand-new ids then forces two
+    // evictions back to back while restoring: the first `add_node` call for
+    // that link evicts some warm chain node and inserts `from` -- now the
+    // UNIQUE `None`-freshness (zero-edge) entry, hence deterministically
+    // the coldest. The second `add_node` call for `to` then evicts `from`
+    // itself, and `add_edge` on the now-stale `from_idx` panics.
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "test-only: indices are far below u32::MAX"
+    )]
+    let cap = MAX_LIVE_NODES as u32;
+    let mut links: Vec<LinkSnapshot> = (0..cap - 1)
+        .map(|i| LinkSnapshot {
+            from: n(i),
+            to: n(i + 1),
+            snr: 1.0,
+            packet_count: 1,
+        })
+        .collect();
+    links.push(LinkSnapshot {
+        from: n(cap),
+        to: n(cap + 1),
+        snr: 1.0,
+        packet_count: 1,
+    });
+    let snapshot = TopologySnapshot {
+        nodes: Vec::new(),
+        links,
+    };
+    let bytes = serde_json::to_vec(&snapshot).unwrap();
+
+    let topo = MeshTopology::load_from_bytes(&bytes).unwrap(); // must not panic
+
+    assert_eq!(topo.node_count(), MAX_LIVE_NODES);
+    assert!(
+        topo.contains_node(n(cap)),
+        "the new link's own source must survive its own restore"
+    );
+    assert!(
+        topo.contains_node(n(cap + 1)),
+        "the new link's own target must survive its own restore"
+    );
+    assert!(
+        topo.neighbors(n(cap))
+            .iter()
+            .any(|&(num, _)| num == n(cap + 1)),
+        "the new edge between the two brand-new endpoints must exist"
     );
 }

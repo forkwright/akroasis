@@ -62,7 +62,7 @@ fn add_and_get_round_trip() {
     let entry = vault.get("openai-key").unwrap();
     assert_eq!(entry.name, "openai-key");
     assert_eq!(entry.credential_type, CredentialType::ApiKey);
-    assert_eq!(entry.secret, secret);
+    assert_eq!(entry.secret.as_slice(), secret.as_slice());
 }
 
 #[test]
@@ -157,7 +157,11 @@ fn entries_persist_across_open_close() {
 
     let vault = Vault::open(&vault_path, TEST_PASSPHRASE).unwrap();
     let entry = vault.get("persistent").unwrap();
-    assert_eq!(entry.secret, b"cert-pem", "secret must survive close/open");
+    assert_eq!(
+        entry.secret.as_slice(),
+        b"cert-pem".as_slice(),
+        "secret must survive close/open"
+    );
 }
 
 #[test]
@@ -190,7 +194,8 @@ fn rotate_updates_secret_and_preserves_name() {
     let entry = vault.get("api-key").unwrap();
     assert_eq!(entry.name, "api-key", "name must be preserved after rotate");
     assert_eq!(
-        entry.secret, b"new-secret",
+        entry.secret.as_slice(),
+        b"new-secret".as_slice(),
         "secret must be updated after rotate"
     );
     assert_eq!(
@@ -616,4 +621,91 @@ fn open_reports_absence_rather_than_io_failure_for_a_bare_directory() {
         matches!(result, Err(VaultError::NotInitialized { .. })),
         "a headerless directory must report typed absence, got: {result:?}"
     );
+}
+
+// -----------------------------------------------------------------
+// Secret zeroization (akroasis#218)
+// -----------------------------------------------------------------
+
+#[test]
+fn decrypted_secret_is_zeroized_on_drop_by_type() {
+    // Regression for forkwright/akroasis#218: `DecryptedEntry.secret` used
+    // to be a bare `Vec<u8>`, which does not implement `ZeroizeOnDrop` —
+    // this assertion would FAIL TO COMPILE against that field type. Wrapping
+    // it in `Zeroizing<Vec<u8>>` (at the point `decrypt` returns, with no
+    // intermediate unwrapped copy) makes the guarantee type-enforced rather
+    // than a claim: `Zeroizing<Z>: ZeroizeOnDrop` for any `Z: Zeroize`, so
+    // this now compiles and holds for every `DecryptedEntry` the shipped
+    // `Vault::get` returns.
+    fn assert_zeroizes_on_drop<T: zeroize::ZeroizeOnDrop>(_: &T) {}
+
+    let dir = tempfile::tempdir().unwrap();
+    let vault_path = dir.path().join("zeroize-vault");
+
+    let vault = Vault::create(&vault_path, TEST_PASSPHRASE).unwrap();
+    vault
+        .add("zeroize-key", CredentialType::ApiKey, b"scrub-me-on-drop")
+        .unwrap();
+
+    let entry = vault.get("zeroize-key").unwrap();
+    assert_zeroizes_on_drop(&entry.secret);
+}
+
+// -----------------------------------------------------------------
+// At-rest metadata encryption (akroasis#215)
+// -----------------------------------------------------------------
+
+#[test]
+fn on_disk_fjall_contents_do_not_reveal_credential_name() {
+    // Regression for forkwright/akroasis#215: `StoredEntry` used to keep
+    // credential_type/metadata/status/history as plaintext JSON, and the
+    // fjall record KEY was the credential name itself in cleartext — so the
+    // name appeared on disk twice over, once as the key and (implicitly, via
+    // being findable) as an index into the plaintext value. This reads
+    // every file fjall actually wrote under the vault's `data/` directory
+    // and asserts the name is not a byte-for-byte substring of any of them.
+    //
+    // Before the fix this failed: the name was the literal fjall key, so it
+    // appears verbatim in the LSM tree's persisted pages. After the fix the
+    // fjall key is a keyed BLAKE3 hash of the name and the value is two
+    // ChaCha20-Poly1305 ciphertexts, neither of which can contain the
+    // plaintext name as a substring without breaking either primitive.
+    const DISTINCTIVE_NAME: &str = "surveillance-counter-mesh-psk-zzyzx9182";
+
+    let dir = tempfile::tempdir().unwrap();
+    let vault_path = dir.path().join("metadata-at-rest-vault");
+
+    let vault = Vault::create(&vault_path, TEST_PASSPHRASE).unwrap();
+    vault
+        .add(DISTINCTIVE_NAME, CredentialType::Psk, b"mesh-secret-value")
+        .unwrap();
+    drop(vault);
+
+    let mut on_disk = Vec::new();
+    collect_file_bytes(&vault_path.join(DATA_DIR), &mut on_disk);
+
+    assert!(
+        !on_disk.is_empty(),
+        "validation check: fjall must have written SOMETHING to the data directory"
+    );
+    assert!(
+        !on_disk
+            .windows(DISTINCTIVE_NAME.len())
+            .any(|window| window == DISTINCTIVE_NAME.as_bytes()),
+        "credential name must not appear in plaintext anywhere under the fjall data directory"
+    );
+}
+
+/// Recursively reads every regular file under `dir`, appending its bytes to
+/// `out`. Test-only: used to scan fjall's actual on-disk output for
+/// plaintext leakage rather than trusting the in-process API surface.
+fn collect_file_bytes(dir: &std::path::Path, out: &mut Vec<u8>) {
+    for entry in std::fs::read_dir(dir).unwrap() {
+        let path = entry.unwrap().path();
+        if path.is_dir() {
+            collect_file_bytes(&path, out);
+        } else if let Ok(bytes) = std::fs::read(&path) {
+            out.extend_from_slice(&bytes);
+        }
+    }
 }

@@ -44,6 +44,15 @@ pub enum DeliveryFailure {
     MaxRetries,
     /// Explicit NAK with a routing error code.
     Nak(routing::Error),
+    /// NAK carrying a routing error code this build does not recognize.
+    ///
+    // WHY a distinct variant rather than folding into `Nak` (#208):
+    // `routing::Error` cannot represent "unrecognized" without reusing an
+    // existing, semantically-wrong code — see `RoutingResult::UnknownError`.
+    UnknownNak {
+        /// The raw wire code that did not match any known `routing::Error` variant.
+        code: i32,
+    },
     /// Message TTL expired.
     Ttl,
     /// Destination node is offline and S&F is not available.

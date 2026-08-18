@@ -1,11 +1,11 @@
 //! Outbound message construction for Meshtastic mesh packets.
 
 use prost::Message as _;
-use rand_core::{OsRng, RngCore as _};
 
 use crate::config::MessageConfig;
 use crate::crypto;
-use crate::error::Error;
+use crate::error::{Error, InvalidPositionSnafu};
+use crate::packet_id::PacketIdCounter;
 use crate::proto::mesh_packet::Priority;
 use crate::proto::{AdminMessage, Data, MeshPacket, PortNum, Position, mesh_packet};
 use crate::types::{ChannelIndex, MAX_HOP_LIMIT, NodeNum};
@@ -17,10 +17,12 @@ use crate::types::{ChannelIndex, MAX_HOP_LIMIT, NodeNum};
 /// # Examples
 ///
 /// ```ignore
+/// let mut packet_ids = PacketIdCounter::resume(persisted_last_id);
 /// let packet = MessageBuilder::text(NodeNum(0x1234), "hello")
 ///     .with_ack()
-///     .build(NodeNum(0xABCD), &[0x01])?;
+///     .build(NodeNum(0xABCD), &[0x01], &mut packet_ids)?;
 /// ```
+#[derive(Debug)]
 pub struct MessageBuilder {
     dest: NodeNum,
     portnum: PortNum,
@@ -56,25 +58,53 @@ impl MessageBuilder {
     ///
     /// Latitude and longitude are in decimal degrees; they are converted to
     /// Meshtastic's `i32` representation (`value * 1e7`).
-    #[must_use]
-    pub fn position(dest: NodeNum, lat: f64, lon: f64) -> Self {
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::InvalidPosition`] if `lat` or `lon` is not finite, or
+    /// outside `[-90, 90]` / `[-180, 180]` respectively (#247).
+    pub fn position(dest: NodeNum, lat: f64, lon: f64) -> Result<Self, Error> {
         Self::position_with_config(dest, lat, lon, &MessageConfig::default())
     }
 
     /// Build a position message with a caller-supplied [`MessageConfig`].
-    #[must_use]
-    pub fn position_with_config(dest: NodeNum, lat: f64, lon: f64, config: &MessageConfig) -> Self {
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::InvalidPosition`] if `lat` or `lon` is not finite, or
+    /// outside `[-90, 90]` / `[-180, 180]` respectively (#247).
+    pub fn position_with_config(
+        dest: NodeNum,
+        lat: f64,
+        lon: f64,
+        config: &MessageConfig,
+    ) -> Result<Self, Error> {
+        // WHY: the `as i32` cast below never panics — Rust saturates NaN to 0
+        // and ±Inf to the i32 extremes — so an unchecked cast turns a failed
+        // GPS read (NaN) or a caller bug (Inf, out-of-range degrees) into a
+        // plausible-looking wire coordinate instead of a build-time error.
+        // Validate BEFORE the cast so the invariant the cast relies on
+        // (finite, in-range degrees) is actually established, not merely
+        // asserted (#247).
+        if !lat.is_finite()
+            || !(-90.0..=90.0).contains(&lat)
+            || !lon.is_finite()
+            || !(-180.0..=180.0).contains(&lon)
+        {
+            return InvalidPositionSnafu { lat, lon }.fail();
+        }
+
         // WHY: Meshtastic firmware stores lat/lon as fixed-point i32 = degrees * 1e7.
         #[expect(
             clippy::as_conversions,
             reason = "f64→i32 via multiplication is the Meshtastic wire format convention"
         )]
         let pos = Position {
-            latitude_i: (lat * 1e7) as i32, // SAFETY: lat ∈ [-90, 90] so lat*1e7 ∈ [-9e8, 9e8] which fits i32 (±2.1e9)
-            longitude_i: (lon * 1e7) as i32, // SAFETY: lon ∈ [-180, 180] so lon*1e7 ∈ [-1.8e9, 1.8e9] which fits i32
+            latitude_i: (lat * 1e7) as i32, // SAFETY: lat validated finite + ∈ [-90, 90] above, so lat*1e7 ∈ [-9e8, 9e8] which fits i32 (±2.1e9)
+            longitude_i: (lon * 1e7) as i32, // SAFETY: lon validated finite + ∈ [-180, 180] above, so lon*1e7 ∈ [-1.8e9, 1.8e9] which fits i32
             ..Default::default()
         };
-        Self {
+        Ok(Self {
             dest,
             portnum: PortNum::PositionApp,
             payload: pos.encode_to_vec(),
@@ -82,7 +112,7 @@ impl MessageBuilder {
             want_ack: false,
             hop_limit: config.default_hop_limit.min(MAX_HOP_LIMIT),
             priority: Priority::Default,
-        }
+        })
     }
 
     /// Build an admin message (`ADMIN_APP`) with the default hop limit.
@@ -157,14 +187,23 @@ impl MessageBuilder {
 
     /// Consume the builder and produce an encrypted [`MeshPacket`].
     ///
-    /// A random `packet_id` is assigned. The payload is encrypted using
-    /// AES-CTR with the provided PSK.
+    /// `packet_id` is drawn FROM `packet_ids` (see [`PacketIdCounter`] — it
+    /// doubles as the AES-CTR nonce counter for this PSK, so its
+    /// non-repetition guarantee is what keeps the nonce from repeating;
+    /// see #209). The payload is encrypted using AES-CTR with the provided PSK.
     ///
     /// # Errors
     ///
-    /// Returns [`Error::Encryption`] if encryption fails (e.g. invalid PSK length).
-    pub fn build(self, from: NodeNum, psk: &[u8]) -> Result<MeshPacket, Error> {
-        let packet_id = OsRng.next_u32();
+    /// Returns [`Error::Encryption`] if encryption fails (e.g. invalid PSK
+    /// length). Returns [`Error::PacketIdSpaceExhausted`] if `packet_ids`
+    /// has issued every value in its space — see [`PacketIdCounter::next_id`].
+    pub fn build(
+        self,
+        from: NodeNum,
+        psk: &[u8],
+        packet_ids: &mut PacketIdCounter,
+    ) -> Result<MeshPacket, Error> {
+        let packet_id = packet_ids.next_id()?;
 
         let data = Data {
             portnum: i32::from(self.portnum),
@@ -206,7 +245,10 @@ impl MessageBuilder {
 
     /// Consume the builder and produce an encrypted [`MeshPacket`] with a deterministic packet ID.
     ///
-    /// Useful for testing. Production code should use [`build`](Self::build).
+    /// Test-only: deliberately bypasses [`PacketIdCounter`] to let a test
+    /// pick an exact `packet_id`/nonce. Production code MUST use
+    /// [`build`](Self::build) — a caller reachable outside `#[cfg(test)]`
+    /// has no such bypass.
     ///
     /// # Errors
     ///
@@ -267,7 +309,7 @@ mod tests {
     fn text_message_sets_portnum_and_encrypts() {
         #[expect(clippy::unwrap_used, reason = "test-only")]
         let pkt = MessageBuilder::text(DEST, "hello mesh")
-            .build(FROM_NODE, &[0x01])
+            .build(FROM_NODE, &[0x01], &mut PacketIdCounter::resume(0))
             .unwrap();
 
         assert_eq!(pkt.from, FROM_NODE.0);
@@ -284,7 +326,7 @@ mod tests {
     fn text_message_unencrypted_when_empty_psk() {
         #[expect(clippy::unwrap_used, reason = "test-only")]
         let pkt = MessageBuilder::text(DEST, "cleartext")
-            .build(FROM_NODE, &[])
+            .build(FROM_NODE, &[], &mut PacketIdCounter::resume(0))
             .unwrap();
 
         assert!(
@@ -297,7 +339,8 @@ mod tests {
     fn position_message_encodes_lat_lon() {
         #[expect(clippy::unwrap_used, reason = "test-only")]
         let pkt = MessageBuilder::position(DEST, 37.7749, -122.4194)
-            .build(FROM_NODE, &[])
+            .unwrap()
+            .build(FROM_NODE, &[], &mut PacketIdCounter::resume(0))
             .unwrap();
 
         let Some(PayloadVariant::Decoded(data)) = &pkt.payload_variant else {
@@ -315,13 +358,54 @@ mod tests {
     }
 
     #[test]
+    fn position_rejects_nan_latitude() {
+        // WHY(#247): pre-fix, `NaN as i32` saturates to 0 rather than
+        // panicking, so a failed GPS read silently produced a packet at
+        // (0, lon) instead of failing the build.
+        let result = MessageBuilder::position(DEST, f64::NAN, -122.4194);
+        assert!(
+            matches!(result, Err(Error::InvalidPosition { .. })),
+            "NaN latitude must be rejected, got {result:?}"
+        );
+    }
+
+    #[test]
+    fn position_rejects_infinite_longitude() {
+        let result = MessageBuilder::position(DEST, 37.7749, f64::INFINITY);
+        assert!(
+            matches!(result, Err(Error::InvalidPosition { .. })),
+            "infinite longitude must be rejected, got {result:?}"
+        );
+    }
+
+    #[test]
+    fn position_rejects_out_of_range_latitude() {
+        // WHY: distinguishes the range check from the finiteness check --
+        // 91.0 is finite but not a valid latitude.
+        let result = MessageBuilder::position(DEST, 91.0, 0.0);
+        assert!(
+            matches!(result, Err(Error::InvalidPosition { .. })),
+            "out-of-range latitude must be rejected, got {result:?}"
+        );
+    }
+
+    #[test]
+    fn position_accepts_boundary_coordinates() {
+        // WHY: the falsifiable half of the range checks above -- without
+        // this, an inverted comparison (e.g. `>` instead of `>=`) that
+        // rejects everything would also pass the rejection tests.
+        assert!(MessageBuilder::position(DEST, 90.0, 180.0).is_ok());
+        assert!(MessageBuilder::position(DEST, -90.0, -180.0).is_ok());
+    }
+
+    #[test]
     fn admin_message_sets_reliable_priority() {
         let admin = AdminMessage {
             payload_variant: None,
         };
         #[expect(clippy::unwrap_used, reason = "test-only")]
         let pkt = MessageBuilder::admin(DEST, &admin)
-            .build(FROM_NODE, &[])
+            .build(FROM_NODE, &[], &mut PacketIdCounter::resume(0))
             .unwrap();
         assert_eq!(pkt.priority, i32::from(Priority::Reliable));
         assert!(pkt.want_ack, "admin messages should request ACK");
@@ -331,7 +415,7 @@ mod tests {
     fn traceroute_uses_max_hop_limit() {
         #[expect(clippy::unwrap_used, reason = "test-only")]
         let pkt = MessageBuilder::traceroute(DEST)
-            .build(FROM_NODE, &[])
+            .build(FROM_NODE, &[], &mut PacketIdCounter::resume(0))
             .unwrap();
         assert_eq!(pkt.hop_limit, u32::from(MAX_HOP_LIMIT));
         assert!(pkt.want_ack, "traceroute should request ACK");
@@ -345,7 +429,7 @@ mod tests {
             .with_ack()
             .hop_limit(5)
             .priority(Priority::Reliable)
-            .build(FROM_NODE, &[])
+            .build(FROM_NODE, &[], &mut PacketIdCounter::resume(0))
             .unwrap();
 
         assert_eq!(pkt.channel, 2);
@@ -359,7 +443,7 @@ mod tests {
         #[expect(clippy::unwrap_used, reason = "test-only")]
         let pkt = MessageBuilder::text(DEST, "test")
             .hop_limit(100)
-            .build(FROM_NODE, &[])
+            .build(FROM_NODE, &[], &mut PacketIdCounter::resume(0))
             .unwrap();
         assert_eq!(pkt.hop_limit, u32::from(MAX_HOP_LIMIT));
     }
@@ -374,7 +458,7 @@ mod tests {
         };
         #[expect(clippy::unwrap_used, reason = "test-only")]
         let pkt = MessageBuilder::text_with_config(DEST, "test", &cfg)
-            .build(FROM_NODE, &[])
+            .build(FROM_NODE, &[], &mut PacketIdCounter::resume(0))
             .unwrap();
         assert_eq!(pkt.hop_limit, 1);
         assert_eq!(pkt.hop_start, 1);
@@ -390,7 +474,7 @@ mod tests {
         };
         #[expect(clippy::unwrap_used, reason = "test-only")]
         let pkt = MessageBuilder::text_with_config(DEST, "test", &cfg)
-            .build(FROM_NODE, &[])
+            .build(FROM_NODE, &[], &mut PacketIdCounter::resume(0))
             .unwrap();
         assert_eq!(pkt.hop_limit, u32::from(MAX_HOP_LIMIT));
     }
@@ -410,7 +494,11 @@ mod tests {
         // 1..=10 channel index resolves to itself, so a 3-byte PSK reaches
         // AES-CTR as an invalid key length. `build` must surface that as
         // Error::Encryption rather than emitting an unencrypted packet.
-        let result = MessageBuilder::text(DEST, "test").build(FROM_NODE, &[0xAA, 0xBB, 0xCC]);
+        let result = MessageBuilder::text(DEST, "test").build(
+            FROM_NODE,
+            &[0xAA, 0xBB, 0xCC],
+            &mut PacketIdCounter::resume(0),
+        );
 
         assert!(
             matches!(result, Err(Error::Encryption { .. })),
@@ -425,12 +513,49 @@ mod tests {
         // Without this the test above would pass even if `build` always failed.
         #[expect(clippy::unwrap_used, reason = "test-only")]
         let pkt = MessageBuilder::text(DEST, "test")
-            .build(FROM_NODE, &[0x11; 16])
+            .build(FROM_NODE, &[0x11; 16], &mut PacketIdCounter::resume(0))
             .unwrap();
 
         assert!(matches!(
             pkt.payload_variant,
             Some(mesh_packet::PayloadVariant::Encrypted(_))
         ));
+    }
+
+    #[test]
+    fn sequential_builds_never_share_a_packet_id() {
+        // WHY(#209): the issue's literal Done-when — `build` is the shipped
+        // production entry point, and it must draw `packet_id` from a
+        // shared, advancing counter rather than an independent random draw
+        // per call, or two packets can carry the same AES-CTR nonce.
+        let mut ids = PacketIdCounter::resume(0);
+        #[expect(clippy::unwrap_used, reason = "test-only")]
+        let first = MessageBuilder::text(DEST, "one")
+            .build(FROM_NODE, &[0x01], &mut ids)
+            .unwrap();
+        #[expect(clippy::unwrap_used, reason = "test-only")]
+        let second = MessageBuilder::text(DEST, "two")
+            .build(FROM_NODE, &[0x01], &mut ids)
+            .unwrap();
+
+        assert_ne!(
+            first.id, second.id,
+            "two builds sharing one counter must not share a packet_id/nonce"
+        );
+        assert_eq!(second.id, first.id + 1);
+    }
+
+    #[test]
+    fn build_surfaces_packet_id_space_exhaustion() {
+        // WHY(#209): `build` must propagate the counter's refusal rather
+        // than silently wrapping the nonce — see `packet_id::tests::next_refuses_to_wrap_past_u32_max`
+        // for the underlying counter behavior this exercises through the
+        // production entry point.
+        let mut ids = PacketIdCounter::resume(u32::MAX);
+        let result = MessageBuilder::text(DEST, "test").build(FROM_NODE, &[0x01], &mut ids);
+        assert!(
+            matches!(result, Err(Error::PacketIdSpaceExhausted { .. })),
+            "build must surface exhaustion rather than emit a wrapped packet_id, got {result:?}"
+        );
     }
 }

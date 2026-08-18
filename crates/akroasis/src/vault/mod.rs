@@ -87,6 +87,10 @@ pub enum VaultCliError {
     #[snafu(display("passphrases do not match"))]
     PassphraseMismatch,
 
+    /// The passphrase was empty.
+    #[snafu(display("passphrase must not be empty — please try again"))]
+    PassphraseEmpty,
+
     /// The user cancelled the operation.
     #[snafu(display("operation cancelled"))]
     Cancelled,
@@ -125,14 +129,43 @@ fn read_passphrase(prompt: &str) -> Result<String, VaultCliError> {
     rpassword::prompt_password(prompt).context(PassphraseInputSnafu)
 }
 
+/// Validates a passphrase confirmation: the two entries must match, and the
+/// result must not be empty.
+///
+/// Split out as a pure function so this validation is unit-testable
+/// directly — `rpassword::prompt_password` reads the real terminal with no
+/// injection seam, so `read_passphrase_confirmed` itself cannot be driven
+/// from a test.
+///
+/// # Errors
+///
+/// Returns [`VaultCliError::PassphraseMismatch`] if `first != second`.
+/// Returns [`VaultCliError::PassphraseEmpty`] if the matching value is empty
+/// — including two empty entries, which match each other and would
+/// otherwise pass the check above silently (forkwright/akroasis#287).
+fn confirm_passphrase(first: &str, second: &str) -> Result<(), VaultCliError> {
+    if first != second {
+        return PassphraseMismatchSnafu.fail();
+    }
+
+    if first.is_empty() {
+        return PassphraseEmptySnafu.fail();
+    }
+
+    Ok(())
+}
+
 /// Reads and confirms a new passphrase (double entry).
+///
+/// Rejects an empty passphrase here, at the interactive boundary, so a
+/// double-Enter fails immediately with a clear retry message rather than
+/// silently succeeding and relying on `Vault::create`'s own rejection to
+/// surface as a less specific downstream error (forkwright/akroasis#287).
 fn read_passphrase_confirmed(prompt: &str) -> Result<String, VaultCliError> {
     let first = read_passphrase(prompt)?;
     let second = read_passphrase("Confirm passphrase: ")?;
 
-    if first != second {
-        return PassphraseMismatchSnafu.fail();
-    }
+    confirm_passphrase(&first, &second)?;
 
     Ok(first)
 }
@@ -550,6 +583,42 @@ mod tests {
     }
 
     // -----------------------------------------------------------------
+    // Passphrase confirmation (akroasis#287)
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn confirm_passphrase_rejects_two_empty_entries() {
+        // The double-Enter case the issue names: two empty entries MATCH
+        // each other, so the mismatch check alone would let this through.
+        let result = confirm_passphrase("", "");
+        assert!(
+            matches!(result, Err(VaultCliError::PassphraseEmpty)),
+            "two empty passphrase entries must be refused, got {result:?}"
+        );
+    }
+
+    #[test]
+    fn confirm_passphrase_rejects_mismatched_entries() {
+        let result = confirm_passphrase("first-entry", "second-entry");
+        assert!(
+            matches!(result, Err(VaultCliError::PassphraseMismatch)),
+            "mismatched entries must be refused, got {result:?}"
+        );
+    }
+
+    #[test]
+    fn confirm_passphrase_accepts_matching_nonempty_entries() {
+        let result = confirm_passphrase(
+            "correct horse battery staple",
+            "correct horse battery staple",
+        );
+        assert!(
+            result.is_ok(),
+            "matching non-empty entries must be accepted, got {result:?}"
+        );
+    }
+
+    // -----------------------------------------------------------------
     // Integration tests with temp vault
     // -----------------------------------------------------------------
 
@@ -579,7 +648,7 @@ mod tests {
             .unwrap();
 
         let entry = vault.get("test-key").unwrap();
-        assert_eq!(entry.secret, b"secret-123");
+        assert_eq!(entry.secret.as_slice(), b"secret-123".as_slice());
         assert_eq!(entry.credential_type, CredentialType::ApiKey);
     }
 
@@ -640,7 +709,7 @@ mod tests {
         vault.rotate("rotate-key", b"new-secret").unwrap();
 
         let entry = vault.get("rotate-key").unwrap();
-        assert_eq!(entry.secret, b"new-secret");
+        assert_eq!(entry.secret.as_slice(), b"new-secret".as_slice());
     }
 
     #[test]
@@ -658,7 +727,8 @@ mod tests {
 
         let entry = vault.get("binary-key").unwrap();
         assert_eq!(
-            entry.secret, non_utf8_secret,
+            entry.secret.as_slice(),
+            non_utf8_secret,
             "secret bytes must round-trip exactly, with no UTF-8 lossy substitution"
         );
     }

@@ -319,6 +319,63 @@ fn nak_max_retransmit_detected() {
 }
 
 #[test]
+fn unrecognized_error_code_is_never_classified_as_ack() {
+    // WHY(#208): the fail-open defect. Neither `NOT_AUTHORIZED` (33) nor any
+    // code above it is defined in the vendored routing::Error enum, so 999
+    // is guaranteed out-of-enum without depending on the proto staying
+    // fixed at its current variant count. The pre-fix
+    // `unwrap_or(routing::Error::None)` fallback read this as `Error::None`
+    // -> Ack, i.e. delivery confirmed for a code the build never decoded.
+    let pkt = make_routing_packet(0x9999, 999);
+    let result = RoutingProcessor::process_routing(&pkt);
+    assert_ne!(
+        result,
+        RoutingResult::Ack {
+            request_id: PacketId(0x9999)
+        },
+        "an unrecognized routing error code must never read as delivery confirmation"
+    );
+    assert_eq!(
+        result,
+        RoutingResult::UnknownError {
+            request_id: PacketId(0x9999),
+            code: 999,
+        }
+    );
+}
+
+#[test]
+fn apply_unknown_error_marks_failed_when_no_inflight_and_never_acks() {
+    // WHY(#208): exercises the write path, not just the classification —
+    // `apply_routing_result` must route `UnknownError` through the same
+    // not-delivered pipeline as `Nak`, never call `mark_acknowledged`.
+    let mut delivery = DeliveryTracker::new();
+    let mut outbound = OutboundQueue::new();
+    let id = PacketId(0xBEEF);
+
+    delivery.track(id, 0x5678);
+    delivery.mark_sent(id);
+
+    let result = RoutingResult::UnknownError {
+        request_id: id,
+        code: 999,
+    };
+    RoutingProcessor::apply_routing_result(&result, &mut delivery, &mut outbound);
+
+    assert!(
+        !matches!(
+            delivery.delivery_status(id),
+            Some(crate::delivery::DeliveryStatus::Acknowledged { .. })
+        ),
+        "an unrecognized routing error code must never mark delivery acknowledged"
+    );
+    assert!(matches!(
+        delivery.delivery_status(id),
+        Some(crate::delivery::DeliveryStatus::Failed { .. })
+    ));
+}
+
+#[test]
 fn non_routing_packet_ignored() {
     let data = Data {
         portnum: i32::from(PortNum::TextMessageApp),
@@ -656,19 +713,24 @@ fn node_at(num: u32, latitude: f64, longitude: f64) -> MeshNode {
 }
 
 #[tokio::test]
-async fn neighborinfo_signal_is_located_at_the_reporter_not_the_packet_sender() {
-    // WHY: NEIGHBORINFO carries its reporter id in the payload, so a relayed
-    // report describes links the relay is not an endpoint of. Locating every
-    // signal at the packet sender puts those links at the relay's coordinates.
+async fn neighborinfo_spoofed_node_id_is_dropped_not_attributed_to_the_victim() {
+    // WHY(#207): NEIGHBORINFO's `node_id` is a claim embedded in the payload
+    // ITSELF, independent of `packet.from`. Pre-fix, node 0x1111 could
+    // broadcast a NEIGHBORINFO packet claiming `node_id: 0x2222` and have the
+    // resulting link/signal attributed to 0x2222 -- a victim who never sent
+    // anything -- rather than to 0x1111, the node that actually transmitted
+    // it. The fix requires `node_id == packet.from`; on mismatch the report
+    // is dropped, producing no event and no topology mutation under either
+    // identity.
     let (tx, mut rx) = broadcast::channel(64);
     let mut node_db = NodeDb::new();
     node_db.set_my_node(NodeNum(0xAAAA));
-    node_db.insert(node_at(0x1111, 10.0, 10.0)); // the relay that transmitted
-    node_db.insert(node_at(0x2222, 50.0, 60.0)); // the node the report is about
+    node_db.insert(node_at(0x1111, 10.0, 10.0)); // the actual sender
+    node_db.insert(node_at(0x2222, 50.0, 60.0)); // the claimed/victim node_id
     let mut proc = PacketProcessor::new(node_db, MeshTopology::new(), tx);
 
     let ni = NeighborInfo {
-        node_id: 0x2222,
+        node_id: 0x2222, // spoofed: does not match the packet's `from`
         last_sent_by_id: 0,
         node_broadcast_interval_secs: 0,
         neighbors: vec![Neighbor {
@@ -681,7 +743,48 @@ async fn neighborinfo_signal_is_located_at_the_reporter_not_the_packet_sender() 
 
     let packet = make_mesh_packet(0x1111, portnum::NEIGHBORINFO_APP, payload);
     let events = proc.process_mesh_packet(&packet);
+
+    assert!(
+        events.is_empty(),
+        "a spoofed node_id must yield no events, got {events:?}"
+    );
+    assert!(
+        !proc.topology().contains_node(NodeNum(0x2222)),
+        "the victim node must gain no topology entry from a report it never sent"
+    );
+    assert!(
+        rx.try_recv().is_err(),
+        "no signal should be broadcast for a dropped report"
+    );
+}
+
+#[tokio::test]
+async fn neighborinfo_agreeing_node_id_is_located_at_the_reporter() {
+    // WHY: the falsifiable half of the spoof-rejection test above -- without
+    // this, a handler that dropped EVERY NEIGHBORINFO report (not just
+    // mismatched ones) would also pass it.
+    let (tx, mut rx) = broadcast::channel(64);
+    let mut node_db = NodeDb::new();
+    node_db.set_my_node(NodeNum(0xAAAA));
+    node_db.insert(node_at(0x2222, 50.0, 60.0)); // sender == claimed node_id
+    let mut proc = PacketProcessor::new(node_db, MeshTopology::new(), tx);
+
+    let ni = NeighborInfo {
+        node_id: 0x2222, // agrees with packet.from below
+        last_sent_by_id: 0,
+        node_broadcast_interval_secs: 0,
+        neighbors: vec![Neighbor {
+            node_id: 0x3333,
+            snr: 4.0,
+        }],
+    };
+    let mut payload = Vec::new();
+    ni.encode(&mut payload).unwrap();
+
+    let packet = make_mesh_packet(0x2222, portnum::NEIGHBORINFO_APP, payload);
+    let events = proc.process_mesh_packet(&packet);
     assert_eq!(events.len(), 1, "one neighbor should yield one event");
+    assert!(proc.topology().contains_node(NodeNum(0x2222)));
 
     let signal = rx.recv().await.unwrap();
     #[expect(clippy::expect_used, reason = "test-only")]
@@ -691,7 +794,7 @@ async fn neighborinfo_signal_is_located_at_the_reporter_not_the_packet_sender() 
     assert!(
         (coords.latitude - 50.0).abs() < f64::EPSILON
             && (coords.longitude - 60.0).abs() < f64::EPSILON,
-        "signal should be located at reporter 0x2222 (50, 60), got ({}, {})",
+        "signal should be located at 0x2222 (50, 60), got ({}, {})",
         coords.latitude,
         coords.longitude
     );

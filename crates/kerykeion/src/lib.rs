@@ -22,6 +22,7 @@
 //! - Gateway detection: [`gateway::GatewayDetector`]
 //! - Signal production: [`signals::MeshEvent`]
 //! - Message construction: [`message::MessageBuilder`]
+//! - Monotonic outbound nonce sequencing: [`packet_id::PacketIdCounter`]
 //! - Outbound queue: [`outbound::OutboundQueue`]
 //! - Message routing: [`router::MeshRouter`]
 //! - Delivery tracking: [`delivery::DeliveryTracker`]
@@ -43,6 +44,7 @@ pub mod message;
 pub mod mqtt;
 pub mod node_db;
 pub mod outbound;
+pub mod packet_id;
 pub mod processor;
 pub mod router;
 pub mod signals;
@@ -78,6 +80,7 @@ pub use message::MessageBuilder;
 pub use mqtt::{GatewayInfo, ParsedMapReport};
 pub use node_db::{DeviceMetrics, MeshNode, NodeDb, NodePosition, UserInfo};
 pub use outbound::{InflightMessage, OutboundQueue, PendingMessage};
+pub use packet_id::PacketIdCounter;
 pub use processor::{PacketProcessor, RoutingProcessor, RoutingResult};
 pub use proto::{FromRadio, ToRadio};
 pub use router::{MeshRouter, SendOptions};
@@ -85,8 +88,8 @@ pub use signals::{MeshEvent, mesh_event_to_signal};
 pub use store_forward::{StoreForward, StoredMessage};
 pub use topology::{LinkQuality, MeshTopology, TopologySnapshot};
 pub use types::{
-    BROADCAST_ADDR, ChannelIndex, FRAME_MAGIC, MAX_CHANNELS, MAX_HOP_LIMIT, MAX_PACKET_SIZE,
-    MeshChannelId, NodeIdStr, NodeNum, PacketId,
+    BROADCAST_ADDR, ChannelIndex, FRAME_MAGIC, MAX_CHANNELS, MAX_HOP_LIMIT, MAX_LIVE_LINKS,
+    MAX_LIVE_NODES, MAX_PACKET_SIZE, MeshChannelId, NodeIdStr, NodeNum, PacketId,
 };
 
 #[cfg(test)]

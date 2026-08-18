@@ -252,6 +252,15 @@ impl MeshRouter {
     /// each `packet_bytes` back into the original [`MeshPacket`] so the
     /// re-enqueued message carries its real payload and header fields
     /// (`from`, `hop_limit`, `hop_start`, ...) rather than a synthetic shell.
+    ///
+    /// WARNING: `dest` drives WHERE a store-and-forward queue's contents get
+    /// re-sent, so callers must reach this ONLY from an authenticated
+    /// reachability/topology event, never from a raw per-packet `from`
+    /// attribution (an unauthenticated claim per #246) — that coupling would
+    /// let a spoofed `from` redirect a queued message toward an
+    /// attacker-named destination. No call site in this crate currently
+    /// drives this from packet receipt (verified: only `MeshRouter`'s own
+    /// tests call it); keep it that way.
     pub fn node_came_online(&mut self, dest: NodeNum) {
         let stored = self.store_forward.drain_for(dest);
         for msg in stored {

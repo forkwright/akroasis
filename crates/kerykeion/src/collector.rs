@@ -30,7 +30,7 @@ use crate::router::MeshRouter;
 use crate::store_forward::StoreForward;
 use crate::topology::MeshTopology;
 use crate::transport::{self, ConnectionHandle};
-use crate::types::NodeNum;
+use crate::types::ClaimedNodeNum;
 
 // Historical default (1 s) now lives in [`CollectorConfig::default`].
 
@@ -152,8 +152,23 @@ impl MeshCollector {
     }
 
     /// Handles a received mesh packet by updating the node database.
+    ///
+    /// `mesh_packet.from` is the sender this layer actually received the
+    /// packet attributed to — the strongest identity signal available here —
+    /// but it is an unauthenticated claim, not a verified fact (see
+    /// [`ClaimedNodeNum`]). A packet claiming the non-node sentinels (`0` or
+    /// broadcast) is dropped before it can create or update a node-DB entry
+    /// (#246).
     async fn handle_mesh_packet(&self, mesh_packet: &crate::proto::MeshPacket) {
-        let node_num = NodeNum(mesh_packet.from);
+        let Some(node_num) =
+            ClaimedNodeNum::from_wire(mesh_packet.from).map(ClaimedNodeNum::accept_unauthenticated)
+        else {
+            tracing::trace!(
+                from = mesh_packet.from,
+                "ignoring mesh packet with sentinel `from` (unset or broadcast)"
+            );
+            return;
+        };
         let snr = if mesh_packet.rx_snr == 0.0 {
             None
         } else {
@@ -675,3 +690,7 @@ where
 #[cfg(test)]
 #[path = "collector_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "collector_tests_attribution.rs"]
+mod tests_attribution;

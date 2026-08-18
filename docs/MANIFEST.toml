@@ -1,0 +1,75 @@
+# docs/MANIFEST.toml
+# Documentation inventory for akroasis. See standards/DOC-MANIFEST.md.
+#
+# The archive/ subtree IS listed, and the reasoning that first left it out is worth recording because
+# it was right in principle and wrong here. Git is the archive, so a second index of superseded
+# documents duplicates what history already guarantees. But `STANDARDS/doc-manifest-orphan` asks a
+# narrower question — is every file under docs/ accounted for — and an unlisted file is
+# indistinguishable from one nobody noticed. Listing them as superseded answers that without
+# pretending they are current.
+
+[[doc]]
+path = "docs/ARCHITECTURE.md"
+type = "authored"
+evergreen = true
+description = "Five-layer structure and the shared typed-signal pipeline every domain feeds."
+
+[[doc]]
+path = "docs/PROJECT.md"
+type = "authored"
+evergreen = true
+description = "What akroasis is: the capability domains unified by one shared signal model."
+
+# WHY not evergreen: it names itself a living registry that changes as crates are added or renamed, so
+# its content is a snapshot of the crate set rather than a timeless statement.
+[[doc]]
+path = "docs/lexicon.md"
+type = "authored"
+evergreen = false
+description = "Registry of akroasis crate names and the concept each one owns."
+
+# WHY not evergreen: describes a store owned through a crate that is still planned, so it states an
+# intended arrangement rather than one a reader can currently observe.
+[[doc]]
+path = "docs/reference-store.md"
+type = "authored"
+evergreen = false
+description = "Layout of the long-term offline reference store and its ownership boundary."
+
+[[doc]]
+path = "docs/fjall-column-encryption.md"
+type = "decision-record"
+evergreen = true
+description = "Where the encryption boundary sits for fjall-backed columns, and what is left declarative."
+decided = "2026-08-17"
+
+[[doc]]
+path = "docs/pq-content-key-wrapping.md"
+type = "decision-record"
+evergreen = true
+description = "Post-quantum content-key wrapping for multi-device key distribution."
+decided = "2026-08-17"
+
+# WHY authored and not generated: it is a hand-written example config a reader copies from, not output
+# any command reproduces — a generate_cmd here would be a claim nobody could run.
+[[doc]]
+path = "docs/akroasis-mesh.toml"
+type = "authored"
+evergreen = false
+description = "Example mesh configuration section, with the supported hardware and transports."
+
+# ── superseded ────────────────────────────────────────────────────────────────────────────────────
+# Listed so the orphan check can account for them, marked non-evergreen because that is what
+# superseded means. Neither is a current statement about this repository.
+
+[[doc]]
+path = "docs/archive/README.md"
+type = "authored"
+evergreen = false
+description = "Index of completed or superseded documentation kept for historical reference."
+
+[[doc]]
+path = "docs/archive/STANDARDS.md"
+type = "authored"
+evergreen = false
+description = "Superseded project standards, retained as the record of what the rules used to be."

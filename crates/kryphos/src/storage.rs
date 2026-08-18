@@ -10,17 +10,25 @@ use jiff::Timestamp;
 use koinon::{ChainKey, LogEntryKind, TamperLog, VerificationResult};
 use serde::{Deserialize, Serialize};
 use snafu::ResultExt;
+use zeroize::Zeroizing;
 
-use crate::crypto::{self, decrypt, encrypt};
+use crate::crypto::{self, ENTRY_ENVELOPE_VERSION, decrypt, encrypt, entry_aad};
 use crate::error::{
-    AlreadyExistsSnafu, EntryCryptoSnafu, EntryNotDeletableSnafu, EntryRevokedSnafu, IoSnafu,
-    NotInitializedSnafu, SerializationSnafu, TamperLogSnafu, VaultError, WrongPassphraseSnafu,
+    AlreadyExistsSnafu, EmptyPassphraseSnafu, EntryCryptoSnafu, EntryNotDeletableSnafu,
+    EntryRevokedSnafu, IoSnafu, NotInitializedSnafu, SerializationSnafu, TamperLogSnafu,
+    VaultError, WrongPassphraseSnafu,
 };
 use crate::key::VaultKey;
 use crate::vault::{
     CredentialType, EntryMetadata, EntryStatus, HistoryEvent, HistoryEventKind, KdfParams,
-    VAULT_VERSION,
+    MIN_SUPPORTED_VAULT_VERSION, VAULT_VERSION,
 };
+
+/// Sentinel `envelope_version` marking a pre-#283 entry: no `envelope_version`
+/// key existed in that on-disk shape at all, so `#[serde(default)]` fills
+/// this in on read. Never written by `add`/`rotate` — see
+/// [`crate::crypto::ENTRY_ENVELOPE_VERSION`].
+const LEGACY_ENVELOPE_VERSION: u8 = 0;
 
 /// Well-known plaintext used to verify the passphrase on open.
 const KEY_CHECK_PLAINTEXT: &[u8] = b"kryphos-vault-key-check-v1";
@@ -45,6 +53,13 @@ const TAMPER_LOG_FILE: &str = "tamper.log";
 /// vault key from a leaked chain key is infeasible.
 const CHAIN_KEY_DOMAIN: &[u8] = b"kryphos/tamper-log/chain-key/v1";
 
+/// Domain-separation tag for deriving the fjall lookup-key subkey from
+/// the vault's [`VaultKey`] (see [`Vault::lookup_key`]).
+///
+/// Reuses the vault's existing secret rather than requiring a second one
+/// to manage, mirroring [`CHAIN_KEY_DOMAIN`].
+const LOOKUP_KEY_DOMAIN: &[u8] = b"kryphos/vault/lookup-key/v1";
+
 /// On-disk vault header stored as JSON.
 #[derive(Debug, Serialize, Deserialize)]
 struct StoredHeader {
@@ -55,10 +70,36 @@ struct StoredHeader {
 }
 
 /// Entry as stored in fjall (JSON-serialized value).
+///
+/// `encrypted_secret` and `encrypted_metadata` are independently-nonced
+/// ChaCha20-Poly1305 ciphertexts. `encrypted_metadata` decrypts to an
+/// [`EntryMetadataRecord`] carrying the name, type, metadata, status, and
+/// history — none of it readable from the fjall data directory without the
+/// vault key. Keeping it separate from `encrypted_secret` means listing
+/// entries (which needs only the metadata) never touches secret ciphertext.
+///
+/// `envelope_version` is the one field that stays plaintext: it has to be
+/// readable before `encrypted_secret` is decrypted, since it selects which
+/// AAD that ciphertext was bound under (forkwright/akroasis#283, see
+/// [`entry_aad`]). It carries no secret information itself.
 #[derive(Debug, Serialize, Deserialize)]
 struct StoredEntry {
-    credential_type: CredentialType,
+    /// AEAD associated-data envelope version this entry's
+    /// `encrypted_secret` was bound under. Bound into the AAD itself
+    /// ([`entry_aad`]), so a value tampered independently of the ciphertext
+    /// fails authentication rather than silently taking effect.
+    #[serde(default)]
+    envelope_version: u8,
     encrypted_secret: Vec<u8>,
+    encrypted_metadata: Vec<u8>,
+}
+
+/// Plaintext form of everything but the secret value; JSON-serialized
+/// and encrypted as `StoredEntry::encrypted_metadata`.
+#[derive(Debug, Serialize, Deserialize)]
+struct EntryMetadataRecord {
+    name: CompactString,
+    credential_type: CredentialType,
     metadata: EntryMetadata,
     #[serde(default)]
     status: EntryStatus,
@@ -74,7 +115,12 @@ pub struct DecryptedEntry {
     /// What kind of credential this is.
     pub credential_type: CredentialType,
     /// The decrypted secret bytes.
-    pub secret: Vec<u8>,
+    ///
+    /// Wrapped in [`Zeroizing`] at the point of allocation (the return
+    /// of [`decrypt`], moved straight in — no unwrapped copy exists in
+    /// between) so the plaintext is scrubbed on drop rather than left in
+    /// freed heap memory.
+    pub secret: Zeroizing<Vec<u8>>,
     /// Associated metadata.
     pub metadata: EntryMetadata,
 }
@@ -137,17 +183,47 @@ pub struct EntryHistory {
 
 /// Encrypted credential vault backed by fjall.
 ///
-/// Each entry is individually encrypted with ChaCha20-Poly1305 using a
-/// key derived from the user's passphrase via Argon2id. The vault
-/// directory is advisory-locked to prevent concurrent access from another
-/// process; concurrent vault mutations from multiple threads sharing one
-/// `Arc<Vault>` in the SAME process are additionally serialized onto the
-/// tamper-evident audit log by an in-process mutex (akroasis#226) — see
-/// `append_vault_audit`.
+/// Each entry is individually encrypted with ChaCha20-Poly1305 using a key
+/// derived from the user's passphrase via Argon2id, with `encrypted_secret`'s
+/// AEAD associated data binding it to its entry identity
+/// (forkwright/akroasis#283) and `encrypted_metadata` protecting the name,
+/// type, status, and history at rest (forkwright/akroasis#215) under a fjall
+/// record key that is itself a keyed hash of the name, not the name itself.
+/// The vault directory is advisory-locked to prevent concurrent access from
+/// OTHER PROCESSES; `write_lock` is the separate in-process guard that
+/// serializes this handle's own mutating calls (forkwright/akroasis#214) —
+/// see its field doc. Appends to the tamper-evident audit log are further
+/// serialized across their open-through-append critical section by
+/// `tamper_log_guard` (akroasis#226) — see `append_vault_audit`.
 pub struct Vault {
     db: fjall::Database,
     keyspace: fjall::Keyspace,
     key: VaultKey,
+    /// Copy of the header's salt, used only as this vault instance's
+    /// identity component in [`entry_aad`] — never as key material.
+    salt: Vec<u8>,
+    /// Serializes `add`/`remove`/`rotate`/`revoke` against each other
+    /// within THIS process.
+    ///
+    /// INVARIANT: held across the full duplicate-check-then-write (`add`)
+    /// or read-modify-write (`rotate`/`revoke`) region of each of those
+    /// methods, never released partway through. `Vault` is `Send + Sync`
+    /// (fjall handles + a fixed key + a lock file), so a multithreaded
+    /// caller holding `Arc<Vault>` can otherwise interleave two calls
+    /// between the duplicate check and the write, both observing the
+    /// pre-write state — forkwright/akroasis#214. The directory lock
+    /// above does not help here: it guards a different boundary
+    /// (concurrent processes), not concurrent threads inside one.
+    ///
+    /// WHY recover from poison rather than propagate it: this crate denies
+    /// `panic`/`unwrap_used`/`expect_used`, so a panic while the guard is
+    /// held can only come from an allocation failure or similar, not from
+    /// a `.unwrap()` in this code path. Refusing every subsequent vault
+    /// operation over a panic that was never this mutex's own fault would
+    /// turn one incident into a stuck vault; the recovered guard still
+    /// serializes correctly because fjall's own per-key operations stay
+    /// individually atomic regardless.
+    write_lock: std::sync::Mutex<()>,
     _lock: File,
     path: PathBuf,
     // WHY (akroasis#226): `TamperLog::open` re-verifies and recovers the
@@ -174,10 +250,20 @@ impl Vault {
     ///
     /// # Errors
     ///
+    /// Returns [`VaultError::EmptyPassphrase`] if `passphrase` is empty.
     /// Returns [`VaultError::AlreadyExists`] if the path already exists.
     /// Returns [`VaultError::Io`] on filesystem errors.
     /// Returns [`VaultError::StorageBackend`] if fjall initialization fails.
     pub fn create(path: impl AsRef<Path>, passphrase: &[u8]) -> Result<Self, VaultError> {
+        // WHY checked first, before any filesystem access: an empty
+        // passphrase carries no entropy, so `Vault::create(path, b"")` must
+        // reject at the library boundary rather than only in the CLI's
+        // interactive confirmation (forkwright/akroasis#287) — and it must
+        // leave no filesystem state behind, per the issue's Done-when.
+        if passphrase.is_empty() {
+            return EmptyPassphraseSnafu.fail();
+        }
+
         let path = path.as_ref();
         if path.exists() {
             return AlreadyExistsSnafu { path }.fail();
@@ -189,7 +275,7 @@ impl Vault {
         let salt = crypto::generate_salt();
         let key = crypto::derive_key(passphrase, &salt);
 
-        let key_check = encrypt(&key, KEY_CHECK_PLAINTEXT).context(EntryCryptoSnafu)?;
+        let key_check = encrypt(&key, KEY_CHECK_PLAINTEXT, b"").context(EntryCryptoSnafu)?;
 
         let header = StoredHeader {
             version: VAULT_VERSION,
@@ -211,6 +297,8 @@ impl Vault {
             db,
             keyspace,
             key,
+            salt: salt.to_vec(),
+            write_lock: std::sync::Mutex::new(()),
             _lock: lock,
             path: path.to_path_buf(),
             tamper_log_guard: std::sync::Mutex::new(()),
@@ -227,7 +315,9 @@ impl Vault {
     /// Returns [`VaultError::NotInitialized`] if no vault exists at `path`.
     /// Returns [`VaultError::WrongPassphrase`] if the passphrase is incorrect.
     /// Returns [`VaultError::Locked`] if another process holds the lock.
-    /// Returns [`VaultError::InvalidHeader`] if the header is malformed.
+    /// Returns [`VaultError::InvalidHeader`] if the header is malformed, or
+    /// its version is outside
+    /// `MIN_SUPPORTED_VAULT_VERSION..=VAULT_VERSION`.
     pub fn open(path: impl AsRef<Path>, passphrase: &[u8]) -> Result<Self, VaultError> {
         let path = path.as_ref();
 
@@ -254,10 +344,19 @@ impl Vault {
         let header: StoredHeader =
             serde_json::from_slice(&header_bytes).context(SerializationSnafu)?;
 
-        if header.version != VAULT_VERSION {
+        // WHY a range, not an exact match against VAULT_VERSION: the header
+        // shape is unchanged between MIN_SUPPORTED_VAULT_VERSION and
+        // VAULT_VERSION (see VAULT_VERSION's doc) — a v1 vault opens exactly
+        // like a v2 one. What differs is per-entry: `get` below selects the
+        // AAD from each entry's own `envelope_version` rather than assuming
+        // one scheme for the whole vault. Below the floor is a version this
+        // crate never wrote; above the ceiling is a newer format this build
+        // predates. Both remain hard rejections (forkwright/akroasis#283's
+        // Desired Correction is an in-place migration, not "accept anything").
+        if !(MIN_SUPPORTED_VAULT_VERSION..=VAULT_VERSION).contains(&header.version) {
             return Err(VaultError::InvalidHeader {
                 reason: format!(
-                    "unsupported version {}, expected {VAULT_VERSION}",
+                    "unsupported version {}, expected {MIN_SUPPORTED_VAULT_VERSION}..={VAULT_VERSION}",
                     header.version
                 ),
             });
@@ -266,7 +365,7 @@ impl Vault {
         let key = crypto::derive_key(passphrase, &header.salt);
 
         let plaintext =
-            decrypt(&key, &header.key_check).map_err(|_| VaultError::WrongPassphrase)?;
+            decrypt(&key, &header.key_check, b"").map_err(|_| VaultError::WrongPassphrase)?;
         if plaintext != KEY_CHECK_PLAINTEXT {
             return WrongPassphraseSnafu.fail();
         }
@@ -277,6 +376,8 @@ impl Vault {
             db,
             keyspace,
             key,
+            salt: header.salt,
+            write_lock: std::sync::Mutex::new(()),
             _lock: lock,
             path: path.to_path_buf(),
             tamper_log_guard: std::sync::Mutex::new(()),
@@ -297,18 +398,30 @@ impl Vault {
         credential_type: CredentialType,
         secret: &[u8],
     ) -> Result<(), VaultError> {
-        if self.keyspace.get(name).map_err(fjall_err)?.is_some() {
+        // INVARIANT: held across the duplicate check AND the write below.
+        // See `write_lock`'s field doc — this is what makes two concurrent
+        // `add` calls for the same name resolve to exactly one winner
+        // (forkwright/akroasis#214) instead of both observing `None` and
+        // both inserting.
+        let _write_guard = self
+            .write_lock
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+
+        let key = self.lookup_key(name);
+        if self.keyspace.get(key).map_err(fjall_err)?.is_some() {
             return Err(VaultError::DuplicateEntry {
                 name: name.to_owned(),
             });
         }
 
-        let encrypted_secret = encrypt(&self.key, secret).context(EntryCryptoSnafu)?;
+        let aad = entry_aad(&self.salt, name, &credential_type, ENTRY_ENVELOPE_VERSION)?;
+        let encrypted_secret = encrypt(&self.key, secret, &aad).context(EntryCryptoSnafu)?;
 
         let now = Timestamp::now();
-        let entry = StoredEntry {
+        let record = EntryMetadataRecord {
+            name: CompactString::from(name),
             credential_type,
-            encrypted_secret,
             metadata: EntryMetadata {
                 created_at: now,
                 rotated_at: None,
@@ -322,9 +435,16 @@ impl Vault {
                 kind: HistoryEventKind::Created,
             }],
         };
+        let encrypted_metadata = self.encrypt_metadata(&record)?;
+
+        let entry = StoredEntry {
+            envelope_version: ENTRY_ENVELOPE_VERSION,
+            encrypted_secret,
+            encrypted_metadata,
+        };
 
         let value = serde_json::to_vec(&entry).context(SerializationSnafu)?;
-        self.keyspace.insert(name, value).map_err(fjall_err)?;
+        self.keyspace.insert(key, value).map_err(fjall_err)?;
         self.db
             .persist(fjall::PersistMode::SyncAll)
             .map_err(fjall_err)?;
@@ -341,50 +461,91 @@ impl Vault {
     /// Returns [`VaultError::EntryRevoked`] if the entry has been revoked.
     /// Returns [`VaultError::EntryCrypto`] if decryption fails.
     pub fn get(&self, name: &str) -> Result<DecryptedEntry, VaultError> {
-        let raw = self.keyspace.get(name).map_err(fjall_err)?.ok_or_else(|| {
+        let key = self.lookup_key(name);
+        let raw = self.keyspace.get(key).map_err(fjall_err)?.ok_or_else(|| {
             VaultError::EntryNotFound {
                 name: name.to_owned(),
             }
         })?;
 
         let entry: StoredEntry = serde_json::from_slice(&raw).context(SerializationSnafu)?;
+        let record = self.decrypt_metadata(&entry)?;
 
-        if entry.status == EntryStatus::Revoked {
+        if record.status == EntryStatus::Revoked {
             return EntryRevokedSnafu { name }.fail();
         }
 
-        let secret = decrypt(&self.key, &entry.encrypted_secret).context(EntryCryptoSnafu)?;
+        // WHY branch on envelope_version rather than always building an AAD:
+        // a LEGACY_ENVELOPE_VERSION (0) entry is one written before
+        // forkwright/akroasis#283's AAD binding existed — its ciphertext was
+        // sealed with `crypto::encrypt(key, secret, b"")` (empty AAD; see
+        // VAULT_VERSION's doc). Building a non-empty `entry_aad` for it
+        // would authenticate against bytes the original encryption never
+        // used, permanently failing every `get` on such an entry — exactly
+        // the access loss #283's Desired Correction asked to avoid. Any
+        // OTHER version (the current ENTRY_ENVELOPE_VERSION, or a tampered
+        // value) goes through the full identity-bound AAD: rebuilt from the
+        // CALLER's `name` plus this entry's OWN decrypted `credential_type`
+        // (from `encrypted_metadata`) and stored `envelope_version`, never
+        // trusted verbatim. A ciphertext relocated from a different entry
+        // (or with its `envelope_version` edited independently of
+        // `encrypted_secret`) was bound under a different AAD at encrypt
+        // time, so it fails authentication here instead of decrypting into
+        // this slot (forkwright/akroasis#283) — including a downgrade
+        // attempt that tampers a bound entry's `envelope_version` DOWN to
+        // 0, since its ciphertext was never sealed under empty AAD in the
+        // first place.
+        //
+        // WHY: wrap at the point of allocation in BOTH branches —
+        // `decrypt`'s return is moved straight into `Zeroizing::new` with no
+        // intermediate unwrapped binding, so there is no plaintext copy that
+        // this fix leaves unscrubbed on drop.
+        let secret = if entry.envelope_version == LEGACY_ENVELOPE_VERSION {
+            Zeroizing::new(
+                decrypt(&self.key, &entry.encrypted_secret, b"").context(EntryCryptoSnafu)?,
+            )
+        } else {
+            let aad = entry_aad(
+                &self.salt,
+                name,
+                &record.credential_type,
+                entry.envelope_version,
+            )?;
+            Zeroizing::new(
+                decrypt(&self.key, &entry.encrypted_secret, &aad).context(EntryCryptoSnafu)?,
+            )
+        };
 
         Ok(DecryptedEntry {
-            name: CompactString::from(name),
-            credential_type: entry.credential_type,
+            name: record.name,
+            credential_type: record.credential_type,
             secret,
-            metadata: entry.metadata,
+            metadata: record.metadata,
         })
     }
 
     /// Lists all entries in the vault (names and metadata only).
     ///
-    /// No secrets are decrypted or returned.
+    /// No secrets are decrypted or returned: only `encrypted_metadata` is
+    /// touched, never `encrypted_secret`.
     ///
     /// # Errors
     ///
     /// Returns [`VaultError::StorageBackend`] on iteration errors.
+    /// Returns [`VaultError::EntryCrypto`] if metadata decryption fails.
     pub fn list(&self) -> Result<Vec<EntryInfo>, VaultError> {
         let mut entries = Vec::new();
 
         for guard in self.keyspace.iter() {
-            let (key, value) = guard.into_inner().map_err(fjall_err)?;
-            let name = std::str::from_utf8(&key).map_err(|e| VaultError::StorageBackend {
-                message: format!("invalid UTF-8 key: {e}"),
-            })?;
+            let (_key, value) = guard.into_inner().map_err(fjall_err)?;
             let entry: StoredEntry = serde_json::from_slice(&value).context(SerializationSnafu)?;
+            let record = self.decrypt_metadata(&entry)?;
 
             entries.push(EntryInfo {
-                name: CompactString::from(name),
-                credential_type: entry.credential_type,
-                status: entry.status,
-                metadata: entry.metadata,
+                name: record.name,
+                credential_type: record.credential_type,
+                status: record.status,
+                metadata: record.metadata,
             });
         }
 
@@ -400,19 +561,31 @@ impl Vault {
     /// Returns [`VaultError::EntryNotFound`] if no entry with this name exists.
     /// Returns [`VaultError::EntryNotDeletable`] if the entry is revoked.
     pub fn remove(&self, name: &str) -> Result<(), VaultError> {
-        let raw = self.keyspace.get(name).map_err(fjall_err)?.ok_or_else(|| {
+        // INVARIANT: see `write_lock`'s field doc. `remove` is a
+        // read-modify-write too (read status, conditionally remove); without
+        // this, a concurrent `revoke` racing this call could both read
+        // `Active` before either write lands — the revoke's write would then
+        // resurrect a name this call just believed it had deleted.
+        let _write_guard = self
+            .write_lock
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+
+        let key = self.lookup_key(name);
+        let raw = self.keyspace.get(key).map_err(fjall_err)?.ok_or_else(|| {
             VaultError::EntryNotFound {
                 name: name.to_owned(),
             }
         })?;
 
         let entry: StoredEntry = serde_json::from_slice(&raw).context(SerializationSnafu)?;
+        let record = self.decrypt_metadata(&entry)?;
 
-        if entry.status == EntryStatus::Revoked {
+        if record.status == EntryStatus::Revoked {
             return EntryNotDeletableSnafu { name }.fail();
         }
 
-        self.keyspace.remove(name).map_err(fjall_err)?;
+        self.keyspace.remove(key).map_err(fjall_err)?;
         self.db
             .persist(fjall::PersistMode::SyncAll)
             .map_err(fjall_err)?;
@@ -432,30 +605,59 @@ impl Vault {
     /// Returns [`VaultError::EntryRevoked`] if the entry has been revoked.
     /// Returns [`VaultError::EntryCrypto`] if encryption fails.
     pub fn rotate(&self, name: &str, new_secret: &[u8]) -> Result<(), VaultError> {
-        let raw = self.keyspace.get(name).map_err(fjall_err)?.ok_or_else(|| {
+        // INVARIANT: see `write_lock`'s field doc. Held across this whole
+        // read-modify-write so two concurrent `rotate` calls serialize
+        // instead of each reading the same starting `rotation_count` /
+        // history and one's increment/event silently overwriting the
+        // other's (forkwright/akroasis#214).
+        let _write_guard = self
+            .write_lock
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+
+        let key = self.lookup_key(name);
+        let raw = self.keyspace.get(key).map_err(fjall_err)?.ok_or_else(|| {
             VaultError::EntryNotFound {
                 name: name.to_owned(),
             }
         })?;
 
-        let mut entry: StoredEntry = serde_json::from_slice(&raw).context(SerializationSnafu)?;
+        let entry: StoredEntry = serde_json::from_slice(&raw).context(SerializationSnafu)?;
+        let mut record = self.decrypt_metadata(&entry)?;
 
-        if entry.status == EntryStatus::Revoked {
+        if record.status == EntryStatus::Revoked {
             return EntryRevokedSnafu { name }.fail();
         }
 
-        entry.encrypted_secret = encrypt(&self.key, new_secret).context(EntryCryptoSnafu)?;
+        // WHY stamp the current envelope version on every rewrite, not just
+        // preserve whatever was there: `rotate` re-encrypts the secret
+        // anyway, so it is the natural opportunistic upgrade point for any
+        // entry still carrying a pre-#283 envelope.
+        let aad = entry_aad(
+            &self.salt,
+            name,
+            &record.credential_type,
+            ENTRY_ENVELOPE_VERSION,
+        )?;
+        let encrypted_secret = encrypt(&self.key, new_secret, &aad).context(EntryCryptoSnafu)?;
 
         let now = Timestamp::now();
-        entry.metadata.rotated_at = Some(now);
-        entry.metadata.rotation_count += 1;
-        entry.history.push(HistoryEvent {
+        record.metadata.rotated_at = Some(now);
+        record.metadata.rotation_count += 1;
+        record.history.push(HistoryEvent {
             timestamp: now,
             kind: HistoryEventKind::Rotated,
         });
+        let encrypted_metadata = self.encrypt_metadata(&record)?;
+
+        let entry = StoredEntry {
+            envelope_version: ENTRY_ENVELOPE_VERSION,
+            encrypted_secret,
+            encrypted_metadata,
+        };
 
         let value = serde_json::to_vec(&entry).context(SerializationSnafu)?;
-        self.keyspace.insert(name, value).map_err(fjall_err)?;
+        self.keyspace.insert(key, value).map_err(fjall_err)?;
         self.db
             .persist(fjall::PersistMode::SyncAll)
             .map_err(fjall_err)?;
@@ -474,28 +676,47 @@ impl Vault {
     /// Returns [`VaultError::EntryNotFound`] if no entry with this name exists.
     /// Returns [`VaultError::EntryRevoked`] if the entry is already revoked.
     pub fn revoke(&self, name: &str) -> Result<(), VaultError> {
-        let raw = self.keyspace.get(name).map_err(fjall_err)?.ok_or_else(|| {
+        // INVARIANT: see `write_lock`'s field doc. Same read-modify-write
+        // shape as `rotate` — without this, two concurrent `revoke` calls
+        // (or a `revoke` racing a `rotate`) can both read `Active` and one
+        // write silently loses the other's status/history change
+        // (forkwright/akroasis#214).
+        let _write_guard = self
+            .write_lock
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+
+        let key = self.lookup_key(name);
+        let raw = self.keyspace.get(key).map_err(fjall_err)?.ok_or_else(|| {
             VaultError::EntryNotFound {
                 name: name.to_owned(),
             }
         })?;
 
-        let mut entry: StoredEntry = serde_json::from_slice(&raw).context(SerializationSnafu)?;
+        let entry: StoredEntry = serde_json::from_slice(&raw).context(SerializationSnafu)?;
+        let mut record = self.decrypt_metadata(&entry)?;
 
-        if entry.status == EntryStatus::Revoked {
+        if record.status == EntryStatus::Revoked {
             return EntryRevokedSnafu { name }.fail();
         }
 
         let now = Timestamp::now();
-        entry.status = EntryStatus::Revoked;
-        entry.metadata.revoked_at = Some(now);
-        entry.history.push(HistoryEvent {
+        record.status = EntryStatus::Revoked;
+        record.metadata.revoked_at = Some(now);
+        record.history.push(HistoryEvent {
             timestamp: now,
             kind: HistoryEventKind::Revoked,
         });
+        let encrypted_metadata = self.encrypt_metadata(&record)?;
+
+        let entry = StoredEntry {
+            envelope_version: entry.envelope_version,
+            encrypted_secret: entry.encrypted_secret,
+            encrypted_metadata,
+        };
 
         let value = serde_json::to_vec(&entry).context(SerializationSnafu)?;
-        self.keyspace.insert(name, value).map_err(fjall_err)?;
+        self.keyspace.insert(key, value).map_err(fjall_err)?;
         self.db
             .persist(fjall::PersistMode::SyncAll)
             .map_err(fjall_err)?;
@@ -513,19 +734,21 @@ impl Vault {
     ///
     /// Returns [`VaultError::EntryNotFound`] if no entry with this name exists.
     pub fn history(&self, name: &str) -> Result<EntryHistory, VaultError> {
-        let raw = self.keyspace.get(name).map_err(fjall_err)?.ok_or_else(|| {
+        let key = self.lookup_key(name);
+        let raw = self.keyspace.get(key).map_err(fjall_err)?.ok_or_else(|| {
             VaultError::EntryNotFound {
                 name: name.to_owned(),
             }
         })?;
 
         let entry: StoredEntry = serde_json::from_slice(&raw).context(SerializationSnafu)?;
+        let record = self.decrypt_metadata(&entry)?;
 
         Ok(EntryHistory {
-            name: CompactString::from(name),
-            status: entry.status,
-            metadata: entry.metadata,
-            events: entry.history,
+            name: record.name,
+            status: record.status,
+            metadata: record.metadata,
+            events: record.history,
         })
     }
 
@@ -558,6 +781,32 @@ impl Vault {
     /// no second secret to generate, store, or rotate.
     fn chain_key(&self) -> ChainKey {
         ChainKey::from_bytes(blake3::keyed_hash(self.key.as_bytes(), CHAIN_KEY_DOMAIN).into())
+    }
+
+    /// Derives the fjall record key for `name` via a two-step keyed BLAKE3
+    /// hash of the vault key, so credential names never appear as fjall
+    /// keys on disk.
+    ///
+    /// Deterministic (same name -> same key), so `get`/`add`/`remove` stay
+    /// O(1) keyspace lookups without ever storing the name itself. A fresh
+    /// derivation on every call, mirroring [`Self::chain_key`].
+    fn lookup_key(&self, name: &str) -> [u8; 32] {
+        let subkey = blake3::keyed_hash(self.key.as_bytes(), LOOKUP_KEY_DOMAIN);
+        blake3::keyed_hash(subkey.as_bytes(), name.as_bytes()).into()
+    }
+
+    /// Decrypts and parses an entry's `encrypted_metadata` field.
+    fn decrypt_metadata(&self, entry: &StoredEntry) -> Result<EntryMetadataRecord, VaultError> {
+        let metadata_bytes =
+            decrypt(&self.key, &entry.encrypted_metadata, b"").context(EntryCryptoSnafu)?;
+        serde_json::from_slice(&metadata_bytes).context(SerializationSnafu)
+    }
+
+    /// Serializes and encrypts an [`EntryMetadataRecord`] for storage as
+    /// `StoredEntry::encrypted_metadata`.
+    fn encrypt_metadata(&self, record: &EntryMetadataRecord) -> Result<Vec<u8>, VaultError> {
+        let metadata_bytes = serde_json::to_vec(record).context(SerializationSnafu)?;
+        encrypt(&self.key, &metadata_bytes, b"").context(EntryCryptoSnafu)
     }
 
     fn append_vault_audit(&self, name: &str, operation: &str) -> Result<(), VaultError> {
@@ -693,3 +942,12 @@ fn fjall_err(e: impl std::fmt::Display) -> VaultError {
 )]
 #[path = "storage_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[expect(
+    clippy::unwrap_used,
+    clippy::indexing_slicing,
+    reason = "test code: panics and unwraps acceptable in assertions"
+)]
+#[path = "storage_security_tests.rs"]
+mod security_tests;
