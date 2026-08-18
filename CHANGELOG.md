@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.1.25](https://github.com/forkwright/akroasis/compare/v0.1.24...v0.1.25) (2026-08-17)
+
+
+### Bug Fixes
+
+* **ci:** stop main-push gate self-cancelling via caller-level concurrency ([#375](https://github.com/forkwright/akroasis/issues/375)) ([4daff33](https://github.com/forkwright/akroasis/commit/4daff3303e360676247015285d55472c050b7366))
+* **docs:** remove the internal forge hostname and add the doc manifest ([fa91efa](https://github.com/forkwright/akroasis/commit/fa91efaf0187bf24eb1a9592a85654ed2f4a7cd4))
+* **kerykeion:** attribute mesh source to the verified sender, not the packet's claim ([#381](https://github.com/forkwright/akroasis/issues/381)) ([a1a5a3b](https://github.com/forkwright/akroasis/commit/a1a5a3b5419f44ce758e4aa244485f41742e2d66))
+* **kerykeion:** bound node and link cardinality, stop treating unknown routing codes as ACKs ([#384](https://github.com/forkwright/akroasis/issues/384)) ([a51f885](https://github.com/forkwright/akroasis/commit/a51f8858df354f2fd6f6d25bcb494ef633ffc737))
+* **kryphos:** reject empty vault passphrases, bind ciphertext to entry identity, serialize mutations ([831ba23](https://github.com/forkwright/akroasis/commit/831ba23d980048a85d3b4d4d564d5f8460ddeac7)), closes [#287](https://github.com/forkwright/akroasis/issues/287) [#283](https://github.com/forkwright/akroasis/issues/283) [#214](https://github.com/forkwright/akroasis/issues/214)
+* **kryphos:** zeroize decrypted secrets and encrypt credential metadata at rest ([#382](https://github.com/forkwright/akroasis/issues/382)) ([07b421c](https://github.com/forkwright/akroasis/commit/07b421c31b520e89f9db4ded3b19469981c5c3a7))
+
 ## [0.1.24](https://github.com/forkwright/akroasis/compare/v0.1.23...v0.1.24) (2026-08-14)
 
 
