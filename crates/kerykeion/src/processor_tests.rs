@@ -74,7 +74,7 @@ fn process_position_updates_node_and_emits_event() {
         latitude_i: 515_074_000, // 51.5074
         longitude_i: -1_278_000, // -0.1278
         altitude: 11,
-        time: 1_700_000_000
+        time: 1_700_000_000,
     };
     let mut payload = Vec::new();
     pos.encode(&mut payload).unwrap();
