@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.2.0](https://github.com/forkwright/akroasis/compare/v0.1.25...v0.2.0) (2026-08-19)
+
+
+### Features
+
+* **kerykeion:** author the wire schema from the protocol, dropping the vendored GPL protos ([#392](https://github.com/forkwright/akroasis/issues/392)) ([aa81813](https://github.com/forkwright/akroasis/commit/aa8181353a3a8e28f147b308877be86fcd6eedb7))
+
+
+### Bug Fixes
+
+* **koinon:** close three tamper-log integrity gaps in the writer path ([#391](https://github.com/forkwright/akroasis/issues/391)) ([c947eee](https://github.com/forkwright/akroasis/commit/c947eee7e73237ff7fd31146ccd171e199436f04))
+
 ## [0.1.25](https://github.com/forkwright/akroasis/compare/v0.1.24...v0.1.25) (2026-08-17)
 
 
