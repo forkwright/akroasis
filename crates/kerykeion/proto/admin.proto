@@ -1,0 +1,52 @@
+// WHY: the admin-message passthrough boundary. kerykeion never constructs
+// a populated AdminMessage itself (message.rs's own test only ever sets
+// payload_variant: None), but message.rs::MessageBuilder::admin /
+// admin_with_config accepts one BY REFERENCE from an external caller and
+// encodes it opaquely (admin_msg.encode_to_vec()), so the full oneof
+// surface this crate has facts for must stay part of the schema for
+// correct round-tripping of whatever the caller populates. Authored from
+// kerykeion's own field usage; see packet.proto's header for the general
+// note on how this schema was derived.
+syntax = "proto3";
+
+package meshtastic;
+
+import "session.proto";
+import "node_inventory.proto";
+
+// An admin command or response, passed opaquely through
+// MessageBuilder::admin / admin_with_config.
+//
+// WARNING: four upstream oneof members are omitted —
+// get_config_response (6), get_module_config_response (8), set_config
+// (21), and set_module_config (22). Their payload types (Config,
+// ModuleConfig) have zero kerykeion consumers and no field-level facts
+// were available to author them from safely. A caller-supplied
+// AdminMessage that populates one of those four variants will not
+// round-trip through this schema. See followup for the disposition of
+// this gap.
+message AdminMessage {
+  oneof payload_variant {
+    string get_channel_request = 1;
+    Channel get_channel_response = 2;
+    string get_owner_request = 3;
+    User get_owner_response = 4;
+    bool get_radio_request = 10;
+    bool factory_reset_device = 11;
+    bool exit_simulator = 12;
+    string note_data_received = 14;
+    bool reboot_ota_seconds = 16;
+    bool get_device_metadata_request = 17;
+    bool reboot_seconds = 18;
+    bool shutdown_seconds = 19;
+    Channel set_channel = 20;
+    User set_owner = 23;
+    bool remove_by_nodenum = 24;
+    bool set_favorite_node = 25;
+    bool remove_favorite_node = 26;
+    bool set_fixed_position = 27;
+    bool remove_fixed_position = 28;
+    bool begin_edit_settings = 29;
+    bool commit_edit_settings = 30;
+  }
+}

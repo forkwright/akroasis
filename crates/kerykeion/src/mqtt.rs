@@ -200,7 +200,6 @@ mod tests {
             longitude_i: -739_000_000,
             altitude: 150,
             num_online_local_nodes: 7,
-            ..Default::default()
         };
 
         let mut buf = Vec::new();

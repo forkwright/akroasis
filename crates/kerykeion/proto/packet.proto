@@ -1,0 +1,189 @@
+// WHY: the packet envelope every mesh transmission crosses the wire as —
+// authored from kerykeion's own field-by-field usage (see the sibling
+// .proto files in this directory), not vendored from an upstream .proto
+// tree. Field numbers and wire types are fixed facts: interop with a real
+// Meshtastic radio requires them to match exactly. Message names, field
+// names, file split, declaration order, and every comment are this
+// schema's own.
+syntax = "proto3";
+
+package meshtastic;
+
+// The wire-level envelope for every packet kerykeion sends or receives on
+// the mesh. Built field-by-field in message.rs::MessageBuilder::build /
+// build_with_id and discovery.rs::build_traceroute_request; read
+// field-by-field in router.rs, outbound.rs, collector.rs, and
+// processor.rs.
+message MeshPacket {
+  // Originating node number.
+  // WHY: written by MessageBuilder::build; read by
+  // processor.rs::process_mesh_packet and collector.rs::handle_mesh_packet.
+  uint32 from = 1;
+
+  // Destination node number.
+  // WHY: written by MessageBuilder::build; read by
+  // processor.rs::handle_traceroute (packet.to).
+  uint32 to = 2;
+
+  // Channel index the packet rides on.
+  // WHY: written by MessageBuilder::build; exercised by outbound.rs's
+  // make_packet test helper.
+  uint32 channel = 3;
+
+  oneof payload_variant {
+    // The decoded application payload.
+    // WHY: written by MessageBuilder::build; matched by
+    // processor.rs::process_mesh_packet and
+    // RoutingProcessor::process_routing.
+    Data decoded = 4;
+
+    // The encrypted application payload, when this hop is not decoding it.
+    // WHY: written by MessageBuilder::build (PayloadVariant::Encrypted).
+    bytes encrypted = 5;
+  }
+
+  // Packet identifier, used to correlate acks/naks and mark-sent
+  // bookkeeping.
+  // WHY: written from PacketIdCounter in MessageBuilder::build; read by
+  // outbound.rs::OutboundQueue::mark_sent (matched against PacketId) and
+  // logged by processor.rs / RoutingResult.
+  uint32 id = 6;
+
+  // Local receive timestamp; kerykeion always sends 0 and lets the radio
+  // fill it in.
+  // WHY: written by MessageBuilder::build and the router.rs/outbound.rs
+  // test make_packet helpers.
+  uint32 rx_time = 7;
+
+  // Signal-to-noise ratio of the last hop.
+  // WHY: written by MessageBuilder::build; read by
+  // processor.rs::apply_passive_learning and
+  // collector.rs::handle_mesh_packet.
+  float rx_snr = 8;
+
+  // Remaining hop budget.
+  // WHY: written from builder.hop_limit in MessageBuilder::build; read by
+  // processor.rs::apply_passive_learning and
+  // collector.rs::compute_hop_count.
+  uint32 hop_limit = 10;
+
+  // Whether an application-layer ack is requested.
+  // WHY: written from builder.want_ack in MessageBuilder::build.
+  bool want_ack = 11;
+
+  // Send priority; see Priority below.
+  // WHY: written as i32::from(self.priority) in MessageBuilder::build;
+  // read via Priority::try_from(...).unwrap_or(Priority::Default) in
+  // router.rs's and outbound.rs's retry logic.
+  Priority priority = 12;
+
+  // Received signal strength; kerykeion always sends 0 and lets the radio
+  // fill it in.
+  // WHY: written (as 0) by MessageBuilder::build.
+  int32 rx_rssi = 13;
+
+  // Whether this packet arrived/left via an MQTT bridge.
+  // WHY: written (as false) by MessageBuilder::build.
+  bool via_mqtt = 17;
+
+  // Hop budget at send time, for computing hops traveled on receipt.
+  // WHY: written as u32::from(self.hop_limit) in MessageBuilder::build;
+  // read by processor.rs::apply_passive_learning and
+  // collector.rs::compute_hop_count.
+  uint32 hop_start = 18;
+
+  // Send priority levels.
+  // WHY: full cardinality (not just the variants this crate names) is
+  // required — router.rs::retry and outbound.rs::retry decode this via
+  // Priority::try_from(wire_value).unwrap_or(Priority::Default), so an
+  // unnamed real-firmware priority must still land on a recognized
+  // variant rather than silently widening what counts as Default.
+  // Background/Default/Reliable/Ack are named directly by
+  // message.rs::MessageBuilder and outbound.rs's tests; Unset/Min/Max are
+  // not named anywhere but must stay decodable for the same reason.
+  enum Priority {
+    UNSET = 0;
+    MIN = 1;
+    BACKGROUND = 10;
+    DEFAULT = 64;
+    RELIABLE = 70;
+    ACK = 120;
+    MAX = 127;
+  }
+}
+
+// The decoded application payload carried by MeshPacket.decoded.
+// WHY: every field is set explicitly at every kerykeion construction site
+// (message.rs::MessageBuilder::build, discovery.rs::build_traceroute_request)
+// and read back by processor.rs::process_mesh_packet /
+// RoutingProcessor::process_routing.
+// The application ports kerykeion actually speaks, and only those.
+//
+// WHY named rather than a bare int32: `message.rs` carries a typed `portnum:
+// PortNum` field and builds each outbound message against a named variant, so
+// the compiler needs these identities. An earlier draft of this schema modeled
+// the field as a plain int32 on the belief that the code only ever compared it
+// as a raw integer; `cargo check` disproved that immediately, which is the one
+// authority a reading of the source could not overrule.
+//
+// WHY only five: these are the ports this crate sends or decodes. The upstream
+// protocol defines many more, and reproducing them would mean carrying values
+// with no consumer here — the numbers below are the wire facts for the ports
+// kerykeion uses, and nothing else is asserted about the port space.
+//
+// WARNING: this enum is deliberately NOT exhaustive of the protocol. A packet
+// arriving on any other port decodes to an unrecognised value, which is correct
+// behaviour for a client that speaks five ports, but it means an added port must
+// be added here rather than assumed present.
+enum PortNum {
+  PORT_NUM_UNSPECIFIED = 0;
+  // Plain-text chat payloads. Built by message.rs::MessageBuilder::build.
+  TEXT_MESSAGE_APP = 1;
+  // Position reports. Built by message.rs; decoded by processor.rs.
+  POSITION_APP = 3;
+  // Ack/nak and routing errors. Decoded by RoutingProcessor::process_routing.
+  ROUTING_APP = 5;
+  // Device administration passthrough. Built by message.rs.
+  ADMIN_APP = 6;
+  // Traceroute requests and replies. Built by discovery.rs.
+  TRACEROUTE_APP = 70;
+}
+
+message Data {
+  // Application port this payload belongs to.
+  // WHY typed rather than int32: message.rs stores it as PortNum and converts
+  // with i32::from at the wire boundary, so the named identities are load-bearing
+  // in the Rust API even though the wire carries a bare varint.
+  PortNum portnum = 1;
+
+  // The application-specific payload bytes.
+  // WHY: written by MessageBuilder::build; read and handed to
+  // Position/User/Telemetry/RouteDiscovery::decode in processor.rs.
+  bytes payload = 2;
+
+  // Whether the recipient should send an application-layer response.
+  // WHY: written false by MessageBuilder::build, true by
+  // discovery.rs::build_traceroute_request.
+  bool want_response = 3;
+
+  // Final destination node number for the decoded payload.
+  // WHY: written 0 by MessageBuilder::build and build_traceroute_request.
+  uint32 dest = 4;
+
+  // Originating node number for the decoded payload.
+  // WHY: written 0 by MessageBuilder::build.
+  uint32 source = 5;
+
+  // The id of the request this Data replies to, if any.
+  // WHY: written 0 by MessageBuilder::build; read by
+  // RoutingProcessor::process_routing (data.request_id).
+  uint32 request_id = 6;
+
+  // The id this Data itself expects a reply under.
+  // WHY: written 0 by MessageBuilder::build.
+  uint32 reply_id = 7;
+
+  // Emoji reaction bytes, when this Data is a tapback.
+  // WHY: written empty by MessageBuilder::build.
+  bytes emoji = 8;
+}

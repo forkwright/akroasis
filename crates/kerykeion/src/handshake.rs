@@ -331,7 +331,6 @@ mod tests {
                     id: 2,
                     payload_variant: Some(from_radio::PayloadVariant::Channel(Channel {
                         index: 0,
-                        ..Default::default()
                     })),
                 }),
                 _ => Ok(FromRadio {
@@ -564,9 +563,7 @@ mod tests {
                 longitude_i: -1_278_000,
                 altitude: 42,
                 time: 1_700_000_001,
-                ..Default::default()
             }),
-            ..Default::default()
         };
 
         let node = node_info_to_mesh_node(&ni);
@@ -607,7 +604,6 @@ mod tests {
                 longitude_i: 0,
                 altitude: 0,
                 time: 0,
-                ..Default::default()
             }),
             ..Default::default()
         };

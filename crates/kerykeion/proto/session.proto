@@ -1,0 +1,97 @@
+// WHY: the local-radio session/config-handshake surface — what kerykeion
+// sends to and receives from the directly-attached radio, as opposed to
+// mesh traffic in packet.proto. Ordered by the sequence these messages
+// actually cross the wire during handshake.rs's handshake: kerykeion
+// sends ToRadio first, then receives FromRadio carrying MyNodeInfo and
+// Channel. Authored from kerykeion's own field usage; see packet.proto's
+// header for the general note on how this schema was derived.
+syntax = "proto3";
+
+package meshtastic;
+
+import "packet.proto";
+import "node_inventory.proto";
+
+// Sent from kerykeion to the locally-attached radio.
+// WHY: constructed in discovery.rs::build_traceroute_request and
+// handshake.rs::handshake_with_config; sent via
+// connection.rs::MeshConnection::send.
+message ToRadio {
+  oneof payload_variant {
+    // A mesh packet kerykeion wants the radio to transmit.
+    // WHY: written by discovery.rs::build_traceroute_request
+    // (to_radio::PayloadVariant::Packet).
+    MeshPacket packet = 1;
+
+    // Requests the radio begin a config handshake; echoed back in
+    // FromRadio.config_complete_id.
+    // WHY: written by handshake.rs::handshake_with_config
+    // (to_radio::PayloadVariant::WantConfigId).
+    uint32 want_config_id = 3;
+  }
+}
+
+// Received from the locally-attached radio.
+// WHY: decoded by codec.rs::Decoder; every named variant is matched by
+// handshake.rs and/or collector.rs::process_packet /
+// dispatch_to_processor.
+message FromRadio {
+  // Message identifier.
+  // WHY: round-tripped by codec.rs's make_from_radio test; logged by
+  // collector.rs::process_packet.
+  uint32 id = 1;
+
+  oneof payload_variant {
+    // A mesh packet arriving from the network.
+    // WHY: matched by handshake.rs and collector.rs::process_packet /
+    // dispatch_to_processor.
+    MeshPacket packet = 2;
+
+    // The radio's own identity, the first message of the config
+    // handshake.
+    // WHY: matched by handshake.rs::handshake_with_config
+    // (from_radio::PayloadVariant::MyInfo).
+    MyNodeInfo my_info = 3;
+
+    // A known mesh peer's record.
+    // WHY: matched by handshake.rs and collector.rs::process_packet /
+    // dispatch_to_processor.
+    NodeInfo node_info = 4;
+
+    // Echoes ToRadio.want_config_id when the handshake config dump is
+    // done.
+    // WHY: matched and compared against want_config_id by
+    // handshake.rs::handshake_with_config.
+    uint32 config_complete_id = 8;
+
+    // The radio reported a reboot mid-handshake.
+    // WHY: matched by handshake.rs::handshake_with_config, which treats
+    // this as HandshakeFailed.
+    bool rebooted = 9;
+
+    // A channel definition collected during the config handshake.
+    // WHY: matched by handshake.rs::handshake_with_config, which logs
+    // ch.index and appends to HandshakeResult.channels.
+    Channel channel = 10;
+  }
+}
+
+// The locally-attached radio's own node identity — the first message of
+// the config handshake.
+// WHY: matched from FromRadio.my_info by
+// handshake.rs::handshake_with_config (info.my_node_num).
+message MyNodeInfo {
+  // This radio's own node number.
+  uint32 my_node_num = 1;
+}
+
+// A channel definition, collected during the config handshake and reused
+// as an AdminMessage passthrough type (get_channel_response / set_channel).
+// WHY: matched from FromRadio.channel by
+// handshake.rs::handshake_with_config.
+message Channel {
+  // The channel's index.
+  // WHY: read as ch.index (logged) by handshake.rs::handshake_with_config;
+  // exercised by handshake.rs test literals.
+  int32 index = 1;
+}

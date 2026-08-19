@@ -2,16 +2,16 @@
 
 fn main() -> std::io::Result<()> {
     let proto_dir = "proto";
+    // Grouped by what this crate DOES with each message rather than by the wire protocol's own
+    // subsystem split, which is why there are six files here and not nine. Four of the previous
+    // files had no consumer in this crate at all and are gone rather than compiled and unused.
     let protos = [
-        "proto/meshtastic/portnums.proto",
-        "proto/meshtastic/telemetry.proto",
-        "proto/meshtastic/channel.proto",
-        "proto/meshtastic/config.proto",
-        "proto/meshtastic/module_config.proto",
-        "proto/meshtastic/mesh.proto",
-        "proto/meshtastic/admin.proto",
-        "proto/meshtastic/storeforward.proto",
-        "proto/meshtastic/mqtt.proto",
+        "proto/packet.proto",
+        "proto/node_inventory.proto",
+        "proto/routing_diagnostics.proto",
+        "proto/session.proto",
+        "proto/admin.proto",
+        "proto/mqtt_gateway.proto",
     ];
 
     prost_build::Config::new()
