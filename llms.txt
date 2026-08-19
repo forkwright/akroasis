@@ -12,10 +12,14 @@ Akroasis unifies radio, mesh, SDR, proximity, network defense, OSINT, offensive 
 
 Structured LLM corpus:
 - [_llm/architecture.toml](_llm/architecture.toml): current and planned layers and crates
-- [_llm/current_state.toml](_llm/current_state.toml): phase and blockers
 - [_llm/decisions.toml](_llm/decisions.toml): accepted architecture decisions
 - [_llm/glossary.toml](_llm/glossary.toml): akroasis vocabulary
 - [_llm/apis.toml](_llm/apis.toml): current CLI surface
+
+Live work, checks, and releases come from the
+[GitHub repository](https://github.com/forkwright/akroasis). Durable internal
+posture lives in Kanon at `projects/akroasis/STATE.md` and requires fleet
+access; this repository does not keep a second mutable state snapshot.
 
 ## Agent Entry Points
 
