@@ -80,15 +80,24 @@ fn concurrent_opens_on_the_same_path_never_both_succeed() {
         let barrier = Arc::clone(&barrier);
         thread::spawn(move || {
             barrier.wait();
-            TamperLog::open(path.as_path(), test_key()).is_ok()
+            // WHY return the `Result` instead of evaluating `is_ok()`
+            // here: an `Ok` handle dropped at this point releases the
+            // flock immediately, so a winner scheduled well before the
+            // loser would free the lock before the loser even attempts
+            // its open — both would succeed under load skew. Keeping the
+            // handle alive inside the join result holds the winner's lock
+            // until BOTH threads have made their attempt, which is what
+            // makes exactly-one-winner deterministic rather than
+            // probabilistic.
+            TamperLog::open(path.as_path(), test_key())
         })
     });
 
-    let successes: usize = handles
-        .into_iter()
-        .map(|h| h.join().unwrap())
-        .filter(|ok| *ok)
-        .count();
+    // WHY join both before counting: each `Ok` handle's flock is held
+    // until its `Result` drops, so both attempts must complete while the
+    // winner still holds the lock.
+    let results = handles.map(|h| h.join().unwrap());
+    let successes: usize = results.into_iter().flatten().count();
     assert_eq!(
         successes, 1,
         "exactly one of two concurrently-racing opens on the same path must succeed"
