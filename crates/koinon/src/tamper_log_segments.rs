@@ -23,7 +23,7 @@ use std::path::{Path, PathBuf};
 use snafu::ResultExt;
 
 use super::rotation::{log_stem, parse_rotation_number, rotation_path};
-use super::seal::{genesis_hash, read_seal};
+use super::seal::{self, genesis_hash, read_seal};
 use super::verify::{classify_terminal, stream_verify};
 use super::{ChainKey, ChainStatus, IoSnafu, TamperLogError};
 
@@ -156,9 +156,35 @@ pub fn verify_segment_chain(
     }
 
     let live = stream_verify(path, chain_key, expected_start)?;
-    let live_status = match live.break_status {
-        Some(status) => status,
-        None => classify_terminal(read_seal(path, chain_key), live.entries_verified),
+    let live_seal = read_seal(path, chain_key);
+    // WHY (akroasis#211): a live file with no entries of its own has no
+    // first link for the seed to be checked against, so the stream alone
+    // cannot catch deletion of the most recent rotated segment — the
+    // surviving rotation numbers stay contiguous, and the live seal's
+    // claimed `segment_start_hash` would be trusted on its own
+    // attestation. Require a valid live seal to name the terminal hash the
+    // previous SURVIVING segment actually produced (the keyed genesis root
+    // when no rotation exists) — the same continuity the first entry's
+    // link already proves for any non-empty segment. akroasis#285's
+    // Unsealed leniency is unaffected: a stale-but-valid seal still
+    // carries the file's fixed `segment_start_hash`, so only a genuinely
+    // discontinuous predecessor fails here.
+    let live_status = match (live.break_status, live_seal) {
+        (Some(status), _) => status,
+        (
+            None,
+            seal::SealState::Valid {
+                segment_start_hash, ..
+            },
+        ) if segment_start_hash != expected_start => ChainStatus::Broken {
+            // No live entry exists to expose the mismatch, so report the
+            // position the live file's continuation would occupy: the end
+            // of the surviving chain.
+            sequence: total_entries,
+            expected_hash: expected_start,
+            actual_hash: segment_start_hash,
+        },
+        (None, _) => classify_terminal(live_seal, live.entries_verified),
     };
 
     if !segment_ok(&live_status, true) {
