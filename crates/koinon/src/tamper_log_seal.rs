@@ -55,7 +55,7 @@ const SEAL_LINK_LEN: usize = 32;
 /// Length in bytes of the on-disk seal MAC.
 const SEAL_MAC_LEN: usize = 32;
 
-/// Total on-disk seal file length: count || segment_start_hash || MAC.
+/// Total on-disk seal file length: count || `segment_start_hash` || MAC.
 const SEAL_FILE_LEN: usize = SEAL_COUNT_LEN + SEAL_LINK_LEN + SEAL_MAC_LEN;
 
 /// Secret key that binds a tamper log's hash chain to its owner.

@@ -37,7 +37,7 @@ use super::{ChainKey, ChainStatus, IoSnafu, TamperLogError};
 /// silently accepted, even though `Unsealed` alone would be safe under the
 /// same reasoning as the live file (akroasis#285's leniency is scoped to
 /// the writer's own resume path, not this read-only auditor).
-fn segment_ok(status: &ChainStatus, is_live: bool) -> bool {
+const fn segment_ok(status: &ChainStatus, is_live: bool) -> bool {
     match status {
         ChainStatus::Intact => true,
         ChainStatus::Empty | ChainStatus::Unsealed { .. } => is_live,

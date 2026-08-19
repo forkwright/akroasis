@@ -157,11 +157,12 @@ fn concurrent_vault_mutations_produce_a_single_non_forked_chain() {
     // in-process mutex in `append_vault_audit` plus koinon's own
     // single-writer lock must make every mutation land, in some order, as
     // one strictly-serial, verifiable chain.
+    const WRITERS: usize = 8;
+
     let dir = tempfile::tempdir().unwrap();
     let vault_path = dir.path().join("concurrent-vault");
     let vault = std::sync::Arc::new(Vault::create(&vault_path, TEST_PASSPHRASE).unwrap());
 
-    const WRITERS: usize = 8;
     let barrier = std::sync::Arc::new(std::sync::Barrier::new(WRITERS));
 
     let handles: Vec<_> = (0..WRITERS)

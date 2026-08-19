@@ -237,10 +237,12 @@ pub(super) fn resolve_start_hash(sealed: seal::SealState, chain_key: &ChainKey) 
     }
 }
 
-/// Reads `path` FROM the beginning, recomputes every hash link keyed with
-/// `chain_key` — seeded from this segment's own authenticated
+/// Reads `path` FROM the beginning and recomputes every hash link keyed
+/// with `chain_key`.
+///
+/// The chain is seeded from this segment's own authenticated
 /// `segment_start_hash` when a valid seal supplies one, or the keyed
-/// genesis root otherwise — and returns the first break found, or, if every
+/// genesis root otherwise. Returns the first break found, or, if every
 /// link verifies, the seal-cross-checked terminal status.
 ///
 /// This is O(n) in file size and streams the file; it never loads the whole
@@ -275,7 +277,10 @@ pub fn verify_chain(
 /// Determines the terminal status once a segment has streamed cleanly to
 /// EOF with `entries_verified` links all verifying, by cross-checking
 /// against the already-read, authenticated sidecar seal.
-pub(super) fn classify_terminal(sealed: seal::SealState, entries_verified: u64) -> ChainStatus {
+pub(super) const fn classify_terminal(
+    sealed: seal::SealState,
+    entries_verified: u64,
+) -> ChainStatus {
     if entries_verified == 0 {
         match sealed {
             seal::SealState::Absent | seal::SealState::Valid { entry_count: 0, .. } => {

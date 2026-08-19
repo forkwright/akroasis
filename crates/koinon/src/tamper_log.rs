@@ -403,16 +403,16 @@ impl TamperLog {
         if path.exists() {
             let verification = verify_chain(&path, &chain_key)?;
             match verification.status {
-                ChainStatus::Intact | ChainStatus::Empty => {}
-                // WHY (#285): the stream verified MORE entries than a
-                // validly-authenticated seal claims — reachable only by
-                // whoever holds `chain_key`, so this is a safe-to-resume
-                // seal-refresh failure, not tampering. Fall through:
-                // recover_state below reads the TRUE (larger) tail
-                // straight from the verified content, and the
-                // refresh_seal call at the end of this function re-seals
-                // to that count before any further append is accepted.
-                ChainStatus::Unsealed { .. } => {}
+                // WHY (#285) on the Unsealed arm: the stream verified MORE
+                // entries than a validly-authenticated seal claims —
+                // reachable only by whoever holds `chain_key`, so this is a
+                // safe-to-resume seal-refresh failure, not tampering. Fall
+                // through: recover_state below reads the TRUE (larger) tail
+                // straight from the verified content, and the refresh_seal
+                // call at the end of this function re-seals to that count
+                // before any further append is accepted. Intact and Empty
+                // resume directly, needing no recovery commentary.
+                ChainStatus::Intact | ChainStatus::Empty | ChainStatus::Unsealed { .. } => {}
                 status => return ChainCompromisedSnafu { path, status }.fail(),
             }
         }

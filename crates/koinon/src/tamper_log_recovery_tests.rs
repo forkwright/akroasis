@@ -72,16 +72,17 @@ fn concurrent_opens_on_the_same_path_never_both_succeed() {
     let path = Arc::new(dir.path().join("race.log"));
     let barrier = Arc::new(Barrier::new(2));
 
-    let handles: Vec<_> = (0..2)
-        .map(|_| {
-            let path = Arc::clone(&path);
-            let barrier = Arc::clone(&barrier);
-            thread::spawn(move || {
-                barrier.wait();
-                TamperLog::open(path.as_path(), test_key()).is_ok()
-            })
+    // NOTE: `array::from_fn` eagerly spawns BOTH threads before any join
+    // below — a lazy iterator chain would spawn-join-spawn-join and never
+    // actually race, silently gutting the test.
+    let handles: [_; 2] = std::array::from_fn(|_| {
+        let path = Arc::clone(&path);
+        let barrier = Arc::clone(&barrier);
+        thread::spawn(move || {
+            barrier.wait();
+            TamperLog::open(path.as_path(), test_key()).is_ok()
         })
-        .collect();
+    });
 
     let successes: usize = handles
         .into_iter()

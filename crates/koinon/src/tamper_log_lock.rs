@@ -46,9 +46,10 @@ pub(super) fn acquire(log_path: &Path) -> Result<File, TamperLogError> {
     let path = lock_path(log_path);
     let file = OpenOptions::new()
         .create(true)
+        .truncate(false)
         .write(true)
         .open(&path)
-        .context(IoSnafu { path: path.clone() })?;
+        .context(IoSnafu { path })?;
 
     file.try_lock_exclusive().map_err(|_| {
         LockedSnafu {
