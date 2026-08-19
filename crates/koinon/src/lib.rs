@@ -28,6 +28,7 @@ pub use power::Power;
 pub use signal::{Confidence, GeoSignal, SignalKind};
 pub use tamper_log::{
     CHAIN_KEY_LEN, ChainKey, ChainStatus, DEFAULT_MAX_FILE_BYTES, LogEntry, LogEntryKind,
-    MAX_ENTRY_BYTES, TamperLog, TamperLogConfig, TamperLogError, VerificationResult, verify_chain,
+    MAX_ENTRY_BYTES, SegmentChainStatus, TamperLog, TamperLogConfig, TamperLogError,
+    VerificationResult, verify_chain, verify_segment_chain,
 };
 pub use timestamp::{Timestamp, TimestampError};

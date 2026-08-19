@@ -19,6 +19,7 @@ blake3.workspace = true
 ciborium.workspace = true
 zeroize.workspace = true
 subtle.workspace = true
+fs2.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

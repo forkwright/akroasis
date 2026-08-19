@@ -192,7 +192,9 @@ pub struct EntryHistory {
 /// The vault directory is advisory-locked to prevent concurrent access from
 /// OTHER PROCESSES; `write_lock` is the separate in-process guard that
 /// serializes this handle's own mutating calls (forkwright/akroasis#214) —
-/// see its field doc.
+/// see its field doc. Appends to the tamper-evident audit log are further
+/// serialized across their open-through-append critical section by
+/// `tamper_log_guard` (akroasis#226) — see `append_vault_audit`.
 pub struct Vault {
     db: fjall::Database,
     keyspace: fjall::Keyspace,
@@ -224,6 +226,17 @@ pub struct Vault {
     write_lock: std::sync::Mutex<()>,
     _lock: File,
     path: PathBuf,
+    // WHY (akroasis#226): `TamperLog::open` re-verifies and recovers the
+    // on-disk tail on every call — that's what lets a concurrently- or
+    // externally-truncated log be caught on the very next append (see
+    // `corrupted_tamper_log_blocks_further_vault_mutations`). Holding one
+    // long-lived `TamperLog` handle instead would skip that re-verification
+    // and let a stale in-memory tail launder an externally-truncated file.
+    // So concurrency is guarded here instead: this mutex serializes the
+    // open-through-append critical section, so two threads sharing one
+    // `Arc<Vault>` block on each other rather than each independently
+    // opening the log, recovering the same tail, and forking the chain.
+    tamper_log_guard: std::sync::Mutex<()>,
 }
 
 impl Vault {
@@ -288,6 +301,7 @@ impl Vault {
             write_lock: std::sync::Mutex::new(()),
             _lock: lock,
             path: path.to_path_buf(),
+            tamper_log_guard: std::sync::Mutex::new(()),
         })
     }
 
@@ -366,6 +380,7 @@ impl Vault {
             write_lock: std::sync::Mutex::new(()),
             _lock: lock,
             path: path.to_path_buf(),
+            tamper_log_guard: std::sync::Mutex::new(()),
         })
     }
 
@@ -795,6 +810,24 @@ impl Vault {
     }
 
     fn append_vault_audit(&self, name: &str, operation: &str) -> Result<(), VaultError> {
+        // WHY (akroasis#226): held across the ENTIRE open-through-append
+        // sequence, not just the open — a guard that unlocked between open
+        // and append would let a second thread's open interleave with this
+        // one's still-in-flight append, recovering the same pre-append tail.
+        // A poisoned mutex (a prior holder panicked mid-critical-section)
+        // still recovers the guard: `TamperLog::open`'s own re-verification
+        // is what actually protects correctness here, not the poison flag.
+        let _guard = self
+            .tamper_log_guard
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+
+        // INVARIANT: `log` must drop before `_guard` — Rust drops function
+        // locals in reverse declaration order, so declaring `_guard` first
+        // guarantees `log`'s koinon-level OS advisory lock (`TamperLog`'s
+        // `_lock` field) is released before this mutex is, so a thread that
+        // was waiting on `_guard` never sees a spurious `TamperLogError::
+        // Locked` from koinon's own (fail-fast, non-blocking) lock.
         let mut log =
             TamperLog::open(self.tamper_log_path(), self.chain_key()).context(TamperLogSnafu)?;
         log.append(LogEntryKind::VaultMutation {
