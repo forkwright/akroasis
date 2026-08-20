@@ -201,8 +201,8 @@ fn service_claims_bind_to_authenticated_identity_and_time() {
     );
     let clock = FixedClock(timestamp(1_500));
 
-    let (resolver, calls) = resolver(ServiceMode::Granted);
-    let caller = resolver
+    let (granted_resolver, calls) = resolver(ServiceMode::Granted);
+    let caller = granted_resolver
         .resolve_service(Some(&identity), &clock)
         .expect("accepted service caller");
     assert_eq!(caller.source(), PrincipalSource::ServiceIdentity);
@@ -220,8 +220,8 @@ fn service_claims_bind_to_authenticated_identity_and_time() {
     );
     assert_eq!(calls.get(), 1, "authority should be consulted once");
 
-    let (resolver, _) = resolver(ServiceMode::ReferenceMismatch);
-    let result = resolver.resolve_service(Some(&identity), &clock);
+    let (reference_mismatch_resolver, _) = resolver(ServiceMode::ReferenceMismatch);
+    let result = reference_mismatch_resolver.resolve_service(Some(&identity), &clock);
     assert!(
         matches!(
             result,
@@ -233,8 +233,8 @@ fn service_claims_bind_to_authenticated_identity_and_time() {
         "service claims cannot substitute another identity"
     );
 
-    let (resolver, _) = resolver(ServiceMode::TimeMismatch);
-    let result = resolver.resolve_service(Some(&identity), &clock);
+    let (time_mismatch_resolver, _) = resolver(ServiceMode::TimeMismatch);
+    let result = time_mismatch_resolver.resolve_service(Some(&identity), &clock);
     assert!(
         matches!(
             result,
@@ -246,8 +246,8 @@ fn service_claims_bind_to_authenticated_identity_and_time() {
         "service claims cannot backdate authentication"
     );
 
-    let (resolver, _) = resolver(ServiceMode::ExpiryMismatch);
-    let result = resolver.resolve_service(Some(&identity), &clock);
+    let (expiry_mismatch_resolver, _) = resolver(ServiceMode::ExpiryMismatch);
+    let result = expiry_mismatch_resolver.resolve_service(Some(&identity), &clock);
     assert!(
         matches!(
             result,
