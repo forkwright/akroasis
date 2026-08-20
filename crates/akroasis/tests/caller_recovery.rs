@@ -111,7 +111,7 @@ impl StatefulLedger {
         }
     }
 
-    fn clear_failure(&mut self) {
+    const fn clear_failure(&mut self) {
         self.fail_at = None;
     }
 

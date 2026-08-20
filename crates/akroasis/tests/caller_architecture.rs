@@ -75,7 +75,7 @@ fn restricted_identifiers(source: &str) -> BTreeSet<String> {
 
 #[test]
 fn caller_construction_aliases_are_detected() {
-    let source = r#"
+    let source = r"
         use koinon::{
             AuthorityClaimsBuilder as Claims,
             CallerAuthority as Authority,
@@ -86,7 +86,7 @@ fn caller_construction_aliases_are_detected() {
             let _claims = Claims::new();
             let _resolver = Resolver::<A>::try_new(1, authority);
         }
-    "#;
+    ";
     assert_eq!(
         restricted_identifiers(source),
         BTreeSet::from([

@@ -386,8 +386,10 @@ async fn resolver_failures_never_reach_a_fake_effect() {
                 },
             );
         }
-        let error = caller.as_ref().err().expect("caller resolution must fail");
-        assert_resolution_error(mode, error);
+        assert!(caller.is_err(), "caller resolution unexpectedly succeeded");
+        if let Err(error) = caller.as_ref() {
+            assert_resolution_error(mode, error);
+        }
         assert_eq!(calls.get(), 1, "authority should be consulted exactly once");
         assert_eq!(
             effect_calls.get(),
