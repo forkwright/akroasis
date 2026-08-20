@@ -370,7 +370,7 @@ pub struct ReceiptTransitionError {
 impl ReceiptTransitionError {
     /// Split the error into the contract failure and reconciliation ticket.
     #[must_use]
-    pub const fn into_parts(self) -> (EffectReceiptError, Box<RecoveryTicket>) {
+    pub fn into_parts(self) -> (EffectReceiptError, Box<RecoveryTicket>) {
         (self.source, self.recovery)
     }
 }
@@ -398,7 +398,7 @@ where
 {
     /// Split the append failure from the reconciliation candidate.
     #[must_use]
-    pub const fn into_parts(self) -> (E, Box<RecoveryTicket>) {
+    pub fn into_parts(self) -> (E, Box<RecoveryTicket>) {
         (self.source, self.recovery)
     }
 }
