@@ -234,38 +234,87 @@ fn assert_receipt_field_allowlist(intent: &EffectReceipt) {
 }
 
 fn assert_invalid_wire_shapes_fail(intent: &EffectReceipt, outcome: &EffectReceipt) {
+    assert_receipt_round_trip(intent);
+    assert_receipt_round_trip(outcome);
+
     let mut value = serde_json::to_value(intent).expect("serialize intent value");
     let object = value.as_object_mut().expect("receipt object");
-    object.insert("raw_path".to_owned(), serde_json::json!("/dev/ttyUSB0"));
     assert!(
-        serde_json::from_value::<EffectReceipt>(value).is_err(),
-        "unknown top-level fields must fail closed"
+        object
+            .insert("raw_path".to_owned(), serde_json::json!("/dev/ttyUSB0"))
+            .is_none(),
+        "raw path fixture field must be new"
+    );
+    assert_wire_rejection(
+        value,
+        "unknown field `raw_path`",
+        "unknown top-level fields must fail closed",
     );
 
     let mut nested_unknown = serde_json::to_value(intent).expect("serialize intent value");
-    nested_unknown["context"]
+    let context = nested_unknown
         .as_object_mut()
-        .expect("receipt context")
-        .insert("raw_rule".to_owned(), serde_json::json!("allow all"));
+        .and_then(|object| object.get_mut("context"))
+        .and_then(serde_json::Value::as_object_mut)
+        .expect("receipt context");
     assert!(
-        serde_json::from_value::<EffectReceipt>(nested_unknown).is_err(),
-        "unknown context fields must fail closed"
+        context
+            .insert("raw_rule".to_owned(), serde_json::json!("allow all"))
+            .is_none(),
+        "raw rule fixture field must be new"
+    );
+    assert_wire_rejection(
+        nested_unknown,
+        "unknown field `raw_rule`",
+        "unknown context fields must fail closed",
     );
 
     let mut unknown_version = serde_json::to_value(intent).expect("serialize intent value");
-    unknown_version["schema_version"] = serde_json::json!(99);
     assert!(
-        serde_json::from_value::<EffectReceipt>(unknown_version).is_err(),
-        "unknown receipt versions must fail closed"
+        unknown_version
+            .as_object_mut()
+            .expect("receipt object")
+            .insert("schema_version".to_owned(), serde_json::json!(99))
+            .is_some(),
+        "schema version fixture field must exist"
+    );
+    assert_wire_rejection(
+        unknown_version,
+        "unknown effect-receipt schema version 99",
+        "unknown receipt versions must fail closed",
     );
 
     let mut invalid_recovery = serde_json::to_value(outcome).expect("serialize outcome value");
-    invalid_recovery["recovery"] = serde_json::to_value(RecoveryRelation::RecoveryOf(
-        EffectRef::from_canonical(b"unrelated-effect"),
-    ))
+    let recovery = serde_json::to_value(RecoveryRelation::RecoveryOf(EffectRef::from_canonical(
+        b"unrelated-effect",
+    )))
     .expect("serialize recovery relation");
     assert!(
-        serde_json::from_value::<EffectReceipt>(invalid_recovery).is_err(),
-        "successful outcomes cannot claim an unrelated recovery relation"
+        invalid_recovery
+            .as_object_mut()
+            .expect("receipt object")
+            .insert("recovery".to_owned(), recovery)
+            .is_some(),
+        "recovery fixture field must exist"
+    );
+    assert_wire_rejection(
+        invalid_recovery,
+        "effect outcome has an incompatible recovery relation",
+        "successful outcomes cannot claim an unrelated recovery relation",
+    );
+}
+
+fn assert_receipt_round_trip(receipt: &EffectReceipt) {
+    let value = serde_json::to_value(receipt).expect("serialize valid receipt fixture");
+    let decoded =
+        serde_json::from_value::<EffectReceipt>(value).expect("valid receipt must deserialize");
+    assert_eq!(&decoded, receipt, "receipt wire round-trip must be exact");
+}
+
+fn assert_wire_rejection(value: serde_json::Value, expected: &str, message: &str) {
+    let error = serde_json::from_value::<EffectReceipt>(value).expect_err(message);
+    assert!(
+        error.to_string().contains(expected),
+        "{message}: expected {expected:?}, got {error}"
     );
 }
