@@ -209,7 +209,7 @@ impl PersistedOutcome {
     ///
     /// Returns [`EffectReceiptError::PersistedReceiptIsNotOutcome`] unless the
     /// verified receipt is an outcome.
-    pub fn from_verified(
+    pub const fn from_verified(
         receipt: EffectReceipt,
         digest: ReceiptDigest,
     ) -> Result<Self, EffectReceiptError> {
@@ -227,7 +227,7 @@ impl PersistedOutcome {
     ///
     /// Returns [`EffectReceiptError::PersistedReceiptIsNotOutcome`] if a
     /// ledger adapter violated the persisted-outcome constructor contract.
-    pub fn outcome(&self) -> Result<EffectOutcome, EffectReceiptError> {
+    pub const fn outcome(&self) -> Result<EffectOutcome, EffectReceiptError> {
         match self.receipt.event() {
             ReceiptEvent::Outcome(outcome) => Ok(outcome),
             ReceiptEvent::Intent => Err(EffectReceiptError::PersistedReceiptIsNotOutcome {
@@ -259,7 +259,9 @@ impl PersistedOutcome {
     ///
     /// Returns [`EffectReceiptError::NotRecoveryRequirement`] for an outcome
     /// that does not authorize recovery.
-    pub fn into_recovery_authorization(self) -> Result<RecoveryAuthorization, EffectReceiptError> {
+    pub const fn into_recovery_authorization(
+        self,
+    ) -> Result<RecoveryAuthorization, EffectReceiptError> {
         match (self.receipt.event(), self.receipt.recovery()) {
             (
                 ReceiptEvent::Outcome(EffectOutcome::Partial | EffectOutcome::RecoveryRequired),

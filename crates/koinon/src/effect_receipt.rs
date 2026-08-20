@@ -214,6 +214,10 @@ impl EffectReceipt {
     ///
     /// Returns [`EffectReceiptError::RecoveryIntentPrecedesRequirement`] when
     /// a recovery operation is observed before its durable requirement.
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "one authorization proof must be consumed by exactly one intent"
+    )]
     pub fn intent(
         caller: AuthorizedCaller,
         descriptor: EffectDescriptor,
@@ -498,7 +502,7 @@ impl EffectReceipt {
     }
 }
 
-fn expected_outcome_relation(
+const fn expected_outcome_relation(
     intent: &EffectReceipt,
     outcome: EffectOutcome,
 ) -> Result<RecoveryRelation, EffectReceiptError> {

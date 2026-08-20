@@ -23,7 +23,7 @@ macro_rules! define_opaque_ref {
             #[must_use]
             pub fn from_canonical(value: &[u8]) -> Self {
                 let mut hasher = blake3::Hasher::new();
-                hasher.update($domain.as_bytes());
+                hasher.update($domain);
                 hasher.update(&[0]);
                 hasher.update(value);
                 Self(hasher.finalize().into())
@@ -52,37 +52,37 @@ macro_rules! define_opaque_ref {
 
 define_opaque_ref!(
     CallerRef,
-    "akroasis.caller.v1",
+    b"akroasis.caller.v1",
     "Opaque caller identity reference."
 );
 define_opaque_ref!(
     PersonaRef,
-    "akroasis.persona.v1",
+    b"akroasis.persona.v1",
     "Opaque caller persona reference."
 );
 define_opaque_ref!(
     CapabilityRef,
-    "akroasis.capability.v1",
+    b"akroasis.capability.v1",
     "Opaque domain-capability reference."
 );
 define_opaque_ref!(
     ScopeRef,
-    "akroasis.scope.v1",
+    b"akroasis.scope.v1",
     "Opaque domain-owned scope reference."
 );
 define_opaque_ref!(
     EffectRef,
-    "akroasis.effect.v1",
+    b"akroasis.effect.v1",
     "Opaque protected-effect reference."
 );
 define_opaque_ref!(
     EvidenceDigest,
-    "akroasis.evidence.v1",
+    b"akroasis.evidence.v1",
     "Digest of allowlisted effect evidence."
 );
 define_opaque_ref!(
     ReceiptDigest,
-    "akroasis.receipt.v1",
+    b"akroasis.receipt.v1",
     "Digest of a durable minimized receipt."
 );
 

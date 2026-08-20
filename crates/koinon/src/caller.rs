@@ -357,7 +357,7 @@ where
         observed_at: Timestamp,
     ) -> Result<ValidatedCaller, CallerContractError> {
         let decision = self.authority.resolve_local(peer, observed_at);
-        self.resolve_decision(PrincipalSource::LocalOsPeer, None, observed_at, decision)
+        Self::resolve_decision(PrincipalSource::LocalOsPeer, None, observed_at, decision)
     }
 
     /// Resolve a caller from accepted service-identity evidence.
@@ -387,7 +387,7 @@ where
             evidence_expires_at,
             observed_at,
         );
-        self.resolve_decision(
+        Self::resolve_decision(
             PrincipalSource::ServiceIdentity,
             Some((identity_ref, authenticated_at, evidence_expires_at)),
             observed_at,
@@ -396,7 +396,6 @@ where
     }
 
     fn resolve_decision(
-        &self,
         source: PrincipalSource,
         expected_service: Option<(CallerRef, Timestamp, Timestamp)>,
         observed_at: Timestamp,
@@ -460,6 +459,10 @@ pub struct ValidatedCaller {
 }
 
 impl ValidatedCaller {
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "authority claims are consumed exactly once at the resolver boundary"
+    )]
     const fn from_authority(source: PrincipalSource, claims: AuthorityClaims) -> Self {
         Self {
             schema_version: CALLER_CONTEXT_VERSION,
