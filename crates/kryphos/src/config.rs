@@ -230,7 +230,9 @@ mod tests {
         let result: Result<TestConfig, _> =
             Figment::from(VaultProvider::new(inner, vault)).extract();
 
-        let message = result.expect_err("non-UTF-8 secret must not resolve").to_string();
+        let message = result
+            .expect_err("non-UTF-8 secret must not resolve")
+            .to_string();
         assert!(
             message.contains("binary_key") && message.contains("non-UTF-8"),
             "error must name the offending entry and the reason, got: {message}"

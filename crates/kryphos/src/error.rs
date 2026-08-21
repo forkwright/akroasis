@@ -131,7 +131,7 @@ pub enum VaultError {
         /// The operation recorded in the audit log.
         operation: &'static str,
         /// Why the mutation failed after its audit entry was written.
-        source: Box<VaultError>,
+        source: Box<Self>,
     },
 
     /// Writing the tamper-evident vault audit log failed.
