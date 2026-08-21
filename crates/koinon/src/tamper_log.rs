@@ -26,6 +26,16 @@
 //! reachable only by whoever holds the chain key (see akroasis#285). See
 //! `tamper_log_seal` for the seal and key machinery.
 //!
+//! The log and its seal are two files with no shared transaction, so every
+//! append has a commit window in which they disagree. `seal::write_seal`
+//! documents which of its stages produces which disagreement and why each is
+//! recoverable; the property that makes the whole scheme safe is that an
+//! interrupted commit can only ever leave a *validly authenticated* seal,
+//! stale or current, while an absent or unauthenticated one requires an
+//! actor. That is the entire basis for resuming an `Unsealed` log and
+//! refusing every other mismatch — and it holds only because reopening
+//! re-verifies each entry beyond the seal before accepting it.
+//!
 //! # Single-writer lock
 //!
 //! [`TamperLog::open_with_config`] acquires an exclusive advisory lock on a

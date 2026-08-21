@@ -186,11 +186,152 @@ pub(super) fn read_seal(log_path: &Path, chain_key: &ChainKey) -> SealState {
     }
 }
 
+/// Test-only failure injection for [`write_seal`]'s individual stages.
+///
+/// WHY a seam rather than manipulating the filesystem from outside: the
+/// stages of this two-file commit have different recovery properties, and on
+/// POSIX they cannot be told apart from outside the function. `File::create`
+/// and `fs::rename` share one precondition — write permission on the
+/// directory — so a permissions-based injection that reaches the rename has
+/// already blocked the create, and the only external way to fail the rename
+/// alone is to replace its target with a directory, which destroys the very
+/// stale seal whose survival is the property worth testing. `write_all` and
+/// `sync_all` have no external trigger at all short of filling the device.
+///
+/// The selector is thread-local, so tests running concurrently cannot arm
+/// each other's failures, and it is one-shot, so an armed stage cannot leak
+/// into a later call. The whole module compiles out of any build that is not
+/// `cfg(test)`.
+#[cfg(test)]
+pub(super) mod inject {
+    use std::cell::Cell;
+
+    /// A fallible stage of [`super::write_seal`].
+    #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+    pub(crate) enum SealStage {
+        /// Creating the `.tmp` sibling.
+        Create,
+        /// Writing the payload into it.
+        Write,
+        /// Flushing that payload to the device.
+        Sync,
+        /// Renaming the `.tmp` over the live seal.
+        Rename,
+        /// Making the rename itself durable.
+        DirSync,
+    }
+
+    thread_local! {
+        static FAIL_AT: Cell<Option<SealStage>> = const { Cell::new(None) };
+    }
+
+    /// Arms a one-shot failure at `stage` on this thread.
+    pub(crate) fn fail_at(stage: SealStage) {
+        FAIL_AT.with(|cell| cell.set(Some(stage)));
+    }
+
+    /// Disarms any pending injection on this thread.
+    pub(crate) fn clear() {
+        FAIL_AT.with(|cell| cell.set(None));
+    }
+
+    /// Consumes a pending injection when it names `stage`.
+    pub(crate) fn should_fail(stage: SealStage) -> bool {
+        FAIL_AT.with(|cell| {
+            let armed = cell.get() == Some(stage);
+            if armed {
+                cell.set(None);
+            }
+            armed
+        })
+    }
+}
+
+/// Fails with an ordinary I/O error when this thread has armed `stage`.
+#[cfg(test)]
+fn injected(stage: inject::SealStage, path: &Path) -> Result<(), TamperLogError> {
+    if inject::should_fail(stage) {
+        return Err::<(), std::io::Error>(std::io::Error::other(format!(
+            "injected seal-stage failure at {stage:?}"
+        )))
+        .context(IoSnafu {
+            path: path.to_path_buf(),
+        });
+    }
+    Ok(())
+}
+
+/// Fsyncs the directory holding `path`, making the rename that placed the
+/// file there durable rather than merely visible.
+///
+/// WHY this is not redundant with the seal file's own `sync_all`: they cover
+/// two different objects. `sync_all` on the temporary file makes its
+/// *contents* durable. The rename that gives those contents their name is a
+/// modification of the *directory*, and on ext4, XFS and btrfs a crash
+/// between the rename and a directory fsync can lose the name while keeping
+/// the data. The seal would then read as stale — or absent — after a power
+/// loss that the append it describes survived, which is the log-ahead state
+/// this module exists to make recoverable, reached by a route that leaves no
+/// trace of how.
+///
+/// The cost is one extra fsync per append, on top of the seal file's own. For
+/// a log whose entire purpose is that its record survives the event it
+/// records, that is the correct side to spend on.
+fn sync_parent_dir(path: &Path) -> Result<(), TamperLogError> {
+    // WHY unix-gated: opening a directory as a file and fsyncing the handle
+    // is a POSIX guarantee, not a portable one — Windows refuses the open
+    // outright. The fleet is Unix; elsewhere the rename's durability falls
+    // back to whatever the platform provides, which is what the code did
+    // everywhere before this.
+    #[cfg(unix)]
+    {
+        let parent = path.parent().unwrap_or_else(|| Path::new(""));
+        // An empty parent means a bare relative filename, whose directory is
+        // the process working directory.
+        let dir = if parent.as_os_str().is_empty() {
+            Path::new(".")
+        } else {
+            parent
+        };
+        File::open(dir)
+            .and_then(|handle| handle.sync_all())
+            .context(IoSnafu {
+                path: dir.to_path_buf(),
+            })?;
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = path;
+    }
+    Ok(())
+}
+
 /// Writes the seal sidecar for `log_path`, authenticating `entry_count` and
 /// `segment_start_hash` together.
 ///
-/// Writes to a `.tmp` sibling and renames into place so a concurrent
-/// reader (or a crash mid-write) never observes a partially-written seal.
+/// Writes to a `.tmp` sibling and renames into place so a concurrent reader
+/// (or a crash mid-write) never observes a partially-written seal.
+///
+/// # Durability boundary
+///
+/// The commit is four ordered steps, and what survives a crash depends on
+/// which one it interrupts:
+///
+/// - **create / write** — the live seal is untouched, so the log may end up
+///   ahead of a still-valid seal. That is the recoverable `Unsealed` state:
+///   the next open verifies the extra entries and reseals.
+/// - **sync** — same, with the added case that the `.tmp` may hold
+///   unflushed bytes. It is never read: only the rename publishes it, and a
+///   later call truncates it.
+/// - **rename** — atomic by POSIX guarantee. A reader sees either the old
+///   seal or the new one, never a splice of the two.
+/// - **directory sync** — see [`sync_parent_dir`]. Without it the rename can
+///   be visible now and lost after a power cut.
+///
+/// Every one of those leaves either the previous valid seal or the new one,
+/// which is why a log ahead of a *validly authenticated* seal is treated as
+/// recoverable while an absent or unauthenticated seal stays fail-closed: an
+/// interrupted commit cannot produce the latter, but an attacker can.
 pub(super) fn write_seal(
     log_path: &Path,
     chain_key: &ChainKey,
@@ -209,14 +350,29 @@ pub(super) fn write_seal(
     payload.extend_from_slice(&mac);
 
     {
+        #[cfg(test)]
+        injected(inject::SealStage::Create, &tmp)?;
         let mut file = File::create(&tmp).context(IoSnafu { path: tmp.clone() })?;
+
+        #[cfg(test)]
+        injected(inject::SealStage::Write, &tmp)?;
         file.write_all(&payload)
             .context(IoSnafu { path: tmp.clone() })?;
+
+        #[cfg(test)]
+        injected(inject::SealStage::Sync, &tmp)?;
         file.sync_all().context(IoSnafu { path: tmp.clone() })?;
     }
-    fs::rename(&tmp, &target).context(IoSnafu { path: target })?;
 
-    Ok(())
+    #[cfg(test)]
+    injected(inject::SealStage::Rename, &target)?;
+    fs::rename(&tmp, &target).context(IoSnafu {
+        path: target.clone(),
+    })?;
+
+    #[cfg(test)]
+    injected(inject::SealStage::DirSync, &target)?;
+    sync_parent_dir(&target)
 }
 
 /// Renames the seal sidecar alongside a rotated log file.
