@@ -3,8 +3,8 @@
 use std::io::Read;
 use std::path::Path;
 
-use koinon::Frequency;
 use snafu::{ResultExt, Snafu};
+use stoicheion::Frequency;
 
 use crate::channel::Channel;
 use crate::plan::FrequencyPlan;

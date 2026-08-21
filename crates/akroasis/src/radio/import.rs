@@ -3,9 +3,9 @@
 use std::io::Write;
 use std::path::Path;
 
-use koinon::Frequency;
 use serde::Serialize;
 use snafu::ResultExt;
+use stoicheion::Frequency;
 use syntonia::{Bandwidth, Channel, FrequencyPlan, PowerLevel, ScanMode, ToneMode};
 
 use super::errors::{IoSnafu, JsonReportSnafu, RadioError, ReadFileSnafu, SyntoniaSnafu};

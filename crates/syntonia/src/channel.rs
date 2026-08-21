@@ -1,7 +1,7 @@
 //! Radio channel data model.
 
-use koinon::Frequency;
 use serde::{Deserialize, Serialize};
+use stoicheion::Frequency;
 
 use crate::tone::ToneMode;
 use crate::types::{Bandwidth, FrequencyOffset, PowerLevel, ScanMode};

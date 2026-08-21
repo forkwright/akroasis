@@ -129,7 +129,7 @@ const fn format_scan(scan: ScanMode) -> &'static str {
     reason = "test code: panics and unwraps acceptable in assertions"
 )]
 mod tests {
-    use koinon::Frequency;
+    use stoicheion::Frequency;
     use syntonia::tone::CtcssTone;
     use syntonia::types::FrequencyOffset;
 

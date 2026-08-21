@@ -4,9 +4,9 @@
 //! that the library exposes a public test binary (required by
 //! TESTING/no-tests).
 
-use koinon::signal::{RfDetail, SignalKind};
-use koinon::{GeoSignal, Power, Timestamp};
 use semaino::{ConvergenceGrid, SemainoConfig, SignalAggregator};
+use stoicheion::signal::{RfDetail, SignalKind};
+use stoicheion::{GeoSignal, Power, Timestamp};
 
 #[test]
 fn default_config_has_sensible_values() {

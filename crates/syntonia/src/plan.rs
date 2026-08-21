@@ -80,7 +80,7 @@ impl FrequencyPlan {
     reason = "test code: panics and unwraps acceptable in assertions"
 )]
 mod tests {
-    use koinon::Frequency;
+    use stoicheion::Frequency;
 
     use super::*;
     use crate::tone::ToneMode;

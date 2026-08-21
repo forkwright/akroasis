@@ -107,7 +107,7 @@ mod tests {
         let channel = Channel {
             index: 0,
             name: String::new(),
-            rx_freq: koinon::Frequency::mhz(146),
+            rx_freq: stoicheion::Frequency::mhz(146),
             tx_freq: None,
             offset: crate::types::FrequencyOffset::None,
             tone: crate::tone::ToneMode::None,

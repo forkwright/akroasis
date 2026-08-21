@@ -23,7 +23,7 @@ compact_str.workspace = true
 figment.workspace = true
 fjall.workspace = true
 fs2.workspace = true
-koinon = { path = "../koinon" }
+tekmerion = { path = "../tekmerion" }
 
 [dev-dependencies]
 serde_json.workspace = true

@@ -11,7 +11,7 @@
 
 use std::collections::HashMap;
 
-use koinon::{Coordinates, GeoSignal, Timestamp, signal::SignalKind};
+use stoicheion::{Coordinates, GeoSignal, Timestamp, signal::SignalKind};
 
 // ---------------------------------------------------------------------------
 // GridCell
@@ -345,7 +345,7 @@ fn cell_center(cell: GridCell, resolution: u32) -> Coordinates {
     reason = "test code: panics and unwraps acceptable in assertions"
 )]
 mod tests {
-    use koinon::{
+    use stoicheion::{
         Frequency, Power, Timestamp,
         signal::{
             EnvironmentalDetail, GpsDetail, MeshDetail, NetworkDetail, OsintDetail,

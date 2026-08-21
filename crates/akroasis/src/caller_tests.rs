@@ -8,7 +8,7 @@
 use std::cell::Cell;
 use std::rc::Rc;
 
-use koinon::{
+use tekmerion::{
     AuthorityClaims, AuthorityDecision, AuthorityGrant, AuthorizationDenial,
     AuthorizationRequirement, CALLER_CONTEXT_VERSION, CallerContractError, CapabilityRef,
     PersonaRef, PolicyEpoch, PrincipalSource, ScopeRef, authorize_caller,

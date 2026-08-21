@@ -171,7 +171,7 @@ fn channel_to_record(ch: &Channel) -> [String; 19] {
     reason = "test code: panics and unwraps acceptable in assertions"
 )]
 mod tests {
-    use koinon::Frequency;
+    use stoicheion::Frequency;
 
     use super::*;
     use crate::import::csv::import_chirp_csv_reader;

@@ -41,6 +41,17 @@ use super::{IoSnafu, TamperLogError};
 pub const CHAIN_KEY_LEN: usize = 32;
 
 /// Domain-separation tag for the keyed genesis root.
+// WARNING: the four domain separators below still read `koinon/...` after this
+// crate was renamed to `tekmerion`, and they must. They are not names — they
+// are keyed-hash inputs. `GENESIS_DOMAIN` seeds every chain's root hash and the
+// seal domains key every MAC, so changing one byte re-roots the chain and
+// invalidates every tamper log already on disk: existing logs would verify as
+// broken, which is indistinguishable from the tampering the log exists to
+// detect.
+//
+// A rename that "finishes the job" here is a silent, unrecoverable break. If a
+// domain ever must change, it changes as a versioned migration with a reader
+// that accepts both, never as a search-and-replace.
 const GENESIS_DOMAIN: &[u8] = b"koinon/tamper-log/genesis/v1";
 
 /// Domain-separation tag for the seal MAC.

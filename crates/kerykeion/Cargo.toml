@@ -7,7 +7,7 @@ license.workspace = true
 description = "Meshtastic mesh networking integration for Akroasis"
 
 [dependencies]
-koinon = { path = "../koinon" }
+stoicheion = { path = "../stoicheion" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 snafu = { workspace = true }

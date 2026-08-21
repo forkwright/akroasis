@@ -128,7 +128,7 @@ pub(crate) fn load_plan(path: &Path) -> Result<FrequencyPlan, RadioError> {
     reason = "test code: panics and unwraps acceptable in assertions"
 )]
 mod tests {
-    use koinon::Frequency;
+    use stoicheion::Frequency;
     use syntonia::{Bandwidth, Channel, PowerLevel, ScanMode, ToneMode, types::FrequencyOffset};
 
     use super::*;

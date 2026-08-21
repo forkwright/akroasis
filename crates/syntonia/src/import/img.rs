@@ -109,7 +109,7 @@ pub fn import_img_bytes(data: &[u8]) -> Result<FrequencyPlan, ImgImportError> {
     reason = "test code: panics and unwraps acceptable in assertions"
 )]
 mod tests {
-    use koinon::Frequency;
+    use stoicheion::Frequency;
 
     use super::*;
     use crate::baofeng::codec;

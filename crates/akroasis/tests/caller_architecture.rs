@@ -90,11 +90,7 @@ fn restricted_identifiers(source: &str) -> BTreeSet<String> {
 #[test]
 fn caller_construction_aliases_are_detected() {
     let source = r"
-        use koinon::{
-            AuthorityClaimsBuilder as Claims,
-            CallerAuthority as Authority,
-            CallerResolver as Resolver,
-        };
+        use tekmerion::{AuthorityClaimsBuilder as Claims, CallerAuthority as Authority, CallerResolver as Resolver};
 
         fn bypass<A: Authority>(authority: A) {
             let _claims = Claims::new();
@@ -166,8 +162,8 @@ fn is_allowed(path: &Path) -> bool {
         || path == Path::new("crates/akroasis/tests/caller_contract.rs")
         || path == Path::new("crates/akroasis/tests/caller_recovery.rs")
         || path == Path::new("crates/akroasis/tests/caller_receipt_wire.rs")
-        || path == Path::new("crates/koinon/src/caller.rs")
-        || path == Path::new("crates/koinon/src/lib.rs")
+        || path == Path::new("crates/tekmerion/src/caller.rs")
+        || path == Path::new("crates/tekmerion/src/lib.rs")
 }
 
 fn collect_rust_files(path: &Path, files: &mut Vec<PathBuf>) {

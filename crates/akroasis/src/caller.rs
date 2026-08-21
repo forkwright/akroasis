@@ -6,14 +6,15 @@
 
 use std::fmt;
 
-use koinon::{
+use snafu::{ResultExt, Snafu};
+use stoicheion::Timestamp;
+use tekmerion::{
     AuthorizationDenial, AuthorizationRequirement, CALLER_RESOLVER_VERSION, CallerAuthority,
     CallerContractError, CallerRef, CallerResolver, EffectDescriptor, EffectOutcome, EffectReceipt,
     EffectReceiptError, EffectReceiptSink, EvidenceDigest, LocalPeerCredentials, PersistedIntent,
     PersistedOutcome, ReceiptDigest, RecoveryAuthorization, RecoveryTicket, RevocationState,
-    Timestamp, ValidatedCaller, authorize_caller,
+    ValidatedCaller, authorize_caller,
 };
-use snafu::{ResultExt, Snafu};
 use tokio::net::UnixStream;
 
 /// Version of accepted service-identity evidence.
@@ -423,19 +424,19 @@ where
 
 const fn outcome_needs_recovery(
     outcome: EffectOutcome,
-    recovery: koinon::RecoveryRelation,
+    recovery: tekmerion::RecoveryRelation,
 ) -> bool {
     matches!(
         (outcome, recovery),
         (
             EffectOutcome::Partial | EffectOutcome::RecoveryRequired,
-            koinon::RecoveryRelation::RequiredFor(_)
+            tekmerion::RecoveryRelation::RequiredFor(_)
         ) | (
             EffectOutcome::Failed
                 | EffectOutcome::Cancelled
                 | EffectOutcome::Backpressured
                 | EffectOutcome::AuthorizationDenied,
-            koinon::RecoveryRelation::RecoveryOf(_)
+            tekmerion::RecoveryRelation::RecoveryOf(_)
         )
     )
 }

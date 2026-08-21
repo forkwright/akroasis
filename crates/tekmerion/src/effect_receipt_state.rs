@@ -2,12 +2,12 @@
 
 use snafu::Snafu;
 
-use crate::Timestamp;
 use crate::caller::{EffectRef, EvidenceDigest, ReceiptDigest, SchemaEpoch};
 use crate::effect_receipt::{
     EffectDescriptor, EffectOutcome, EffectReceipt, EffectReceiptError, ReceiptEvent,
     RecoveryRelation,
 };
+use stoicheion::Timestamp;
 
 /// Append-only application ledger for minimized effect receipts.
 ///

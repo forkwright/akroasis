@@ -204,7 +204,7 @@ mod tests {
 
     #[test]
     fn multiple_radios_generates_warning() {
-        use koinon::RadioKind;
+        use stoicheion::RadioKind;
 
         use crate::hardware::detect::{RadioIdent, VariantConfig};
 
@@ -244,7 +244,7 @@ mod tests {
 
     #[test]
     fn single_radio_generates_no_detection_warning() {
-        use koinon::RadioKind;
+        use stoicheion::RadioKind;
 
         use crate::hardware::detect::{RadioIdent, VariantConfig};
 

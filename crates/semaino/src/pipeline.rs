@@ -5,8 +5,8 @@
 
 use std::time::Duration;
 
-use koinon::GeoSignal;
 use serde::{Deserialize, Serialize};
+use stoicheion::GeoSignal;
 use tokio::sync::{broadcast, mpsc};
 use tracing::Instrument as _;
 
@@ -213,9 +213,9 @@ impl SemainoPipeline {
                                 clippy::cast_possible_truncation,
                                 reason = "Duration::as_millis() returns u128; cast to i64 is safe because i64::MAX ms is larger than any realistic eviction window"
                             )]
-                            let evict_before_ms = koinon::Timestamp::now().as_unix_millis()
+                            let evict_before_ms = stoicheion::Timestamp::now().as_unix_millis()
                                 - self.time_window.as_millis() as i64; // SAFETY: Duration::as_millis() returns u128 but time_window is config-bounded; fits i64
-                            if let Ok(ts) = koinon::Timestamp::from_unix_millis(evict_before_ms) {
+                            if let Ok(ts) = stoicheion::Timestamp::from_unix_millis(evict_before_ms) {
                                 self.grid.evict(ts);
                             }
 
@@ -290,7 +290,7 @@ impl SemainoPipeline {
     fn handle_aggregated(&mut self, aggregated: &AggregatedSignal) {
         self.grid.ingest(&aggregated.signal);
 
-        let now = koinon::Timestamp::now();
+        let now = stoicheion::Timestamp::now();
         // WHY(#223): this read the whole grid and then took `.first()`, under a
         // comment claiming it was "the cell matching the signal". A HashMap has
         // no first, so with more than one converged cell the alert was attributed
@@ -328,7 +328,7 @@ impl SemainoPipeline {
 mod tests {
     use std::sync::{Arc, Mutex};
 
-    use koinon::{
+    use stoicheion::{
         AnomalyScore, Coordinates, Frequency, GeoSignal, Power, Timestamp,
         signal::{GpsDetail, MeshDetail, RfDetail, SignalKind},
     };
@@ -401,7 +401,7 @@ mod tests {
         };
         assert_eq!(
             severities,
-            vec![koinon::signal::AlertSeverity::High],
+            vec![stoicheion::signal::AlertSeverity::High],
             "exactly one alert, from the outlier: an empty list means it was \
              dropped crossing a saturated channel (#232), and more than one \
              means the flat burst itself scored"
@@ -490,7 +490,7 @@ mod tests {
         };
         assert_eq!(
             severities,
-            vec![koinon::signal::AlertSeverity::Critical],
+            vec![stoicheion::signal::AlertSeverity::Critical],
             "one alert, Critical: three domains converged at the anomaly's own \
              cell. High would mean the mesh and GPS signals were not yet in the \
              grid when the anomaly was evaluated (#224)"
@@ -547,7 +547,8 @@ mod tests {
         assert!(
             matches!(
                 severity,
-                koinon::signal::AlertSeverity::High | koinon::signal::AlertSeverity::Critical
+                stoicheion::signal::AlertSeverity::High
+                    | stoicheion::signal::AlertSeverity::Critical
             ),
             "outlier signal should produce High or Critical alert, got {severity:?}",
         );
@@ -606,7 +607,7 @@ mod tests {
 
     #[tokio::test]
     async fn pipeline_ignores_osint_no_alert() {
-        use koinon::signal::{OsintDetail, SignalKind};
+        use stoicheion::signal::{OsintDetail, SignalKind};
 
         let (tx, rx) = broadcast::channel::<GeoSignal>(64);
         let mut pipeline = SemainoPipeline::new(&SemainoConfig::default());
@@ -659,7 +660,7 @@ mod tests {
         // calling handle_aggregated directly against a grid that has NOT
         // yet seen the RF trigger signal, only a co-located Mesh signal that
         // arrived through the ordinary path.
-        use koinon::signal::MeshDetail;
+        use stoicheion::signal::MeshDetail;
 
         let loc = Coordinates::new(51.5, -0.1, None).expect("valid coordinates");
 
@@ -715,7 +716,7 @@ mod tests {
         );
         assert_eq!(
             first_severity,
-            Some(koinon::signal::AlertSeverity::Medium),
+            Some(stoicheion::signal::AlertSeverity::Medium),
             "an Elevated score with 2-domain convergence classifies as \
              Medium; a Low severity here means the RF trigger's own signal \
              was missing from the grid at detection time (#224)"
@@ -732,7 +733,7 @@ mod tests {
     /// location.
     #[test]
     fn a_convergence_in_another_cell_does_not_escalate_this_signal() {
-        use koinon::signal::MeshDetail;
+        use stoicheion::signal::MeshDetail;
 
         let elsewhere = Coordinates::new(51.5, -0.1, None).expect("valid coordinates");
         let trigger_loc = Coordinates::new(48.85, 2.35, None).expect("valid coordinates");
@@ -791,7 +792,7 @@ mod tests {
         };
         assert_eq!(
             first_severity,
-            Some(koinon::signal::AlertSeverity::Low),
+            Some(stoicheion::signal::AlertSeverity::Low),
             "the trigger's own cell holds one domain, so this must classify \
              Low; Medium means an unrelated cell's convergence was used"
         );

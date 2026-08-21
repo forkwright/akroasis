@@ -44,14 +44,15 @@ dependencies = [
  "indicatif",
  "jiff",
  "kerykeion",
- "koinon",
  "kryphos",
  "rpassword",
  "serde",
  "serde_json",
  "snafu",
+ "stoicheion",
  "syn 3.0.3",
  "syntonia",
+ "tekmerion",
  "tempfile",
  "tokio",
  "tracing",
@@ -1401,7 +1402,6 @@ dependencies = [
  "ctr",
  "futures",
  "jiff",
- "koinon",
  "petgraph",
  "proptest",
  "prost",
@@ -1410,32 +1410,12 @@ dependencies = [
  "serde",
  "serde_json",
  "snafu",
+ "stoicheion",
  "tokio",
  "tokio-serial",
  "tokio-util",
  "toml 1.1.4+spec-1.1.0",
  "tracing",
-]
-
-[[package]]
-name = "koinon"
-version = "0.6.0"
-dependencies = [
- "blake3",
- "ciborium",
- "compact_str",
- "fs2",
- "jiff",
- "proptest",
- "serde",
- "serde_json",
- "snafu",
- "subtle",
- "tempfile",
- "toml 1.1.4+spec-1.1.0",
- "tracing",
- "ulid",
- "zeroize",
 ]
 
 [[package]]
@@ -1451,12 +1431,12 @@ dependencies = [
  "fjall",
  "fs2",
  "jiff",
- "koinon",
  "rand_core 0.6.4",
  "serde",
  "serde_json",
  "snafu",
  "subtle",
+ "tekmerion",
  "tempfile",
  "zeroize",
 ]
@@ -2169,9 +2149,9 @@ name = "semaino"
 version = "0.6.0"
 dependencies = [
  "jiff",
- "koinon",
  "serde",
  "snafu",
+ "stoicheion",
  "tokio",
  "toml 1.1.4+spec-1.1.0",
  "tracing",
@@ -2418,6 +2398,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 
 [[package]]
+name = "stoicheion"
+version = "0.6.0"
+dependencies = [
+ "compact_str",
+ "jiff",
+ "proptest",
+ "serde",
+ "serde_json",
+ "snafu",
+ "tracing",
+ "ulid",
+]
+
+[[package]]
 name = "strsim"
 version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2463,16 +2457,37 @@ version = "0.6.0"
 dependencies = [
  "compact_str",
  "csv",
- "koinon",
  "proptest",
  "rusb",
  "serde",
  "serde_json",
  "serialport",
  "snafu",
+ "stoicheion",
  "tempfile",
  "toml 1.1.4+spec-1.1.0",
  "tracing",
+]
+
+[[package]]
+name = "tekmerion"
+version = "0.6.0"
+dependencies = [
+ "blake3",
+ "ciborium",
+ "compact_str",
+ "fs2",
+ "jiff",
+ "serde",
+ "serde_json",
+ "snafu",
+ "stoicheion",
+ "subtle",
+ "tempfile",
+ "toml 1.1.4+spec-1.1.0",
+ "tracing",
+ "ulid",
+ "zeroize",
 ]
 
 [[package]]

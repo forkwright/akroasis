@@ -7,11 +7,11 @@
 
 use std::collections::HashMap;
 
-use koinon::{
+use snafu::Snafu;
+use stoicheion::{
     AnomalyScore, GeoSignal, TemporalBucketedBaseline,
     signal::{EnvironmentalDetail, GpsDetail, MeshDetail, ProximityDetail, RfDetail, SignalKind},
 };
-use snafu::Snafu;
 use tokio::sync::mpsc;
 
 // ---------------------------------------------------------------------------
@@ -224,11 +224,11 @@ impl SignalAggregator {
     }
 }
 
-/// Extract (`day_of_week`, `hour`) from a [`koinon::Timestamp`].
+/// Extract (`day_of_week`, `hour`) from a [`stoicheion::Timestamp`].
 ///
 /// Returns (0, 0) — Monday 00:00 — on any conversion failure so the caller
 /// always gets a valid bucket index.
-pub(crate) fn day_hour_from_timestamp(ts: &koinon::Timestamp) -> (u8, u8) {
+pub(crate) fn day_hour_from_timestamp(ts: &stoicheion::Timestamp) -> (u8, u8) {
     use jiff::civil::Weekday;
 
     let millis = ts.as_unix_millis();
@@ -266,7 +266,7 @@ pub(crate) fn day_hour_from_timestamp(ts: &koinon::Timestamp) -> (u8, u8) {
     reason = "test code: panics and unwraps acceptable in assertions"
 )]
 mod tests {
-    use koinon::{
+    use stoicheion::{
         Coordinates, Frequency, Power, Timestamp,
         signal::{
             EnvironmentalDetail, GpsDetail, MeshDetail, NetworkDetail, OsintDetail,
@@ -491,7 +491,7 @@ mod tests {
 
     #[test]
     fn extract_feature_returns_none_for_tracker() {
-        use koinon::signal::TrackerKind;
+        use stoicheion::signal::TrackerKind;
 
         let sig = GeoSignal::new(
             SignalKind::Proximity(ProximityDetail::Tracker {
@@ -564,7 +564,7 @@ mod tests {
     fn day_hour_from_timestamp_maps_known_instants() {
         // NOTE: the (0, 0) conversion fallback documented on
         // day_hour_from_timestamp is unreachable through any public path —
-        // `koinon::Timestamp` only ever holds an already-valid jiff timestamp
+        // `stoicheion::Timestamp` only ever holds an already-valid jiff timestamp
         // (`now()`, the validating `from_unix_millis`, or a Deserialize impl
         // that delegates to jiff's own), so neither `from_millisecond` nor
         // `in_tz("UTC")` can fail on a value obtained from one. It is

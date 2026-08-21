@@ -6,7 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
-koinon = { path = "../koinon" }
+stoicheion = { path = "../stoicheion" }
 serde = { workspace = true }
 tokio = { workspace = true }
 snafu = { workspace = true }

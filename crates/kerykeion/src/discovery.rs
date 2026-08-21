@@ -2,7 +2,7 @@
 
 use std::time::Duration;
 
-use koinon::GeoSignal;
+use stoicheion::GeoSignal;
 use tokio::sync::broadcast;
 use tokio_util::sync::CancellationToken;
 use tracing::instrument;

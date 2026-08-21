@@ -278,7 +278,7 @@ fn csv_escape(s: &str) -> String {
     reason = "test code: panics and unwraps acceptable in assertions"
 )]
 mod tests {
-    use koinon::Frequency;
+    use stoicheion::Frequency;
     use syntonia::tone::CtcssTone;
     use syntonia::types::FrequencyOffset;
 
