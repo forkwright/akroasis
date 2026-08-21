@@ -1,55 +1,41 @@
+# WHY a caller rather than a local copy: this logic guards auto-merge, and a
+# copy is how this repo's version drifted from the fixed one — it kept an
+# `exit 0` on the refusal path long after the canonical workflow had corrected
+# it to `exit 1`, so the guard printed a refusal and then merged
+# (forkwright/akroasis#371). One implementation, one place to fix.
 name: Dependabot Auto-Merge
 
 on:
   pull_request:
 
+# WHY declared here as well as in the reusable: a called workflow's permissions
+# can only narrow what the caller grants, never widen it. Stating them at the
+# caller keeps the ceiling visible in the repo that owns the risk rather than
+# only in another repository's file.
 permissions:
   contents: write
   pull-requests: write
 
+# WHY a caller-level concurrency block here, when gate-attestation.yml
+# deliberately has none: the two reusables differ. hybrid-gate.yml declares its
+# own concurrency, so a caller-level duplicate would self-cancel the shared
+# group. This one declares none, so without this block a superseded push to a
+# dependabot PR leaves its earlier run racing the newer one — both waiting on
+# checks, both able to merge. Do not "harmonise" these two files.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   auto-merge:
-    runs-on: ubuntu-latest
-    if: github.actor == 'dependabot[bot]'
-    steps:
-      - name: Fetch Dependabot metadata
-        id: metadata
-        uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Wait for CI checks to pass
-        if: >-
-          steps.metadata.outputs.update-type == 'version-update:semver-patch' ||
-          (steps.metadata.outputs.update-type == 'version-update:semver-minor' &&
-           steps.metadata.outputs.dependency-type == 'direct:development')
-        run: |
-          # WHY exit 1, not exit 0: this step is a GUARD, and `exit 0` makes
-          # it SUCCEED. The merge steps below gate only on
-          # `steps.metadata.outputs.update-type`, never on this step's
-          # outcome, and Actions skips a later step only when an earlier one
-          # FAILS -- so a zero exit printed a refusal and then merged anyway.
-          if ! gh pr checks "$PR_URL" --watch --interval 30 --required; then
-            echo "Required CI checks did not pass; refusing auto-merge." >&2
-            exit 1
-          fi
-        env:
-          PR_URL: ${{ github.event.pull_request.html_url }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: Auto-merge patch updates
-        if: steps.metadata.outputs.update-type == 'version-update:semver-patch'
-        run: gh pr merge --squash "$PR_URL"
-        env:
-          PR_URL: ${{ github.event.pull_request.html_url }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: Auto-merge minor dev dependency updates
-        if: >-
-          steps.metadata.outputs.update-type == 'version-update:semver-minor' &&
-          steps.metadata.outputs.dependency-type == 'direct:development'
-        run: gh pr merge --squash "$PR_URL"
-        env:
-          PR_URL: ${{ github.event.pull_request.html_url }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    # WHY(#376) pinned: a branch ref is moved by whoever pushes to
+    # forkwright/.github, so an unpinned call changes what this repo merges on
+    # with no commit here to review or blame. Dependabot tracks the
+    # github-actions ecosystem for this repo and bumps the pin.
+    #
+    # WHY no `secrets: inherit`, when gate-attestation.yml does inherit: that
+    # keyword forwards EVERY repository secret to a workflow in another
+    # repository, and this one reads `secrets.GITHUB_TOKEN` and nothing else —
+    # which a called workflow receives regardless. Inheriting here would widen
+    # the blast radius of a change to forkwright/.github for no capability.
+    uses: forkwright/.github/.github/workflows/dependabot-auto-merge.yml@d74efb1d2d87ec86717dad5d42d468f6e3cf7994 # main
