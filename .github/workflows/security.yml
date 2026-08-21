@@ -61,6 +61,15 @@ jobs:
           command: check advisories licenses bans sources
           arguments: --all-features
 
+      # WHY a second invocation rather than a wider first one: `fuzz/` declares
+      # its own [workspace], so the root run resolves a graph that does not
+      # contain it. cargo-deny follows the manifest it is given and there is no
+      # flag that makes one run span two workspaces.
+      - uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
+        with:
+          command: check advisories licenses bans sources
+          arguments: --all-features --manifest-path fuzz/Cargo.toml
+
   cargo-audit:
     # WHY: cargo-deny's advisories check overlaps but uses a different code
     # path; running cargo-audit independently protects against bugs or
@@ -84,6 +93,11 @@ jobs:
         # .cargo/audit.toml, which mirrors deny.toml's [[advisories.ignore]]
         # entries — no silent --ignore flags here.
         run: cargo audit --deny unmaintained --deny unsound --deny yanked
+      - name: cargo audit (fuzz workspace)
+        # WHY separate: cargo-audit reads one lockfile, and `fuzz/` has its own
+        # because it is a detached workspace. Without this its dependency tree
+        # is scanned by nothing.
+        run: cargo audit --file fuzz/Cargo.lock --deny unmaintained --deny unsound --deny yanked
 
   osv-scanner:
     name: osv-scanner
@@ -106,4 +120,9 @@ jobs:
             echo "ERROR: downloaded binary version mismatch" >&2; exit 1; }
           echo "/tmp" >> "$GITHUB_PATH"
       - name: osv scanner
-        run: osv-scanner scan source --config=osv-scanner.toml --lockfile=Cargo.lock
+        # WHY both lockfiles named explicitly: `fuzz/` is a detached workspace
+        # with its own lockfile, and a single `--lockfile` covers only the graph
+        # it names.
+        run: |
+          osv-scanner scan source --config=osv-scanner.toml \
+            --lockfile=Cargo.lock --lockfile=fuzz/Cargo.lock
