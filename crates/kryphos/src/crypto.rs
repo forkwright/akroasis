@@ -45,11 +45,21 @@ pub fn generate_salt() -> [u8; SALT_LEN] {
 ///
 /// Uses secure defaults: m=64 MiB, t=3 iterations, p=4 lanes.
 ///
+/// # Errors
+///
+/// Returns [`CryptoError::InvalidSaltLength`] unless `salt` is exactly
+/// [`SALT_LEN`] bytes. A salt arriving from a stored vault header is a
+/// variable-length field, so this is the reachable case rather than a
+/// defensive one.
+///
+/// Returns [`CryptoError::EncryptionFailed`] if Argon2id itself rejects the
+/// inputs. The length check above covers the reachable cause, so this is
+/// defence for a future caller.
+///
 /// # Panics
 ///
 /// Panics if Argon2id parameter construction fails (should not happen
 /// with compile-time constants).
-#[must_use]
 #[expect(
     clippy::expect_used,
     reason = "Argon2id params are compile-time constants; construction cannot fail"
