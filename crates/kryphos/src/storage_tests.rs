@@ -759,7 +759,7 @@ fn a_wrong_passphrase_still_reports_itself() {
 fn one_unreadable_entry_does_not_hide_the_readable_ones() {
     let dir = tempfile::tempdir().unwrap();
     let vault_path = dir.path().join("test-vault");
-    let mut vault = Vault::create(&vault_path, TEST_PASSPHRASE).unwrap();
+    let vault = Vault::create(&vault_path, TEST_PASSPHRASE).unwrap();
     vault
         .add("alpha", CredentialType::ApiKey, b"secret-a")
         .unwrap();
