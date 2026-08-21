@@ -309,7 +309,7 @@ mod tests {
         );
     }
 
-    /// A hop_limit above hop_start describes no journey. Saturating it to zero
+    /// A `hop_limit` above `hop_start` describes no journey. Saturating it to zero
     /// would report a measurement the packet never carried.
     #[test]
     fn an_inverted_hop_pair_is_rejected_rather_than_saturated() {
