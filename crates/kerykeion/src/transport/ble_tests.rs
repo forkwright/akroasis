@@ -17,6 +17,17 @@ use crate::config::TransportConfig;
 use crate::connection::MeshConnection;
 use crate::proto::{FromRadio, ToRadio, from_radio, to_radio};
 
+/// The operation, if any, scripted to report a dropped link.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Drops {
+    /// `write_to_radio` reports the link is gone.
+    Write,
+    /// `read_from_radio` reports the link is gone.
+    Read,
+    /// `wait_for_data` reports the link is gone.
+    Wait,
+}
+
 /// One scripted outcome of [`BlePeripheral::read_from_radio`].
 enum Read {
     /// The radio had nothing queued at this point in the sequence.
@@ -42,12 +53,8 @@ struct FakePeripheral {
     connect_failures: usize,
     /// How many times `wait_for_data` has been called.
     waits: usize,
-    /// Whether a write should report a dropped link.
-    write_drops: bool,
-    /// Whether a read should report a dropped link.
-    read_drops: bool,
-    /// Whether a wait should report a dropped link.
-    wait_drops: bool,
+    /// Which operation, if any, reports a dropped link.
+    drops: Option<Drops>,
 }
 
 impl FakePeripheral {
@@ -85,7 +92,7 @@ impl BlePeripheral for FakePeripheral {
     }
 
     async fn write_to_radio(&mut self, payload: &[u8]) -> Result<(), Error> {
-        if self.write_drops {
+        if self.drops == Some(Drops::Write) {
             self.connected = false;
             return super::link_dropped("write while disconnected");
         }
@@ -94,7 +101,7 @@ impl BlePeripheral for FakePeripheral {
     }
 
     async fn read_from_radio(&mut self) -> Result<Option<Vec<u8>>, Error> {
-        if self.read_drops {
+        if self.drops == Some(Drops::Read) {
             self.connected = false;
             return super::link_dropped("read while disconnected");
         }
@@ -106,7 +113,7 @@ impl BlePeripheral for FakePeripheral {
 
     async fn wait_for_data(&mut self) -> Result<(), Error> {
         self.waits += 1;
-        if self.wait_drops {
+        if self.drops == Some(Drops::Wait) {
             self.connected = false;
             return super::link_dropped("link dropped while awaiting notification");
         }
@@ -242,12 +249,12 @@ async fn recv_waits_through_empty_reads_instead_of_returning() {
 #[tokio::test]
 async fn recv_reports_a_dropped_link_rather_than_a_quiet_one() {
     let mut peripheral = FakePeripheral::advertising("Meshtastic_1234");
-    peripheral.read_drops = true;
+    peripheral.drops = Some(Drops::Read);
     let mut transport = BleTransport::connect("Meshtastic", peripheral)
         .await
         .expect("connect");
 
-    let error = transport.recv().await.err().expect("a dropped read errors");
+    let error = transport.recv().await.expect_err("a dropped read errors");
 
     assert!(
         matches!(error, Error::ConnectionLost { .. }),
@@ -263,7 +270,7 @@ async fn recv_reports_a_dropped_link_rather_than_a_quiet_one() {
 async fn a_failed_notification_wait_disconnects_the_transport() {
     let mut peripheral =
         FakePeripheral::advertising("Meshtastic_1234").with_reads(vec![Read::Empty]);
-    peripheral.wait_drops = true;
+    peripheral.drops = Some(Drops::Wait);
     let mut transport = BleTransport::connect("Meshtastic", peripheral)
         .await
         .expect("connect");
@@ -271,8 +278,7 @@ async fn a_failed_notification_wait_disconnects_the_transport() {
     transport
         .recv()
         .await
-        .err()
-        .expect("a dropped wait must error");
+        .expect_err("a dropped wait must error");
 
     assert!(
         !transport.is_connected(),
@@ -283,7 +289,7 @@ async fn a_failed_notification_wait_disconnects_the_transport() {
 #[tokio::test]
 async fn a_failed_write_disconnects_the_transport() {
     let mut peripheral = FakePeripheral::advertising("Meshtastic_1234");
-    peripheral.write_drops = true;
+    peripheral.drops = Some(Drops::Write);
     let mut transport = BleTransport::connect("Meshtastic", peripheral)
         .await
         .expect("connect");
@@ -291,8 +297,7 @@ async fn a_failed_write_disconnects_the_transport() {
     transport
         .send(a_to_radio(1))
         .await
-        .err()
-        .expect("a dropped write must error");
+        .expect_err("a dropped write must error");
 
     assert!(
         !transport.is_connected(),
@@ -312,8 +317,7 @@ async fn recv_surfaces_an_undecodable_body_as_a_protobuf_error() {
     let error = transport
         .recv()
         .await
-        .err()
-        .expect("a truncated body must not decode");
+        .expect_err("a truncated body must not decode");
 
     assert!(
         matches!(error, Error::ProtobufDecode { .. }),
