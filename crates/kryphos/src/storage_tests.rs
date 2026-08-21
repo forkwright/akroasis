@@ -709,3 +709,80 @@ fn collect_file_bytes(dir: &std::path::Path, out: &mut Vec<u8>) {
         }
     }
 }
+
+// ── Error fidelity (#231) ────────────────────────────────────────────────────
+
+/// WHY(#231): every key-check decrypt failure became `WrongPassphrase`, so a
+/// truncated or corrupt header told the operator their correct passphrase was
+/// wrong. They would retype it forever and never learn the file was damaged.
+#[test]
+fn a_truncated_key_check_is_a_corrupt_header_not_a_wrong_passphrase() {
+    let dir = tempfile::tempdir().unwrap();
+    let vault_path = dir.path().join("test-vault");
+    drop(Vault::create(&vault_path, TEST_PASSPHRASE).unwrap());
+
+    // Shorten the key check below a nonce, which is not a ciphertext at all.
+    let header_path = vault_path.join(HEADER_FILE);
+    let mut header: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&header_path).unwrap()).unwrap();
+    header["key_check"] = serde_json::json!([1, 2, 3]);
+    std::fs::write(&header_path, serde_json::to_vec(&header).unwrap()).unwrap();
+
+    let error = Vault::open(&vault_path, TEST_PASSPHRASE).unwrap_err();
+
+    assert!(
+        matches!(error, VaultError::InvalidHeader { .. }),
+        "a key check too short to hold a nonce is corruption, got {error}"
+    );
+}
+
+/// Anti-vacuity: a genuinely wrong passphrase must still report itself as one,
+/// or the case above would pass against an open that calls everything corrupt.
+#[test]
+fn a_wrong_passphrase_still_reports_itself() {
+    let dir = tempfile::tempdir().unwrap();
+    let vault_path = dir.path().join("test-vault");
+    drop(Vault::create(&vault_path, TEST_PASSPHRASE).unwrap());
+
+    let error = Vault::open(&vault_path, b"not the passphrase").unwrap_err();
+
+    assert!(
+        matches!(error, VaultError::WrongPassphrase),
+        "an intact vault opened with the wrong passphrase is exactly that, got {error}"
+    );
+}
+
+/// WHY(#231): a single unparseable record used to abort the whole listing, so
+/// one bad row hid every good one and the operator could not see the
+/// credentials they still had.
+#[test]
+fn one_unreadable_entry_does_not_hide_the_readable_ones() {
+    let dir = tempfile::tempdir().unwrap();
+    let vault_path = dir.path().join("test-vault");
+    let mut vault = Vault::create(&vault_path, TEST_PASSPHRASE).unwrap();
+    vault
+        .add("alpha", CredentialType::ApiKey, b"secret-a")
+        .unwrap();
+    vault
+        .add("beta", CredentialType::ApiKey, b"secret-b")
+        .unwrap();
+
+    // Overwrite one stored value with bytes that are not a StoredEntry.
+    let key = vault
+        .keyspace
+        .iter()
+        .next()
+        .unwrap()
+        .into_inner()
+        .unwrap()
+        .0;
+    vault.keyspace.insert(&key, b"not json").unwrap();
+
+    let listed = vault.list().unwrap();
+
+    assert_eq!(
+        listed.len(),
+        1,
+        "the surviving entry must still be listed; one bad row is not a dead vault"
+    );
+}
