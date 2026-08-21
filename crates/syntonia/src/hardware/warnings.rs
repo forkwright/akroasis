@@ -67,7 +67,7 @@ impl fmt::Display for HardwareWarning {
     not(test),
     expect(
         dead_code,
-        reason = "crate-local warning helpers are staged for the akroasis hardware backend, tracked in #264"
+        reason = "warnings have no constructor until the caller-initiated detect path in #410 surfaces them"
     )
 )]
 pub(crate) fn collect_scan_warnings(cables: &[UsbCable]) -> Vec<HardwareWarning> {
@@ -95,7 +95,7 @@ pub(crate) fn collect_scan_warnings(cables: &[UsbCable]) -> Vec<HardwareWarning>
     not(test),
     expect(
         dead_code,
-        reason = "crate-local warning helpers are staged for the akroasis hardware backend, tracked in #264"
+        reason = "warnings have no constructor until the caller-initiated detect path in #410 surfaces them"
     )
 )]
 pub(crate) fn collect_detection_warnings(detected: &[DetectedRadio]) -> Vec<HardwareWarning> {
@@ -114,7 +114,7 @@ pub(crate) fn collect_detection_warnings(detected: &[DetectedRadio]) -> Vec<Hard
     not(test),
     expect(
         dead_code,
-        reason = "crate-local warning helpers are staged for the akroasis hardware backend, tracked in #264"
+        reason = "warnings have no constructor until the caller-initiated detect path in #410 surfaces them"
     )
 )]
 pub(crate) fn port_access_denied(port: &str) -> HardwareWarning {

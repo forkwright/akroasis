@@ -8,7 +8,7 @@ mod cli;
     not(test),
     expect(
         dead_code,
-        reason = "mesh table/status helpers await daemon integration, tracked in #264"
+        reason = "mesh status/node tables need a live NodeDb and GatewayBridge, which #83 supplies"
     )
 )]
 mod mesh;
@@ -60,7 +60,7 @@ enum Error {
 #[serde(deny_unknown_fields)]
 #[expect(
     dead_code,
-    reason = "config fields reserved for future CLI options, tracked in #264"
+    reason = "config is loaded and discarded; the surface is resolved by #461"
 )]
 struct Config {
     /// Path to the configuration file (default: `~/.config/akroasis/config.toml`).
