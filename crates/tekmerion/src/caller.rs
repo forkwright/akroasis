@@ -10,7 +10,6 @@ use std::fmt;
 use serde::{Deserialize, Serialize};
 use snafu::{OptionExt, ensure};
 
-use crate::Timestamp;
 pub use crate::caller_error::CallerContractError;
 use crate::caller_error::{
     AuthorityUnavailableSnafu, ExpiredSnafu, IdentityReferenceMismatchSnafu,
@@ -23,6 +22,7 @@ pub use crate::caller_ref::{
     CallerRef, CapabilityRef, EffectRef, EvidenceDigest, PersonaRef, PolicyEpoch, ReceiptDigest,
     SchemaEpoch, ScopeRef,
 };
+use stoicheion::Timestamp;
 
 /// Caller-context schema version understood by this crate.
 pub const CALLER_CONTEXT_VERSION: u16 = 1;

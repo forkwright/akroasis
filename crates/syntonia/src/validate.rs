@@ -2,7 +2,7 @@
 
 use std::collections::HashSet;
 
-use koinon::Frequency;
+use stoicheion::Frequency;
 
 use crate::channel::Channel;
 use crate::plan::FrequencyPlan;

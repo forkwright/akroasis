@@ -13,8 +13,8 @@
     reason = "integration test — panics are the correct failure mode"
 )]
 
-use koinon::TipStatus;
 use kryphos::{CredentialType, Vault};
+use tekmerion::TipStatus;
 
 const TEST_PASSPHRASE: &[u8] = b"correct horse battery staple";
 

@@ -1,7 +1,7 @@
 //! Supporting types for channel configuration.
 
-use koinon::Frequency;
 use serde::{Deserialize, Serialize};
+use stoicheion::Frequency;
 
 /// Frequency offset configuration for repeater operation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

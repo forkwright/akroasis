@@ -4,7 +4,7 @@
 //! — see this module's parent (`super`) for the derivation's licence and
 //! upstream. The clone-mode protocol itself is not yet documented.
 
-use koinon::Frequency;
+use stoicheion::Frequency;
 
 use crate::validate::RadioConstraints;
 

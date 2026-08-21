@@ -3,8 +3,8 @@
 use std::io::{self, Read, Write};
 use std::time::Duration;
 
-use koinon::RadioKind;
 use snafu::{ResultExt, Snafu};
+use stoicheion::RadioKind;
 
 use crate::baofeng::variant::{
     BF_F8HP_PREFIXES, MAGIC_UV5R_PROBE, UV5R_PREFIXES, UV5RM_PLUS_PREFIXES,

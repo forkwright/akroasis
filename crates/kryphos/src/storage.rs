@@ -7,9 +7,9 @@ use std::path::{Path, PathBuf};
 use compact_str::CompactString;
 use fs2::FileExt;
 use jiff::Timestamp;
-use koinon::{ChainKey, LogEntryKind, TamperLog, VerificationResult};
 use serde::{Deserialize, Serialize};
 use snafu::ResultExt;
+use tekmerion::{ChainKey, LogEntryKind, TamperLog, VerificationResult};
 use zeroize::Zeroizing;
 
 use crate::crypto::{self, ENTRY_ENVELOPE_VERSION, decrypt, encrypt, entry_aad};
@@ -76,17 +76,17 @@ const AUDIT_REF_DOMAIN: &[u8] = b"kryphos/vault/audit-ref/v1";
 /// question "which installation produced this log" still has an answer when the
 /// asking vault has no identity of its own, and it is not always "none". A log
 /// that carries provenance under a vault with no recorded key is reported as
-/// [`koinon::TipStatus::ForeignInstallation`] — the log names someone this
+/// [`tekmerion::TipStatus::ForeignInstallation`] — the log names someone this
 /// vault has no record of, which is worth surfacing rather than flattening into
 /// "unsigned".
 struct NoInstallation;
 
-impl koinon::TipVerifier for NoInstallation {
-    fn key_id(&self) -> [u8; koinon::KEY_ID_LEN] {
-        [0u8; koinon::KEY_ID_LEN]
+impl tekmerion::TipVerifier for NoInstallation {
+    fn key_id(&self) -> [u8; tekmerion::KEY_ID_LEN] {
+        [0u8; tekmerion::KEY_ID_LEN]
     }
 
-    fn verify_tip(&self, _payload: &[u8], _signature: &[u8; koinon::TIP_SIGNATURE_LEN]) -> bool {
+    fn verify_tip(&self, _payload: &[u8], _signature: &[u8; tekmerion::TIP_SIGNATURE_LEN]) -> bool {
         false
     }
 }
@@ -1003,20 +1003,20 @@ impl Vault {
     ///
     /// Returns [`VaultError::TamperLog`] if the log file cannot be read.
     pub fn verify_tamper_log(&self) -> Result<VerificationResult, VaultError> {
-        koinon::verify_chain(self.tamper_log_path(), &self.chain_key()).context(TamperLogSnafu)
+        tekmerion::verify_chain(self.tamper_log_path(), &self.chain_key()).context(TamperLogSnafu)
     }
 
     /// Reports which installation produced this vault's audit log.
     ///
     /// WHY the vault answers this rather than the caller reaching for
-    /// `koinon::verify_tip_provenance` directly: the vault is what knows
+    /// `tekmerion::verify_tip_provenance` directly: the vault is what knows
     /// whether an identity is *expected*. koinon can report that a log is
     /// unsigned; only the header says whether that is a vault which never had
     /// an identity or one whose signing has been stripped.
     ///
     /// That distinction is the migration rule (forkwright/akroasis#284). An
     /// unsigned log under a vault with no recorded identity is the ordinary
-    /// pre-provenance state and reports [`koinon::TipStatus::Unsigned`]. An
+    /// pre-provenance state and reports [`tekmerion::TipStatus::Unsigned`]. An
     /// unsigned log under a vault that *has* an identity is a downgrade with no
     /// innocent cause, and is refused as [`VaultError::InvalidHeader`] rather
     /// than reported as merely unsigned — the same asymmetry the tamper log's
@@ -1027,10 +1027,10 @@ impl Vault {
     ///
     /// Returns [`VaultError::TamperLog`] if the log cannot be read, and the
     /// header errors of [`Self::installation_identity`].
-    pub fn verify_tamper_log_provenance(&self) -> Result<koinon::TipStatus, VaultError> {
+    pub fn verify_tamper_log_provenance(&self) -> Result<tekmerion::TipStatus, VaultError> {
         let Some(identity) = self.installation_identity()? else {
             // No identity to check against; koinon reports the log's own state.
-            return koinon::verify_tip_provenance(
+            return tekmerion::verify_tip_provenance(
                 self.tamper_log_path(),
                 &self.chain_key(),
                 &NoInstallation,
@@ -1039,14 +1039,14 @@ impl Vault {
         };
 
         let verifying = identity.verifying_key();
-        let status = koinon::verify_tip_provenance(
+        let status = tekmerion::verify_tip_provenance(
             self.tamper_log_path(),
             &self.chain_key(),
-            verifying as &dyn koinon::TipVerifier,
+            verifying as &dyn tekmerion::TipVerifier,
         )
         .context(TamperLogSnafu)?;
 
-        if status == koinon::TipStatus::Unsigned {
+        if status == tekmerion::TipStatus::Unsigned {
             return Err(VaultError::InvalidHeader {
                 reason: String::from(
                     "vault has an installation identity but its audit log tip is unsigned",

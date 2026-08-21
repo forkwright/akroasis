@@ -7,12 +7,12 @@
 use serde::{Deserialize, Deserializer, Serialize};
 use snafu::Snafu;
 
-use crate::Timestamp;
 use crate::caller::{
     AuthorizedCaller, CallerRef, CapabilityRef, EffectRef, EvidenceDigest, PolicyEpoch,
     ReceiptDigest, SchemaEpoch,
 };
 use crate::effect_receipt_state::{PendingIntent, RecoveryAuthorization};
+use stoicheion::Timestamp;
 
 /// Current serialized effect-receipt schema version.
 pub const EFFECT_RECEIPT_VERSION: u16 = 1;

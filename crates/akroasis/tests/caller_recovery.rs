@@ -12,14 +12,15 @@ use akroasis_lib::caller::{
     AdmissionDecision, ApplicationCallerResolver, EffectExecution, EffectGateError, EffectRequest,
     TrustedClock, execute_effect,
 };
-use koinon::{
+use snafu::Snafu;
+use stoicheion::Timestamp;
+use tekmerion::{
     AuthorityClaims, AuthorityDecision, AuthorityGrant, AuthorizationRequirement,
     CALLER_CONTEXT_VERSION, CallerAuthority, CallerRef, CapabilityRef, EFFECT_RECEIPT_VERSION,
     EffectDescriptor, EffectOutcome, EffectReceipt, EffectReceiptError, EffectReceiptSink,
     EffectRef, LocalPeerCredentials, PersistedIntent, PersistedOutcome, PolicyEpoch, ReceiptDigest,
-    ReceiptEvent, RecoveryAuthorization, RecoveryRelation, SchemaEpoch, ScopeRef, Timestamp,
+    ReceiptEvent, RecoveryAuthorization, RecoveryRelation, SchemaEpoch, ScopeRef,
 };
-use snafu::Snafu;
 use tokio::net::UnixStream;
 
 #[derive(Debug, Clone, Copy)]
@@ -255,7 +256,7 @@ fn grant() -> AuthorityGrant {
     )
 }
 
-fn caller() -> koinon::ValidatedCaller {
+fn caller() -> tekmerion::ValidatedCaller {
     let resolver = ApplicationCallerResolver::current(RecoveryAuthority { grant: grant() })
         .expect("current caller resolver");
     let (client, _server) = UnixStream::pair().expect("Unix socket pair");

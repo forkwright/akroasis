@@ -7,14 +7,14 @@
     reason = "integration test — panics are the correct failure mode"
 )]
 
-use koinon::{ChainStatus, LogEntryKind};
 use kryphos::{CredentialType, Vault, VaultError};
+use tekmerion::{ChainStatus, LogEntryKind};
 
 const TEST_PASSPHRASE: &[u8] = b"correct horse battery staple";
 
 /// Walks wire-format bytes and returns the byte offset of entry `target_idx`.
 ///
-/// Mirrors `koinon::tamper_log`'s own private test helper — kryphos has no
+/// Mirrors `tekmerion::tamper_log`'s own private test helper — kryphos has no
 /// access to it, and the wire format (`[4-byte LE len][cbor][32-byte hash]`)
 /// is part of the documented on-disk contract, not an implementation detail.
 fn entry_offset(data: &[u8], target_idx: usize) -> usize {
@@ -64,7 +64,7 @@ fn vault_mutations_append_intact_tamper_log() {
     ];
     for (idx, (name, operation)) in expected.into_iter().enumerate() {
         let offset = entry_offset(&data, idx);
-        let (entry, _hash) = koinon::tamper_log::decode_entry(&data[offset..]).unwrap();
+        let (entry, _hash) = tekmerion::tamper_log::decode_entry(&data[offset..]).unwrap();
         match entry.kind {
             LogEntryKind::VaultMutation {
                 credential_ref,
@@ -99,7 +99,7 @@ fn vault_mutations_append_intact_tamper_log() {
     let refs: Vec<String> = (0..5)
         .map(|idx| {
             let offset = entry_offset(&data, idx);
-            let (entry, _) = koinon::tamper_log::decode_entry(&data[offset..]).unwrap();
+            let (entry, _) = tekmerion::tamper_log::decode_entry(&data[offset..]).unwrap();
             match entry.kind {
                 LogEntryKind::VaultMutation { credential_ref, .. } => credential_ref.to_string(),
                 other => panic!("entry {idx}: expected VaultMutation, got {other:?}"),

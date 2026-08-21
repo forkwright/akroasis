@@ -1,7 +1,7 @@
-//! Mesh event types and conversion to [`koinon::GeoSignal`] for the broadcast channel.
+//! Mesh event types and conversion to [`stoicheion::GeoSignal`] for the broadcast channel.
 
-use koinon::signal::MeshDetail;
-use koinon::{Confidence, Coordinates, GeoSignal, SignalKind, Timestamp};
+use stoicheion::signal::MeshDetail;
+use stoicheion::{Confidence, Coordinates, GeoSignal, SignalKind, Timestamp};
 
 use crate::node_db::NodePosition;
 use crate::types::NodeNum;

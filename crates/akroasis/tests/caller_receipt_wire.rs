@@ -11,14 +11,14 @@ use akroasis_lib::caller::{
     AdmissionDecision, ApplicationCallerResolver, EffectExecution, EffectRequest, TrustedClock,
     execute_effect,
 };
-use koinon::{
+use snafu::Snafu;
+use stoicheion::Timestamp;
+use tekmerion::{
     AuthorityClaims, AuthorityDecision, AuthorityGrant, AuthorizationRequirement,
     CALLER_CONTEXT_VERSION, CallerAuthority, CallerRef, CapabilityRef, EffectDescriptor,
     EffectReceipt, EffectReceiptError, EffectReceiptSink, EffectRef, EvidenceDigest,
     LocalPeerCredentials, PolicyEpoch, ReceiptDigest, RecoveryRelation, SchemaEpoch, ScopeRef,
-    Timestamp,
 };
-use snafu::Snafu;
 use tokio::net::UnixStream;
 
 #[derive(Debug, Clone, Copy)]

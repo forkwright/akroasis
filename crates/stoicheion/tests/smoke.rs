@@ -9,7 +9,7 @@
     reason = "test code: panics and unwraps acceptable in assertions"
 )]
 
-use koinon::{Coordinates, Frequency, Power, Timestamp};
+use stoicheion::{Coordinates, Frequency, Power, Timestamp};
 
 #[test]
 fn frequency_roundtrip_mhz() {

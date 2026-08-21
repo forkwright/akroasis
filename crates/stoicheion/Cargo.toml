@@ -1,6 +1,6 @@
 [package]
-name = "koinon"
-description = "κοινόν — common/shared types for the Akroasis workspace"
+name = "stoicheion"
+description = "στοιχεῖον — the elements the Akroasis workspace is composed from"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -8,23 +8,16 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-ulid.workspace = true
+compact_str.workspace = true
 jiff.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 snafu.workspace = true
 tracing.workspace = true
-compact_str.workspace = true
-blake3.workspace = true
-ciborium.workspace = true
-zeroize.workspace = true
-subtle.workspace = true
-fs2.workspace = true
+ulid.workspace = true
 
 [dev-dependencies]
-tempfile.workspace = true
 proptest = "1"
-toml.workspace = true
 
 [lints]
 workspace = true

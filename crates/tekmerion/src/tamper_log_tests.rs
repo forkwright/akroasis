@@ -5,7 +5,7 @@ use compact_str::CompactString;
 use ulid::Ulid;
 
 use super::*;
-use crate::{EntityId, SignalId};
+use stoicheion::{EntityId, SignalId};
 
 fn test_key() -> ChainKey {
     ChainKey::from_bytes([0x5A; CHAIN_KEY_LEN])

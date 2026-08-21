@@ -1,6 +1,6 @@
 //! Feature-gated live serial radio detection and protocol session backend.
 
-use koinon::RadioKind;
+use stoicheion::RadioKind;
 use syntonia::baofeng::{
     codec::{CodecError, decode_all_channels, encode_all_channels},
     image::MemoryImage,

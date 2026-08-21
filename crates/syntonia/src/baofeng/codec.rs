@@ -1,7 +1,7 @@
 //! Channel encode/decode between raw EEPROM bytes and the Channel model.
 
-use koinon::Frequency;
 use snafu::Snafu;
+use stoicheion::Frequency;
 
 use crate::baofeng::bcd::{self, BcdError};
 use crate::baofeng::image::MemoryImage;

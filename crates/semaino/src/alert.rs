@@ -18,7 +18,7 @@
 
 use std::collections::HashMap;
 
-use koinon::{
+use stoicheion::{
     AnomalyScore, SignalId, Timestamp,
     signal::{AlertSeverity, SignalKind},
 };
@@ -377,7 +377,7 @@ fn build_summary(
     reason = "test code: panics and unwraps acceptable in assertions"
 )]
 mod tests {
-    use koinon::{
+    use stoicheion::{
         AnomalyScore, Coordinates, Frequency, Power, Timestamp,
         signal::{EnvironmentalDetail, RfDetail},
     };
@@ -387,11 +387,11 @@ mod tests {
     // ── helper builders ───────────────────────────────────────────────────────
 
     fn rf_aggregated(score: AnomalyScore) -> AggregatedSignal {
-        use koinon::GeoSignal;
+        use stoicheion::GeoSignal;
 
         AggregatedSignal {
             signal: GeoSignal::new(
-                koinon::signal::SignalKind::Rf(RfDetail::Transmission {
+                stoicheion::signal::SignalKind::Rf(RfDetail::Transmission {
                     frequency: Frequency::mhz(146),
                     power: Power::dbm(-30.0),
                     modulation: "FM".into(),
@@ -407,11 +407,11 @@ mod tests {
     }
 
     fn rf_aggregated_at(score: AnomalyScore, location: Coordinates) -> AggregatedSignal {
-        use koinon::GeoSignal;
+        use stoicheion::GeoSignal;
 
         AggregatedSignal {
             signal: GeoSignal::new(
-                koinon::signal::SignalKind::Rf(RfDetail::Transmission {
+                stoicheion::signal::SignalKind::Rf(RfDetail::Transmission {
                     frequency: Frequency::mhz(146),
                     power: Power::dbm(-30.0),
                     modulation: "FM".into(),
@@ -688,11 +688,11 @@ mod tests {
 
     #[test]
     fn classify_environmental_elevated_alone_is_low() {
-        use koinon::GeoSignal;
+        use stoicheion::GeoSignal;
 
         let agg = AggregatedSignal {
             signal: GeoSignal::new(
-                koinon::signal::SignalKind::Environmental(EnvironmentalDetail::Temperature {
+                stoicheion::signal::SignalKind::Environmental(EnvironmentalDetail::Temperature {
                     celsius: 99.0,
                 }),
                 Timestamp::now(),

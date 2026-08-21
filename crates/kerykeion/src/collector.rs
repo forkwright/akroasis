@@ -8,7 +8,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use koinon::GeoSignal;
+use stoicheion::GeoSignal;
 use tokio::sync::{Mutex, broadcast};
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
@@ -37,7 +37,10 @@ use crate::types::ClaimedNodeNum;
 /// Trait for Akroasis data collectors.
 ///
 /// Defines the minimal lifecycle interface shared across all collector crates.
-/// This is a local definition pending the addition of `koinon::Collector`.
+/// This is a local definition pending a shared one. Which crate it belongs in
+/// is genuinely open: a collector produces signals, which is `stoicheion`'s
+/// layer, but it is a pipeline role rather than an element, so it may belong
+/// in neither. Left local until something forces the choice.
 pub trait Collector: Send + Sync {
     /// Returns the canonical name of this collector.
     fn name(&self) -> &'static str;

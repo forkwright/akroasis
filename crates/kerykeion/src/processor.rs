@@ -1,7 +1,7 @@
 //! Central packet dispatch for incoming `FromRadio` messages after handshake.
 
-use koinon::GeoSignal;
 use prost::Message as _;
+use stoicheion::GeoSignal;
 use tokio::sync::broadcast;
 
 use crate::delivery::{DeliveryFailure, DeliveryTracker};
@@ -301,7 +301,7 @@ impl PacketProcessor {
         // unchecked. `Coordinates::new` already owns this rule for the whole
         // fleet, so it is reused rather than restated; it also rejects NaN,
         // which a bare range comparison would silently admit.
-        if let Err(error) = koinon::Coordinates::new(lat, lon, None) {
+        if let Err(error) = stoicheion::Coordinates::new(lat, lon, None) {
             tracing::warn!(
                 from = from.0,
                 %error,

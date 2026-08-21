@@ -29,7 +29,8 @@ figment = { workspace = true }
 indicatif = "0.17"
 jiff = { workspace = true }
 kerykeion = { path = "../kerykeion" }
-koinon = { path = "../koinon" }
+stoicheion = { path = "../stoicheion" }
+tekmerion = { path = "../tekmerion" }
 kryphos = { path = "../kryphos" }
 rpassword = { workspace = true }
 serde = { workspace = true }

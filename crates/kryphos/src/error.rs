@@ -138,7 +138,7 @@ pub enum VaultError {
     #[snafu(display("tamper log error: {source}"))]
     TamperLog {
         /// Underlying tamper-log failure.
-        source: koinon::TamperLogError,
+        source: tekmerion::TamperLogError,
     },
 
     /// A field passed to [`crate::crypto::entry_aad`] is too long to encode
