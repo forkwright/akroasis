@@ -50,7 +50,7 @@ Foundation:     koinon (shared types), kryphos (encryption), lethe (privacy)
 | Temporal baseline | Welford's algorithm | Online mean/variance without storing history |
 | Tamper logging | BLAKE3 hash chain | Append-only with cryptographic integrity |
 | SDR | Own dataflow engine | FutureSDR dependency risk too high (single maintainer, 0.0.x) |
-| Mesh | Meshtastic official crate + own crypto | Transport via crate, encryption/topology/routing ourselves |
+| Mesh | Clean-room stack over `prost` | The official `meshtastic` crate is GPL-3 and covers ~15% of the protocol; framing, crypto, routing and topology are ours |
 
 ## Dependency philosophy
 
