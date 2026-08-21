@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/forkwright/akroasis/compare/v0.4.4...v0.5.0) (2026-08-21)
+
+
+### Features
+
+* **kryphos:** mint one durable installation identity per vault ([#449](https://github.com/forkwright/akroasis/issues/449)) ([bddc59d](https://github.com/forkwright/akroasis/commit/bddc59d778f946ff2b45a37dec7f85e2942147eb))
+
 ## [0.4.4](https://github.com/forkwright/akroasis/compare/v0.4.3...v0.4.4) (2026-08-21)
 
 
