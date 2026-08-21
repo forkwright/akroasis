@@ -219,7 +219,24 @@ pub fn decrypt(
         };
 
         let mut candidate = ciphertext.to_vec();
-        if apply_aes_ctr(&mut candidate, packet_id, from_node, &key).is_err() {
+        // WHY(#229) surfaced rather than skipped: this arm used to swallow the
+        // error, which was defensible while a bad-length key could reach here
+        // and fail init routinely. Since #436 it cannot — `resolve_psk` yields
+        // `Key` only at 16 or 32 bytes, and `apply_aes_ctr` rejects every other
+        // length before touching the cipher — so a failure here is a fault in
+        // the AES implementation or the machine under it, not a wrong guess
+        // about which channel this packet belongs to.
+        //
+        // Still `continue` rather than `fail`: a later channel may decrypt, and
+        // refusing the whole packet on one channel's fault would turn a local
+        // problem into dropped traffic. What changes is that it can no longer
+        // happen quietly.
+        if let Err(error) = apply_aes_ctr(&mut candidate, packet_id, from_node, &key) {
+            tracing::warn!(
+                channel = channel_idx,
+                %error,
+                "AES initialisation failed for a key of valid length; skipping channel"
+            );
             continue;
         }
 

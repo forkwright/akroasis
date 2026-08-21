@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.6.1](https://github.com/forkwright/akroasis/compare/v0.6.0...v0.6.1) (2026-08-21)
+
+
+### Bug Fixes
+
+* **kerykeion:** surface AES init failures during trial decryption ([#459](https://github.com/forkwright/akroasis/issues/459)) ([6a0e514](https://github.com/forkwright/akroasis/commit/6a0e51418ddd07161fff5b383736029235499f8b))
+* **kryphos:** stop the audit log recording credential names in cleartext ([#457](https://github.com/forkwright/akroasis/issues/457)) ([84055c0](https://github.com/forkwright/akroasis/commit/84055c01cd41a3570c69463ac6aab20283556b0d))
+
 ## [0.6.0](https://github.com/forkwright/akroasis/compare/v0.5.0...v0.6.0) (2026-08-21)
 
 
