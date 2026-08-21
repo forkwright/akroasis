@@ -328,10 +328,7 @@ mod tests {
             if self.remaining > 0 {
                 self.remaining -= 1;
                 let variant = if self.channels {
-                    from_radio::PayloadVariant::Channel(Channel {
-                        index: 0,
-                        ..Default::default()
-                    })
+                    from_radio::PayloadVariant::Channel(Channel { index: 0 })
                 } else {
                     #[expect(
                         clippy::cast_possible_truncation,
