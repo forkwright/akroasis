@@ -14,9 +14,9 @@ use zeroize::Zeroizing;
 
 use crate::crypto::{self, ENTRY_ENVELOPE_VERSION, decrypt, encrypt, entry_aad};
 use crate::error::{
-    AlreadyExistsSnafu, EmptyPassphraseSnafu, EntryCryptoSnafu, EntryNotDeletableSnafu,
-    EntryRevokedSnafu, IoSnafu, NotInitializedSnafu, SerializationSnafu, TamperLogSnafu,
-    VaultError, WrongPassphraseSnafu,
+    AlreadyExistsSnafu, CryptoError, EmptyPassphraseSnafu, EntryCryptoSnafu,
+    EntryNotDeletableSnafu, EntryRevokedSnafu, IoSnafu, NotInitializedSnafu, SerializationSnafu,
+    TamperLogSnafu, VaultError, WrongPassphraseSnafu,
 };
 use crate::key::VaultKey;
 use crate::vault::{
@@ -123,6 +123,21 @@ pub struct DecryptedEntry {
     pub secret: Zeroizing<Vec<u8>>,
     /// Associated metadata.
     pub metadata: EntryMetadata,
+}
+
+/// What a [`Vault::list`] call found, including what it could not read.
+///
+/// WHY(#231) the count is carried rather than logged: one unreadable record used
+/// to abort the whole listing, and skipping silently would trade that for an
+/// operator who cannot tell a missing credential from a damaged one. kryphos
+/// takes no logging dependency — a credential vault that writes to a log is a
+/// leak waiting to happen — so the caller is told through the return value.
+#[derive(Debug, Clone)]
+pub struct VaultListing {
+    /// Entries that were read successfully.
+    pub entries: Vec<EntryInfo>,
+    /// How many stored records could not be parsed or decrypted.
+    pub unreadable: usize,
 }
 
 // WHY: manual Debug instead of #[derive(Debug)] — `secret` holds the
@@ -383,8 +398,19 @@ impl Vault {
                 }
             })?;
 
-        let plaintext =
-            decrypt(&key, &header.key_check, b"").map_err(|_| VaultError::WrongPassphrase)?;
+        // WHY(#231) the two failures are separated: any decrypt error used to
+        // become WrongPassphrase, so a truncated or corrupt key-check told the
+        // operator their correct passphrase was wrong. They would retype it
+        // forever. A ciphertext shorter than a nonce is not a failed
+        // decryption — it is not a ciphertext.
+        let plaintext = decrypt(&key, &header.key_check, b"").map_err(|source| match source {
+            CryptoError::InvalidNonceLength { expected, actual } => VaultError::InvalidHeader {
+                reason: format!(
+                    "key check is {actual} bytes, too short to carry a {expected}-byte nonce"
+                ),
+            },
+            _ => VaultError::WrongPassphrase,
+        })?;
         if plaintext != KEY_CHECK_PLAINTEXT {
             return WrongPassphraseSnafu.fail();
         }
@@ -552,13 +578,24 @@ impl Vault {
     ///
     /// Returns [`VaultError::StorageBackend`] on iteration errors.
     /// Returns [`VaultError::EntryCrypto`] if metadata decryption fails.
-    pub fn list(&self) -> Result<Vec<EntryInfo>, VaultError> {
+    pub fn list(&self) -> Result<VaultListing, VaultError> {
         let mut entries = Vec::new();
+        let mut unreadable = 0usize;
 
         for guard in self.keyspace.iter() {
             let (_key, value) = guard.into_inner().map_err(fjall_err)?;
-            let entry: StoredEntry = serde_json::from_slice(&value).context(SerializationSnafu)?;
-            let record = self.decrypt_metadata(&entry)?;
+            // WHY(#231) an unreadable entry is skipped rather than fatal: a
+            // single corrupt record used to abort the whole listing, so one bad
+            // row hid every good one and the operator could not see the
+            // credentials they still had.
+            let Ok(entry) = serde_json::from_slice::<StoredEntry>(&value) else {
+                unreadable += 1;
+                continue;
+            };
+            let Ok(record) = self.decrypt_metadata(&entry) else {
+                unreadable += 1;
+                continue;
+            };
 
             entries.push(EntryInfo {
                 name: record.name,
@@ -568,7 +605,10 @@ impl Vault {
             });
         }
 
-        Ok(entries)
+        Ok(VaultListing {
+            entries,
+            unreadable,
+        })
     }
 
     /// Removes a credential from the vault.
@@ -878,8 +918,21 @@ fn acquire_lock(vault_path: &Path) -> Result<File, VaultError> {
 
     let file = create_owner_only_file(&lock_path)?;
 
-    file.try_lock_exclusive().map_err(|_| VaultError::Locked {
-        path: vault_path.to_path_buf(),
+    // WHY(#231) the error kind is inspected: every lock failure used to report
+    // "locked by another process", so a permission or filesystem problem sent
+    // the operator hunting for a process that was never there. Only WouldBlock
+    // means contention.
+    file.try_lock_exclusive().map_err(|source| {
+        if source.kind() == std::io::ErrorKind::WouldBlock {
+            VaultError::Locked {
+                path: vault_path.to_path_buf(),
+            }
+        } else {
+            VaultError::Io {
+                path: lock_path.clone(),
+                source,
+            }
+        }
     })?;
 
     Ok(file)

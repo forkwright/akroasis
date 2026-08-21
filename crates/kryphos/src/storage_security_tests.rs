@@ -393,7 +393,7 @@ fn concurrent_add_same_name_yields_one_winner_and_duplicate_losers() {
             "iteration {iteration}: every losing add must see DuplicateEntry, got {duplicates}"
         );
 
-        let entries = vault.list().unwrap();
+        let entries = vault.list().unwrap().entries;
         assert_eq!(
             entries.len(),
             1,

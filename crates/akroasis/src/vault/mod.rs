@@ -243,15 +243,34 @@ fn run_list(json: bool, out: &mut dyn Write) -> Result<(), VaultCliError> {
     let passphrase = read_passphrase("Vault passphrase: ")?;
 
     let vault = Vault::open(&path, passphrase.as_bytes()).context(VaultSnafu)?;
-    let entries = vault.list().context(VaultSnafu)?;
+    let listing = vault.list().context(VaultSnafu)?;
+    let entries = listing.entries;
 
     if json {
         write_list_json_report(&entries, out)?;
         return Ok(());
     }
 
-    if entries.is_empty() {
+    if entries.is_empty() && listing.unreadable == 0 {
         writeln!(out, "Vault is empty.").context(IoSnafu)?;
+        return Ok(());
+    }
+
+    // WHY(#231): a listing that quietly omitted damaged records would leave the
+    // operator unable to tell a credential that is gone from one that cannot be
+    // read. The count is surfaced where they are already looking.
+    if listing.unreadable > 0 {
+        writeln!(
+            out,
+            "warning: {} entr{} could not be read and {} omitted below.",
+            listing.unreadable,
+            if listing.unreadable == 1 { "y" } else { "ies" },
+            if listing.unreadable == 1 { "is" } else { "are" }
+        )
+        .context(IoSnafu)?;
+    }
+
+    if entries.is_empty() {
         return Ok(());
     }
 
@@ -677,7 +696,7 @@ mod tests {
             .add("key-b", CredentialType::Psk, b"secret-b")
             .unwrap();
 
-        let entries = vault.list().unwrap();
+        let entries = vault.list().unwrap().entries;
         assert_eq!(entries.len(), 2, "list must return both entries");
     }
 
@@ -689,7 +708,7 @@ mod tests {
             .add("json-key", CredentialType::ApiKey, b"secret-not-in-report")
             .unwrap();
 
-        let entries = vault.list().unwrap();
+        let entries = vault.list().unwrap().entries;
         let mut out = Vec::new();
         write_list_json_report(&entries, &mut out).unwrap();
 
