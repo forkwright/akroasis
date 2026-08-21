@@ -1,7 +1,7 @@
 //! Application caller resolution and audit-before-effect execution.
 //!
 //! This module adapts authenticated transport evidence into the shared
-//! `koinon` contract. It owns no credential store and does not implement any
+//! `tekmerion` contract. It owns no credential store and does not implement any
 //! domain-specific effect or policy.
 
 use std::fmt;

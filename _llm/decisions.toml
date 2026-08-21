@@ -16,7 +16,7 @@ id = "D-one-signal-model"
 title = "Unify domains through typed signals"
 status = "accepted"
 context = "Radio, mesh, network, proximity, OSINT, and field operations otherwise fragment into separate tools."
-decision = "Every domain emits typed GeoSignal objects into shared koinon/semaino models."
+decision = "Every domain emits typed GeoSignal objects into shared stoicheion/semaino models."
 consequences = "Correlation and convergence are domain-agnostic."
 
 [[decision]]
@@ -40,7 +40,7 @@ id = "D-collector-trait"
 title = "Hardware-facing crates implement Collector"
 status = "accepted"
 context = "Hardware domains vary but need a common integration shape."
-decision = "Define hardware abstraction through the Collector trait in koinon."
+decision = "Define hardware abstraction through the Collector trait in stoicheion."
 consequences = "Hardware tests can use mocks and recorded replay."
 
 [[decision]]

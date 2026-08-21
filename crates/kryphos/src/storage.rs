@@ -598,7 +598,8 @@ impl Vault {
         // `installation_public_key` while every signature verified against a
         // different key entirely, which is the substitution this identity
         // exists to make detectable.
-        if header.installation_public_key.as_deref() != Some(&identity.public_key_bytes()[..]) {
+        if header.installation_public_key.as_deref() != Some(identity.public_key_bytes().as_slice())
+        {
             return Err(VaultError::InvalidHeader {
                 reason: String::from(
                     "installation_public_key does not match the sealed signing key",
@@ -1010,7 +1011,7 @@ impl Vault {
     ///
     /// WHY the vault answers this rather than the caller reaching for
     /// `tekmerion::verify_tip_provenance` directly: the vault is what knows
-    /// whether an identity is *expected*. koinon can report that a log is
+    /// whether an identity is *expected*. tekmerion can report that a log is
     /// unsigned; only the header says whether that is a vault which never had
     /// an identity or one whose signing has been stripped.
     ///
@@ -1029,7 +1030,7 @@ impl Vault {
     /// header errors of [`Self::installation_identity`].
     pub fn verify_tamper_log_provenance(&self) -> Result<tekmerion::TipStatus, VaultError> {
         let Some(identity) = self.installation_identity()? else {
-            // No identity to check against; koinon reports the log's own state.
+            // No identity to check against; tekmerion reports the log's own state.
             return tekmerion::verify_tip_provenance(
                 self.tamper_log_path(),
                 &self.chain_key(),
@@ -1182,10 +1183,10 @@ impl Vault {
 
         // INVARIANT: `log` must drop before `_guard` — Rust drops function
         // locals in reverse declaration order, so declaring `_guard` first
-        // guarantees `log`'s koinon-level OS advisory lock (`TamperLog`'s
+        // guarantees `log`'s tekmerion-level OS advisory lock (`TamperLog`'s
         // `_lock` field) is released before this mutex is, so a thread that
         // was waiting on `_guard` never sees a spurious `TamperLogError::
-        // Locked` from koinon's own (fail-fast, non-blocking) lock.
+        // Locked` from tekmerion's own (fail-fast, non-blocking) lock.
         // WHY the identity is resolved per append rather than cached on the
         // handle: the sealed signing key lives in the header, and reading it
         // here keeps the plaintext key alive only for the append that uses it

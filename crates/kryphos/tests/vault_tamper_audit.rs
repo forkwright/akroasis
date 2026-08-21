@@ -241,7 +241,7 @@ fn concurrent_vault_mutations_produce_a_single_non_forked_chain() {
     // sharing this `Arc<Vault>` could both recover the same tail and each
     // append an entry chained from it, forking the chain (`verify_chain`
     // reports `Broken`) or losing one writer's entry outright. The
-    // in-process mutex in `append_vault_audit` plus koinon's own
+    // in-process mutex in `append_vault_audit` plus tekmerion's own
     // single-writer lock must make every mutation land, in some order, as
     // one strictly-serial, verifiable chain.
     const WRITERS: usize = 8;

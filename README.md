@@ -19,7 +19,8 @@ Capability domains span radio, mesh, SDR, proximity, network defense, OSINT, off
 | Domain | Crate | Crate Shipped | Hardware Backend | What |
 |--------|-------|:-------------:|:----------------:|------|
 | **Application shell** | akroasis, akroasis-server | ✓ | △ | CLI binary + typed axum library routes. No server binary or desktop ships yet. Radio uses `StubHardware` by default; opt-in `hardware-serial` enables Baofeng detect/read/program/export sessions. Mesh CLI is static/no-live-connection until daemon mode is implemented. |
-| **Foundation** | koinon | ✓ |  -  | Shared IDs, coordinates, frequency and power types, 7-domain `GeoSignal` model, hardware asset registry, temporal baselines, and tamper-evident logging. |
+| **Foundation** | stoicheion | ✓ |  -  | The workspace vocabulary: shared IDs, coordinates, frequency and power types, 7-domain `GeoSignal` model, hardware asset registry, and temporal baselines. |
+| **Foundation** | tekmerion | ✓ |  -  | Evidence about what was done: validated callers and authority, effect receipts, and the tamper-evident log that attests to them. |
 | **Foundation** | kryphos | ✓ |  -  | Credential vault and installation identity: fjall-backed encrypted storage, Argon2id derivation, ChaCha20-Poly1305 encryption, Ed25519 signing keys, rotation/revocation metadata, and mutation audit logging at `tamper.log` beside the vault store. |
 | **Radio Management** | syntonia | ✓ | △ | Frequency plans, CHIRP CSV/IMG import, CHIRP CSV export, validation, USB detection metadata, and Baofeng UV-5R-family codec. With `akroasis/hardware-serial`, live Baofeng serial detect/read/program/export sessions ship; real-device verification and Yaesu protocol sessions remain incomplete. |
 | **Mesh Networking** | kerykeion | ✓ | △ | Meshtastic protocol stack implemented in this repository: protobuf framing, serial/TCP transports, handshake, encryption, node database, topology, discovery, routing, delivery tracking, store-and-forward, gateway bridge, and signal conversion. Real-device wire fixtures and live application wiring remain open. |
@@ -55,7 +56,7 @@ Capability domains span radio, mesh, SDR, proximity, network defense, OSINT, off
           └────────┬─────────┘         │ (correlation,     │    └──────┬──────┘
                    │                   │  focal points,    │           │
           ┌────────▼─────────┐         │  threat scoring)  │    ┌──────▼──────┐
-          │ koinon           │         └──────────────────┘    │ opsis       │
+          │ stoicheion       │         └──────────────────┘    │ opsis       │
           │ (signal model,   │                                  │ (operator   │
           │  entity types,   │         ┌──────────────────┐    │  surfaces)  │
           │  temporal engine)│         │ chorografia      │    └─────────────┘
@@ -70,7 +71,7 @@ Capability domains span radio, mesh, SDR, proximity, network defense, OSINT, off
           └──────────────────┘
 ```
 
-Every collection crate is expected to produce typed `GeoSignal` objects defined by koinon. Kerykeion implements mesh-to-signal conversion, while semaino provides domain-agnostic aggregation and synthetic coverage for the seven-domain signal model; neither is wired into a live application pipeline yet. Ichneutes, Praxis, and Opsis remain architectural targets. Add a domain, add a crate, then explicitly wire and verify the collector-to-processing path.
+Every collection crate is expected to produce typed `GeoSignal` objects defined by stoicheion. Kerykeion implements mesh-to-signal conversion, while semaino provides domain-agnostic aggregation and synthetic coverage for the seven-domain signal model; neither is wired into a live application pipeline yet. Ichneutes, Praxis, and Opsis remain architectural targets. Add a domain, add a crate, then explicitly wire and verify the collector-to-processing path.
 
 ---
 

@@ -29,7 +29,7 @@ Communications sovereignty and RF intelligence platform. Rust workspace, single 
 
 ## Architecture
 
-- Foundation: `koinon` (shared types, signal model), `kryphos` (crypto, identity)
+- Foundation: `stoicheion` (vocabulary: shared types, signal model), `tekmerion` (evidence: callers, receipts, tamper log), `kryphos` (crypto, identity)
 - Collection crates produce typed `GeoSignal` into the shared pipeline  -  add a domain, add a crate, signals flow automatically
 - Async: tokio, native async traits
 - Mesh: clean-room Meshtastic stack via `prost` protobuf  -  not the official `meshtastic` crate (GPL-3, ~15% coverage)
@@ -37,7 +37,7 @@ Communications sovereignty and RF intelligence platform. Rust workspace, single 
 ## Where to add things
 
 - New crate: `crates/<greek-name>/`, register in root `Cargo.toml` members, follow `~/dev/kanon/crates/basanos/standards/GNOMON.md` for naming, add entry to `docs/lexicon.md`
-- New signal type: extend `GeoSignal` enum in `koinon`; downstream crates match exhaustively
+- New signal type: extend `GeoSignal` enum in `stoicheion`; downstream crates match exhaustively
 - New standard or convention: propose it in `~/dev/kanon/crates/basanos/standards/`; cross-link from this repo's `standards/README.md`
 
 ## Boundaries

@@ -292,7 +292,7 @@ fn a_seal_destroyed_by_a_failed_rename_stays_fail_closed() {
 
     let reopened = TamperLog::open(&path, test_key());
     // WHY not `{reopened:?}`: `TamperLog` intentionally has no `Debug`
-    // impl (it holds the `ChainKey`; koinon follows
+    // impl (it holds the `ChainKey`; tekmerion follows
     // RUST/no-debug-derive-on-public-types), so format the outcome without
     // naming the Ok payload.
     let got = match &reopened {

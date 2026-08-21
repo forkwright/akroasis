@@ -22,8 +22,13 @@ definition = "Typed signal object carrying domain, location, temporal, and sever
 canonical = true
 
 [[terms]]
-term = "koinon"
-definition = "Shared foundation crate for IDs, signal types, baselines, hardware registry, and tamper log."
+term = "stoicheion"
+definition = "στοιχεῖον — element. The workspace vocabulary: shared IDs, signal types, baselines, and the hardware registry."
+canonical = true
+
+[[terms]]
+term = "tekmerion"
+definition = "τεκμήριον — proof. Evidence about what was done: callers, effect receipts, and the tamper-evident log."
 canonical = true
 
 [[terms]]

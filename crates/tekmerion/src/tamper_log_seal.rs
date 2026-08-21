@@ -152,7 +152,7 @@ pub(super) fn genesis_hash(chain_key: &ChainKey) -> [u8; 32] {
 
 /// Signs a tamper log's terminal hash on behalf of an installation.
 ///
-/// WHY a trait here rather than a concrete key type: koinon owns the chain and
+/// WHY a trait here rather than a concrete key type: tekmerion owns the chain and
 /// its keyed hashing, not the fleet's choice of signature scheme. The identity
 /// layer lives in `kryphos`, which depends on this crate — so a concrete
 /// Ed25519 type in this signature would invert that dependency. Implementors
