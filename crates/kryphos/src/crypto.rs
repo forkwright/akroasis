@@ -316,7 +316,7 @@ mod tests {
 
     #[test]
     fn encrypt_decrypt_round_trip() {
-        let key = derive_key(b"test-passphrase", &[0x42; SALT_LEN]);
+        let key = derive_key(b"test-passphrase", &[0x42; SALT_LEN]).unwrap();
         let plaintext = b"secret vault entry data";
 
         let ciphertext = encrypt(&key, plaintext, b"").unwrap();
@@ -330,7 +330,7 @@ mod tests {
 
     #[test]
     fn encrypt_decrypt_empty_plaintext() {
-        let key = derive_key(b"test-passphrase", &[0x42; SALT_LEN]);
+        let key = derive_key(b"test-passphrase", &[0x42; SALT_LEN]).unwrap();
 
         let ciphertext = encrypt(&key, b"", b"").unwrap();
         let decrypted = decrypt(&key, &ciphertext, b"").unwrap();
@@ -343,7 +343,7 @@ mod tests {
 
     #[test]
     fn encrypt_decrypt_large_payload() {
-        let key = derive_key(b"test-passphrase", &[0x42; SALT_LEN]);
+        let key = derive_key(b"test-passphrase", &[0x42; SALT_LEN]).unwrap();
         let plaintext = vec![0xAB; 1_000_000];
 
         let ciphertext = encrypt(&key, &plaintext, b"").unwrap();
@@ -357,8 +357,8 @@ mod tests {
 
     #[test]
     fn decrypt_with_wrong_key_returns_error() {
-        let key1 = derive_key(b"correct-passphrase", &[0x42; SALT_LEN]);
-        let key2 = derive_key(b"wrong-passphrase", &[0x42; SALT_LEN]);
+        let key1 = derive_key(b"correct-passphrase", &[0x42; SALT_LEN]).unwrap();
+        let key2 = derive_key(b"wrong-passphrase", &[0x42; SALT_LEN]).unwrap();
 
         let ciphertext = encrypt(&key1, b"secret data", b"").unwrap();
         let result = decrypt(&key2, &ciphertext, b"");
@@ -371,7 +371,7 @@ mod tests {
 
     #[test]
     fn tampered_ciphertext_returns_error() {
-        let key = derive_key(b"test-passphrase", &[0x42; SALT_LEN]);
+        let key = derive_key(b"test-passphrase", &[0x42; SALT_LEN]).unwrap();
 
         let mut ciphertext = encrypt(&key, b"secret data", b"").unwrap();
 
@@ -389,7 +389,7 @@ mod tests {
 
     #[test]
     fn encrypt_decrypt_round_trip_with_associated_data() {
-        let key = derive_key(b"test-passphrase", &[0x42; SALT_LEN]);
+        let key = derive_key(b"test-passphrase", &[0x42; SALT_LEN]).unwrap();
         let plaintext = b"secret vault entry data";
         let aad = b"entry-identity-binding";
 
@@ -404,7 +404,7 @@ mod tests {
 
     #[test]
     fn decrypt_with_mismatched_associated_data_fails() {
-        let key = derive_key(b"test-passphrase", &[0x42; SALT_LEN]);
+        let key = derive_key(b"test-passphrase", &[0x42; SALT_LEN]).unwrap();
         let plaintext = b"secret vault entry data";
 
         let ciphertext = encrypt(&key, plaintext, b"entry-a").unwrap();
@@ -420,7 +420,7 @@ mod tests {
 
     #[test]
     fn decrypt_with_empty_aad_against_bound_ciphertext_fails() {
-        let key = derive_key(b"test-passphrase", &[0x42; SALT_LEN]);
+        let key = derive_key(b"test-passphrase", &[0x42; SALT_LEN]).unwrap();
 
         let ciphertext = encrypt(&key, b"secret data", b"entry-a").unwrap();
         let result = decrypt(&key, &ciphertext, b"");
@@ -434,7 +434,7 @@ mod tests {
 
     #[test]
     fn nonce_is_random_per_encryption() {
-        let key = derive_key(b"test-passphrase", &[0x42; SALT_LEN]);
+        let key = derive_key(b"test-passphrase", &[0x42; SALT_LEN]).unwrap();
         let plaintext = b"identical plaintext";
 
         let ct1 = encrypt(&key, plaintext, b"").unwrap();
@@ -455,7 +455,7 @@ mod tests {
 
     #[test]
     fn ciphertext_includes_nonce_prefix() {
-        let key = derive_key(b"test-passphrase", &[0x42; SALT_LEN]);
+        let key = derive_key(b"test-passphrase", &[0x42; SALT_LEN]).unwrap();
         let plaintext = b"hello";
 
         let ciphertext = encrypt(&key, plaintext, b"").unwrap();
@@ -470,7 +470,7 @@ mod tests {
 
     #[test]
     fn decrypt_rejects_too_short_input() {
-        let key = derive_key(b"test-passphrase", &[0x42; SALT_LEN]);
+        let key = derive_key(b"test-passphrase", &[0x42; SALT_LEN]).unwrap();
 
         let result = decrypt(&key, &[0u8; 5], b"");
         assert!(
