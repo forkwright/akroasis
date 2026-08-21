@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.6.0](https://github.com/forkwright/akroasis/compare/v0.5.0...v0.6.0) (2026-08-21)
+
+
+### Features
+
+* **koinon,kryphos:** sign the audit log tip and verify which installation produced it ([#451](https://github.com/forkwright/akroasis/issues/451)) ([9b839bc](https://github.com/forkwright/akroasis/commit/9b839bcffb92f95dc0f583aa334545d3232b37b9))
+
+
+### Bug Fixes
+
+* **fuzz:** the crate was invisible to lint, dependabot, audit, deny, and osv ([#453](https://github.com/forkwright/akroasis/issues/453)) ([1cb6fc2](https://github.com/forkwright/akroasis/commit/1cb6fc2906ed0a86392ed357c64dd428442d2b42))
+
 ## [0.5.0](https://github.com/forkwright/akroasis/compare/v0.4.4...v0.5.0) (2026-08-21)
 
 
