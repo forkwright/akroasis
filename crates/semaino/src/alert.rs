@@ -382,8 +382,6 @@ mod tests {
         signal::{EnvironmentalDetail, RfDetail},
     };
 
-    use crate::convergence::DomainHit;
-
     use super::*;
 
     // ── helper builders ───────────────────────────────────────────────────────
@@ -429,21 +427,8 @@ mod tests {
     }
 
     fn fake_convergence(domain_count: usize) -> Convergence {
-        let kind = koinon::signal::SignalKind::Rf(RfDetail::Transmission {
-            frequency: Frequency::mhz(146),
-            power: Power::dbm(-30.0),
-            modulation: "FM".into(),
-            bandwidth: Frequency::khz(25),
-        });
-        let hits: Vec<DomainHit> = (0..domain_count)
-            .map(|_| DomainHit {
-                kind: kind.clone(),
-                timestamp: Timestamp::now(),
-            })
-            .collect();
         Convergence {
             center: Coordinates::new(51.5, -0.1, None).unwrap(),
-            hits,
             domain_count,
         }
     }
