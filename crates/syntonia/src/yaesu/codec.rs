@@ -2,7 +2,8 @@
 //!
 //! # Status
 //!
-//! Scaffolded with known fields from CHIRP source. The EEPROM memory map
+//! Scaffolded with known fields derived from CHIRP's Yaesu drivers — see
+//! `super` for the derivation's licence and upstream. The EEPROM memory map
 //! offsets are estimated and marked `TODO(#80)` — they need verification
 //! against an actual ADMS-14 traffic capture before use on real hardware.
 
@@ -47,7 +48,8 @@ pub enum YaesuCodecError {
 )]
 pub fn decode_channel(_image: &[u8], _index: u16) -> Result<Channel, YaesuCodecError> {
     // TODO(#80)[deliberate-prudent]: implement once EEPROM memory map is
-    // verified via ADMS-14 traffic capture. Known fields from CHIRP source:
+    // verified via ADMS-14 traffic capture. Known fields derived from
+    // CHIRP's Yaesu drivers (see this module's docs for provenance):
     // - Frequency: 4 bytes BCD (similar to Baofeng but different byte order)
     // - Offset: 4 bytes BCD
     // - Tone mode: 1 byte (CTCSS/DCS/cross-tone)

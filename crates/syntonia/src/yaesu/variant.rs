@@ -1,7 +1,8 @@
 //! Yaesu FTM-510DR variant configuration.
 //!
-//! Known parameters derived from FCC filings and CHIRP open-source driver
-//! (Apache-2.0). The clone-mode protocol itself is not yet documented.
+//! Known parameters derived from FCC filings and from CHIRP's Yaesu drivers
+//! — see this module's parent (`super`) for the derivation's licence and
+//! upstream. The clone-mode protocol itself is not yet documented.
 
 use koinon::Frequency;
 
@@ -16,7 +17,8 @@ pub const MAX_NAME_LEN: usize = 6;
 /// Total number of programmable memory channels.
 pub const CHANNEL_COUNT: u16 = 900;
 
-/// EEPROM image size in bytes (estimated from CHIRP source).
+/// EEPROM image size in bytes (estimated from CHIRP's Yaesu drivers; see
+/// `super` for provenance).
 ///
 /// TODO(#80)[deliberate-prudent]: verify against actual ADMS-14 traffic capture.
 pub const IMAGE_SIZE: usize = 65_536;
