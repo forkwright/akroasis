@@ -4,6 +4,7 @@
 //! transports, plus a factory function that creates the right transport from a
 //! [`ConnectionConfig`].
 
+pub mod ble;
 pub mod serial;
 pub mod tcp;
 
@@ -96,7 +97,12 @@ pub async fn connect_with_config(
             Ok(ConnectionHandle::Tcp(conn))
         }
         ConnectionConfig::Ble { device_name } => {
-            // WHY: BLE transport is deferred; serial and TCP cover all hardware targets.
+            // WHY(#83): the BLE transport and its scan/GATT seam exist in `ble`, but
+            // this factory has no adapter to hand it. `ConnectionHandle` dispatches
+            // over concrete variants, so a `Ble` variant needs a production
+            // `BlePeripheral` implementation, which needs both a chosen adapter crate
+            // and the authoritative Meshtastic GATT identifiers. Neither is
+            // established here, and inventing either is what this arm refuses to do.
             BleConnectSnafu {
                 device: device_name.clone(),
             }
