@@ -23,14 +23,19 @@ fuzz_target!(|data: &[u8]| {
         // `NodeInfo.snr` (`22 05 25 d4 8d ff ff`, kept as a corpus seed), within
         // a minute of first running. Bytes are the property that was meant.
         let once = message.encode_to_vec();
-        let again = FromRadio::decode(once.as_slice())
-            .expect("a message this parser produced must decode again")
-            .encode_to_vec();
-        assert_eq!(once, again, "re-encoding must reach a fixed point");
+        let again = FromRadio::decode(once.as_slice()).map(|m| m.encode_to_vec());
+        assert_eq!(
+            again.ok().as_deref(),
+            Some(once.as_slice()),
+            "a message this parser produced must decode again, to the same bytes"
+        );
     }
 
     // The outbound direction is parsed from untrusted input too, in the gateway
     // and replay paths. No round-trip assertion here: only the inbound type is
-    // reconstructed from the wire in normal operation.
-    let _ = ToRadio::decode(data);
+    // reconstructed from the wire in normal operation, so the point is that
+    // decoding neither panics nor hangs. `drop` rather than `let _ =` because
+    // the discard is the intent, and a silent `let _` on a Result reads as an
+    // oversight wherever it appears.
+    drop(ToRadio::decode(data));
 });

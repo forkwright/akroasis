@@ -5,7 +5,7 @@ start from. Written for [`cargo-fuzz`](https://github.com/rust-fuzz/cargo-fuzz).
 
 ## Running them
 
-Nightly only — libFuzzer and its sanitizers are not on stable. The repository toolchain stays stable;
+Nightly only. libFuzzer and its sanitizers are not on stable. The repository toolchain stays stable;
 this crate is deliberately outside the workspace so that stays true.
 
 ```sh
@@ -15,7 +15,7 @@ cargo +nightly fuzz run frame_decode -- -max_total_time=60   # bounded, as CI ru
 cargo +nightly fuzz list
 ```
 
-If `cargo-fuzz` was installed as a musl binary, pass the host triple explicitly — it takes its
+If `cargo-fuzz` was installed as a musl binary, pass the host triple explicitly. It takes its
 default build target from the triple it was built for, not from the machine it runs on, and a
 sanitizer cannot link against a static libc:
 
@@ -37,27 +37,27 @@ cargo +nightly fuzz run frame_decode fuzz/artifacts/frame_decode/crash-<hash>
 | `message_parse` | `FromRadio` / `ToRadio` | decoding fails cleanly; re-encoding reaches a fixed point |
 | `routing_decision` | `RoutingProcessor::process_routing` | every decodable packet gets a verdict |
 
-`frame_decode` asserts progress rather than only absence of panic: a decoder that reports a frame
+`frame_decode` asserts progress, not just the absence of a panic: a decoder that reports a frame
 without consuming bytes turns `Framed`'s loop into a hang, which a panic-only check would not see.
 
-`message_parse` asserts that encoding reaches a fixed point — a second pass produces the same bytes as
-the first — so a parser accepting more than the type can represent shows up as a field that survives
+`message_parse` asserts that encoding reaches a fixed point: a second pass produces the same bytes as
+the first, so a parser accepting more than the type can represent shows up as a field that survives
 one round and not two.
 
-It compares **bytes**, not decoded values, and that distinction was found rather than designed. These
+It compares **bytes**, not decoded values, and the fuzzer found that distinction; nobody designed it. These
 messages carry `f32` fields and `NaN != NaN`, so a value comparison reported a byte-perfect round trip
 of a NaN `NodeInfo.snr` as a failure. The fuzzer produced it within a minute of the target first
 running; `corpus/message_parse/nan_snr.bin` is that exact input.
 
 ## The corpus
 
-`corpus/<target>/` holds hand-built seeds rather than captured traffic, each one a shape named for
+`corpus/<target>/` holds hand-built seeds, not captured traffic, each one a shape named for
 what it exercises: valid frames, a frame split across the magic pair, a length field exceeding
 `MAX_PACKET_SIZE`, a truncated varint, an unknown field number. The bytes are derived from the frame
 layout documented at the top of `crates/kerykeion/src/codec.rs` and from protobuf wire encoding.
 
-libFuzzer grows this corpus as it finds new coverage. Committing an input it discovers — particularly
-one that reproduced a defect — is how a fixed bug stays fixed.
+libFuzzer grows this corpus as it finds new coverage. Committing an input it discovers, particularly
+one that reproduced a defect, is how a fixed bug stays fixed.
 
 ## CI
 
