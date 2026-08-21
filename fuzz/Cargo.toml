@@ -1,0 +1,48 @@
+# WHY(#95) this is its own workspace: cargo-fuzz targets need a nightly
+# toolchain and a sanitizer-instrumented build, while the parent workspace pins
+# stable. The empty [workspace] table detaches this crate so `cargo check
+# --workspace` and the gate never try to build it, and `members = ["crates/*"]`
+# in the root manifest already excludes this directory.
+
+[package]
+name = "kerykeion-fuzz"
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.85"
+license = "AGPL-3.0-only"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+bytes = "1"
+libfuzzer-sys = "0.4"
+prost = "0.14.3"
+tokio-util = { version = "0.7.18", features = ["codec"] }
+
+[dependencies.kerykeion]
+path = "../crates/kerykeion"
+
+[[bin]]
+name = "frame_decode"
+path = "fuzz_targets/frame_decode.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "message_parse"
+path = "fuzz_targets/message_parse.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "routing_decision"
+path = "fuzz_targets/routing_decision.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]
