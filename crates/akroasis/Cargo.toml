@@ -43,7 +43,7 @@ zeroize = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
-syn = { version = "2", features = ["full", "visit"] }
+syn = { version = "3", features = ["full", "visit"] }
 
 [lints]
 workspace = true
