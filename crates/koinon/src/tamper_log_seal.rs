@@ -193,6 +193,83 @@ pub(super) fn tip_payload(terminal_hash: &[u8; SEAL_LINK_LEN]) -> Vec<u8> {
     payload
 }
 
+/// Outcome of checking a log's tip signature against a known installation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TipStatus {
+    /// The log has no seal, or its seal does not authenticate at all. The
+    /// caller's chain verification already reports that; provenance adds
+    /// nothing on top of it.
+    NoSeal,
+    /// The seal authenticates and carries no provenance — a log written
+    /// without an identity. Whether that is acceptable is the caller's
+    /// question, not this function's: a vault that has never had an identity
+    /// is fine, and one that has is being downgraded.
+    Unsigned,
+    /// The seal names a different installation than the verifier represents.
+    ///
+    /// Reported separately from a bad signature because it means something
+    /// different: not a forgery, but a log belonging to someone else.
+    ForeignInstallation,
+    /// The seal names this installation and the signature does not verify.
+    SignatureInvalid,
+    /// The tip signature verifies, but against a terminal hash that is not
+    /// where the chain actually ends.
+    ///
+    /// WHY this arm exists: a signature is a claim about a specific hash, and
+    /// checking it in isolation proves only that the claim was made. Replaying
+    /// an older seal over a newer log would otherwise present a genuine
+    /// signature over a genuine former tip as provenance for the current one.
+    StaleTip {
+        /// The hash the signature commits to.
+        signed: [u8; SEAL_LINK_LEN],
+        /// The hash the chain actually ends at.
+        actual: [u8; SEAL_LINK_LEN],
+    },
+    /// The tip signature verifies against this installation, over the hash the
+    /// chain actually ends at.
+    Verified,
+}
+
+/// Checks a log's recorded tip provenance against `verifier`.
+///
+/// `terminal_hash` is the hash the caller's own chain verification reached, and
+/// is required rather than re-derived: provenance is a claim *about* a verified
+/// chain, and checking a signature without knowing where the chain ends can
+/// only report that somebody signed something.
+pub(super) fn check_tip(
+    seal: SealState,
+    verifier: &dyn TipVerifier,
+    terminal_hash: &[u8; SEAL_LINK_LEN],
+) -> TipStatus {
+    let SealState::Valid { provenance, .. } = seal else {
+        return TipStatus::NoSeal;
+    };
+    let Some(tip) = provenance else {
+        return TipStatus::Unsigned;
+    };
+
+    // WHY the key id is compared against the verifier's own rather than used
+    // to select a key: an attacker who can write the seal writes this field
+    // too, so treating it as a lookup would let the record nominate the key
+    // that checks it. It identifies, it never authorises.
+    if !bool::from(tip.key_id.ct_eq(&verifier.key_id())) {
+        return TipStatus::ForeignInstallation;
+    }
+
+    if !verifier.verify_tip(&tip_payload(&tip.terminal_hash), &tip.signature) {
+        return TipStatus::SignatureInvalid;
+    }
+
+    if !bool::from(tip.terminal_hash.ct_eq(terminal_hash)) {
+        return TipStatus::StaleTip {
+            signed: tip.terminal_hash,
+            actual: *terminal_hash,
+        };
+    }
+
+    TipStatus::Verified
+}
+
 /// Result of reading and authenticating a sidecar seal file.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum SealState {
@@ -764,6 +841,138 @@ mod tests {
 
         let state = read_seal(&log_path, &k);
         assert_eq!(state, SealState::Invalid);
+    }
+
+    // -----------------------------------------------------------------
+    // #284: tip provenance
+    // -----------------------------------------------------------------
+
+    /// A verifier that accepts exactly one payload/signature pair.
+    ///
+    /// WHY hand-rolled rather than a real key: these tests exercise
+    /// `check_tip`'s decision table, and every arm of it must be reachable
+    /// independently. A real signature scheme can only produce the arms its
+    /// key material happens to reach — in particular it cannot produce a
+    /// VALID seal MAC over an INVALID signature, which is the arm the
+    /// integration tests structurally cannot cover, because the MAC catches
+    /// any edit before the signature is examined.
+    struct FakeVerifier {
+        id: [u8; KEY_ID_LEN],
+        accepts: Option<[u8; TIP_SIGNATURE_LEN]>,
+    }
+
+    impl TipVerifier for FakeVerifier {
+        fn key_id(&self) -> [u8; KEY_ID_LEN] {
+            self.id
+        }
+
+        fn verify_tip(&self, _payload: &[u8], signature: &[u8; TIP_SIGNATURE_LEN]) -> bool {
+            self.accepts.is_some_and(|good| good == *signature)
+        }
+    }
+
+    fn signed_state(key_id: u8, terminal: u8, sig: u8) -> SealState {
+        SealState::Valid {
+            entry_count: 3,
+            segment_start_hash: link(0x01),
+            provenance: Some(TipProvenance {
+                key_id: [key_id; KEY_ID_LEN],
+                terminal_hash: link(terminal),
+                signature: [sig; TIP_SIGNATURE_LEN],
+            }),
+        }
+    }
+
+    #[test]
+    fn check_tip_verifies_a_matching_installation_over_the_real_terminal_hash() {
+        let verifier = FakeVerifier {
+            id: [0xAA; KEY_ID_LEN],
+            accepts: Some([0x77; TIP_SIGNATURE_LEN]),
+        };
+        assert_eq!(
+            check_tip(signed_state(0xAA, 0x33, 0x77), &verifier, &link(0x33)),
+            TipStatus::Verified
+        );
+    }
+
+    #[test]
+    fn check_tip_reports_a_seal_without_provenance_as_unsigned() {
+        let verifier = FakeVerifier {
+            id: [0xAA; KEY_ID_LEN],
+            accepts: None,
+        };
+        let unsigned = SealState::Valid {
+            entry_count: 3,
+            segment_start_hash: link(0x01),
+            provenance: None,
+        };
+        assert_eq!(
+            check_tip(unsigned, &verifier, &link(0x33)),
+            TipStatus::Unsigned
+        );
+    }
+
+    #[test]
+    fn check_tip_reports_a_seal_naming_another_installation() {
+        let verifier = FakeVerifier {
+            id: [0xAA; KEY_ID_LEN],
+            accepts: Some([0x77; TIP_SIGNATURE_LEN]),
+        };
+        assert_eq!(
+            check_tip(signed_state(0xBB, 0x33, 0x77), &verifier, &link(0x33)),
+            TipStatus::ForeignInstallation,
+            "a key id that is not ours means someone else's log, not a forgery"
+        );
+    }
+
+    /// The arm no integration test can reach: the MAC is valid and the
+    /// signature is not.
+    #[test]
+    fn check_tip_rejects_a_signature_that_does_not_verify() {
+        let verifier = FakeVerifier {
+            id: [0xAA; KEY_ID_LEN],
+            accepts: Some([0x77; TIP_SIGNATURE_LEN]),
+        };
+        assert_eq!(
+            check_tip(signed_state(0xAA, 0x33, 0x66), &verifier, &link(0x33)),
+            TipStatus::SignatureInvalid
+        );
+    }
+
+    /// A genuine signature over a genuine FORMER tip, replayed onto a longer
+    /// log, must not read as provenance for where the chain now ends.
+    #[test]
+    fn check_tip_rejects_a_signature_over_a_stale_terminal_hash() {
+        let verifier = FakeVerifier {
+            id: [0xAA; KEY_ID_LEN],
+            accepts: Some([0x77; TIP_SIGNATURE_LEN]),
+        };
+        let status = check_tip(signed_state(0xAA, 0x33, 0x77), &verifier, &link(0x44));
+        assert_eq!(
+            status,
+            TipStatus::StaleTip {
+                signed: link(0x33),
+                actual: link(0x44),
+            },
+            "a valid signature over the wrong tip is not provenance for this one"
+        );
+    }
+
+    /// The key id identifies; it never authorises. A verifier must not be
+    /// selected by the record under examination.
+    #[test]
+    fn check_tip_does_not_let_the_record_choose_its_own_verifier() {
+        // A verifier that would accept this signature, but whose key id
+        // differs: the foreign-installation arm must win, so no path exists
+        // where naming a key causes that key to be used.
+        let verifier = FakeVerifier {
+            id: [0x01; KEY_ID_LEN],
+            accepts: Some([0x77; TIP_SIGNATURE_LEN]),
+        };
+        assert_eq!(
+            check_tip(signed_state(0xFF, 0x33, 0x77), &verifier, &link(0x33)),
+            TipStatus::ForeignInstallation
+        );
     }
 
     #[test]

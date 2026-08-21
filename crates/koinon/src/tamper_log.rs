@@ -80,9 +80,49 @@ mod segments;
 
 use rotation::rotation_path;
 
-pub use seal::{CHAIN_KEY_LEN, ChainKey};
+pub use seal::{
+    CHAIN_KEY_LEN, ChainKey, KEY_ID_LEN, TIP_SIGNATURE_LEN, TipProvenance, TipSigner, TipStatus,
+    TipVerifier,
+};
 pub use segments::{SegmentChainStatus, verify_segment_chain};
 pub use verify::{ChainStatus, VerificationResult, verify_chain};
+
+/// Checks which installation produced the log at `path`, against `verifier`.
+///
+/// Verifies the hash chain first and reports provenance only for a log whose
+/// chain is sound. A provenance answer over an unverified chain would be a
+/// claim about bytes nobody has checked — the signature would confirm that an
+/// installation signed *some* tip while the entries beneath it went unexamined.
+///
+/// Returns [`TipStatus::NoSeal`] when the chain itself does not verify, since
+/// the caller's own chain check is the report that matters there.
+///
+/// # Errors
+///
+/// Returns [`TamperLogError::Io`] if the log cannot be read.
+pub fn verify_tip_provenance(
+    path: impl AsRef<Path>,
+    chain_key: &ChainKey,
+    verifier: &dyn TipVerifier,
+) -> Result<TipStatus, TamperLogError> {
+    let path = path.as_ref();
+    let result = verify_chain(path, chain_key)?;
+
+    // WHY only these two statuses: `Intact` and `Unsealed` are the states a
+    // legitimate writer can leave (akroasis#285). Every other status means the
+    // chain is broken or truncated, and provenance over a broken chain is not
+    // a weaker answer — it is a misleading one.
+    if !matches!(
+        result.status,
+        ChainStatus::Intact | ChainStatus::Unsealed { .. }
+    ) {
+        return Ok(TipStatus::NoSeal);
+    }
+
+    let sealed = seal::read_seal(path, chain_key);
+    let terminal = verify::stream_terminal_hash(path, chain_key, sealed)?;
+    Ok(seal::check_tip(sealed, verifier, &terminal))
+}
 
 /// Maximum allowed entry payload size (16 MiB).
 ///
