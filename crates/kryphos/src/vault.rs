@@ -12,14 +12,11 @@ use zeroize::Zeroizing;
 use crate::error::{CryptoError, KeyParseSnafu};
 use crate::key::{InstallationIdentity, SIGNING_KEY_LEN, SigningKey, VaultKey};
 
-/// Size of the Argon2id salt in bytes.
-pub const SALT_LEN: usize = 16;
-
 /// Size of the ChaCha20-Poly1305 nonce in bytes.
 pub const NONCE_LEN: usize = 12;
 
-/// Current vault format version, written by [`VaultHeader::new`] into every
-/// newly created vault.
+/// Current vault format version, written into the header of every newly
+/// created vault by [`crate::storage::Vault::create`].
 ///
 /// WARNING: bumping this is a hard break for anything below
 /// [`MIN_SUPPORTED_VAULT_VERSION`] — `open` rejects any header whose
@@ -67,7 +64,7 @@ pub const VAULT_VERSION: u32 = 2;
 /// exact match again gives this room to widen.
 pub const MIN_SUPPORTED_VAULT_VERSION: u32 = 2;
 
-/// The kind of credential stored in a [`VaultEntry`].
+/// The kind of credential stored in the vault.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum CredentialType {
@@ -152,7 +149,11 @@ impl std::fmt::Display for HistoryEventKind {
     }
 }
 
-/// Metadata attached to a [`VaultEntry`].
+/// Metadata attached to a stored credential.
+///
+/// Carried inside the encrypted metadata record that
+/// [`crate::storage::Vault`] persists, and surfaced on
+/// [`crate::storage::DecryptedEntry`] and [`crate::storage::EntryInfo`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EntryMetadata {
     /// When the entry was first stored.
@@ -167,37 +168,6 @@ pub struct EntryMetadata {
     pub rotation_count: u32,
     /// Free-form tags for filtering and grouping.
     pub tags: Vec<CompactString>,
-}
-
-/// A single credential stored in the vault.
-///
-/// The `encrypted_data` field holds the ciphertext produced by
-/// ChaCha20-Poly1305. Decryption requires the [`VaultKey`].
-#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct VaultEntry {
-    /// Human-readable name for this credential.
-    pub name: CompactString,
-    /// What kind of credential this is.
-    pub credential_type: CredentialType,
-    /// ChaCha20-Poly1305 ciphertext (includes 16-byte authentication tag).
-    pub encrypted_data: Vec<u8>,
-    /// Associated metadata.
-    pub metadata: EntryMetadata,
-}
-
-// WHY: manual Debug instead of #[derive(Debug)] — the type touches
-// `credential_type` (RUST/no-debug-derive-on-public-types matches on the
-// "credential" token). `encrypted_data` is ChaCha20-Poly1305 ciphertext, not
-// plaintext, so this mirrors the derived output exactly.
-impl std::fmt::Debug for VaultEntry {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("VaultEntry")
-            .field("name", &self.name)
-            .field("credential_type", &self.credential_type)
-            .field("encrypted_data", &self.encrypted_data)
-            .field("metadata", &self.metadata)
-            .finish()
-    }
 }
 
 /// Argon2id key-derivation parameters stored in the vault header.
@@ -217,36 +187,6 @@ impl Default for KdfParams {
             memory_cost_kib: 65_536,
             time_cost: 3,
             parallelism: 4,
-        }
-    }
-}
-
-/// Header written at the start of a sealed vault file.
-///
-/// Contains everything needed to re-derive the symmetric key from
-/// a passphrase (salt + KDF parameters) and decrypt entries (nonce).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct VaultHeader {
-    /// Format version (currently [`VAULT_VERSION`]).
-    pub version: u32,
-    /// Random salt for Argon2id key derivation.
-    pub salt: [u8; SALT_LEN],
-    /// Nonce for the outer ChaCha20-Poly1305 envelope.
-    pub nonce: [u8; NONCE_LEN],
-    /// Argon2id parameters used to derive the vault key.
-    pub kdf_params: KdfParams,
-}
-
-impl VaultHeader {
-    /// Creates a header with the current version, the given salt and nonce,
-    /// and default KDF parameters.
-    #[must_use]
-    pub fn new(salt: [u8; SALT_LEN], nonce: [u8; NONCE_LEN]) -> Self {
-        Self {
-            version: VAULT_VERSION,
-            salt,
-            nonce,
-            kdf_params: KdfParams::default(),
         }
     }
 }
@@ -396,25 +336,6 @@ pub fn unseal_signing_key(
 mod tests {
     use super::*;
 
-    fn sample_metadata() -> EntryMetadata {
-        EntryMetadata {
-            created_at: Timestamp::UNIX_EPOCH,
-            rotated_at: None,
-            revoked_at: None,
-            rotation_count: 0,
-            tags: vec![CompactString::from("test")],
-        }
-    }
-
-    fn sample_entry(cred_type: CredentialType) -> VaultEntry {
-        VaultEntry {
-            name: CompactString::from("test-credential"),
-            credential_type: cred_type,
-            encrypted_data: vec![0xDE, 0xAD, 0xBE, 0xEF],
-            metadata: sample_metadata(),
-        }
-    }
-
     // -----------------------------------------------------------------
     // CredentialType construction and display
     // -----------------------------------------------------------------
@@ -470,22 +391,6 @@ mod tests {
     }
 
     #[test]
-    fn vault_entry_serde_round_trip() {
-        let entry = sample_entry(CredentialType::Psk);
-        let json = serde_json::to_string(&entry).unwrap();
-        let back: VaultEntry = serde_json::from_str(&json).unwrap();
-        assert_eq!(entry, back);
-    }
-
-    #[test]
-    fn vault_header_serde_round_trip() {
-        let header = VaultHeader::new([0xAA; SALT_LEN], [0xBB; NONCE_LEN]);
-        let json = serde_json::to_string(&header).unwrap();
-        let back: VaultHeader = serde_json::from_str(&json).unwrap();
-        assert_eq!(header, back);
-    }
-
-    #[test]
     fn kdf_params_serde_round_trip() {
         let params = KdfParams::default();
         let json = serde_json::to_string(&params).unwrap();
@@ -496,18 +401,6 @@ mod tests {
     // -----------------------------------------------------------------
     // Construction
     // -----------------------------------------------------------------
-
-    #[test]
-    fn vault_header_new_uses_current_version() {
-        let header = VaultHeader::new([0; SALT_LEN], [0; NONCE_LEN]);
-        assert_eq!(header.version, VAULT_VERSION);
-    }
-
-    #[test]
-    fn vault_header_new_uses_default_kdf_params() {
-        let header = VaultHeader::new([0; SALT_LEN], [0; NONCE_LEN]);
-        assert_eq!(header.kdf_params, KdfParams::default());
-    }
 
     #[test]
     fn kdf_params_default_has_sensible_values() {
@@ -532,19 +425,6 @@ mod tests {
         let json = serde_json::to_string(&meta).unwrap();
         let back: EntryMetadata = serde_json::from_str(&json).unwrap();
         assert_eq!(meta, back);
-    }
-
-    #[test]
-    fn vault_entry_with_empty_encrypted_data() {
-        let entry = VaultEntry {
-            name: CompactString::from("empty"),
-            credential_type: CredentialType::ApiKey,
-            encrypted_data: vec![],
-            metadata: sample_metadata(),
-        };
-        let json = serde_json::to_string(&entry).unwrap();
-        let back: VaultEntry = serde_json::from_str(&json).unwrap();
-        assert_eq!(entry, back);
     }
 
     // -----------------------------------------------------------------
