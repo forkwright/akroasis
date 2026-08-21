@@ -257,14 +257,18 @@ impl OutboundQueue {
         // INVARIANT: `created`/`ttl` are the ORIGINAL enqueue time and configured
         // TTL, carried forward unchanged so the message expires at its originally
         // configured deadline regardless of how many retries it goes through.
+        // WHY(#229) the refusal is returned rather than ignored: this function's
+        // contract is "will it be retried", and a full queue means it will not.
+        // Reporting `true` after failing to requeue would promise a delivery
+        // attempt that never happens.
         self.enqueue(PendingMessage {
             packet: msg.packet,
             created: msg.created,
             ttl: msg.ttl,
             priority,
             retries: msg.retries,
-        });
-        true
+        })
+        .is_ok()
     }
 
     /// Remove messages past TTL FROM both pending and inflight.

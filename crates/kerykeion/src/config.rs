@@ -703,6 +703,7 @@ stale_node_timeout_secs = 7200
             },
             outbound: OutboundConfig {
                 max_inflight: 2,
+                max_pending: 3,
                 max_retries: 1,
                 ack_timeout_secs: 7,
                 store_forward_ttl_secs: 11,
