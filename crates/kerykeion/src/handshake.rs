@@ -311,6 +311,7 @@ mod tests {
     /// Mock that floods one payload kind before completing, standing in for a
     /// peer that says more than a real device would.
     struct FloodMock {
+        my_info_sent: bool,
         remaining: usize,
         channels: bool,
         config_id: Option<u32>,
@@ -325,6 +326,17 @@ mod tests {
         }
 
         async fn recv(&mut self) -> Result<FromRadio, Error> {
+            // The handshake requires MyNodeInfo before anything else; without it
+            // it fails before reaching the accumulation this fixture exercises.
+            if !self.my_info_sent {
+                self.my_info_sent = true;
+                return Ok(FromRadio {
+                    id: 1,
+                    payload_variant: Some(from_radio::PayloadVariant::MyInfo(MyNodeInfo {
+                        my_node_num: 0xCAFE_BABE,
+                    })),
+                });
+            }
             if self.remaining > 0 {
                 self.remaining -= 1;
                 let variant = if self.channels {
@@ -368,6 +380,7 @@ mod tests {
     #[tokio::test]
     async fn a_channel_flood_cannot_grow_past_the_protocol_maximum() {
         let mut conn = FloodMock {
+            my_info_sent: false,
             remaining: usize::from(MAX_CHANNELS) * 20,
             channels: true,
             config_id: None,
@@ -389,6 +402,7 @@ mod tests {
     #[tokio::test]
     async fn an_ordinary_channel_count_is_collected_in_full() {
         let mut conn = FloodMock {
+            my_info_sent: false,
             remaining: 3,
             channels: true,
             config_id: None,
