@@ -15,6 +15,26 @@ updates:
     reviewers:
       - forkwright
 
+  # WHY a second cargo entry: `fuzz/` declares its own empty [workspace] table so
+  # a nightly sanitizer build stays out of the stable workspace. That detachment
+  # also puts it outside every repo-wide check keyed to the root manifest --
+  # `cargo audit`, `cargo deny`, and the `directory: /` entry above all resolve
+  # the root graph and never see this crate's dependencies. Without this entry
+  # the fuzz harness's deps receive no security updates at all.
+  - package-ecosystem: cargo
+    directory: /fuzz
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      patch-updates:
+        update-types: [patch]
+      minor-updates:
+        update-types: [minor]
+    reviewers:
+      - forkwright
+
   - package-ecosystem: github-actions
     directory: /
     schedule:
