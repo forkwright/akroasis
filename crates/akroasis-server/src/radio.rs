@@ -144,8 +144,10 @@ mod tests {
 
     #[test]
     fn an_absent_port_means_auto_detect_and_is_not_an_error() {
-        let accepted = validated_port(None).expect("an absent port is valid");
-        assert!(accepted.is_none(), "an absent port must stay absent");
+        assert!(
+            matches!(validated_port(None), Ok(None)),
+            "an absent port is valid and must stay absent"
+        );
     }
 
     #[test]
@@ -185,16 +187,26 @@ mod tests {
     #[tokio::test]
     async fn a_rejected_port_is_a_400_that_does_not_echo_the_supplied_path() {
         let probe = "/dev/../root/.ssh/id_ed25519";
-        let error =
-            validated_port(Some(probe.to_owned())).expect_err("a traversal path must be rejected");
-
-        let response = error.into_response();
-        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-
-        let body = match axum::body::to_bytes(response.into_body(), usize::MAX).await {
-            Ok(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
-            Err(read_err) => format!("<unreadable body: {read_err}>"),
+        // A sentinel on the accepted branch rather than a panic: the assertions
+        // below are what decide this case, and both of them fail on it.
+        let (status, body) = match validated_port(Some(probe.to_owned())) {
+            Ok(_) => (StatusCode::OK, "<accepted>".to_owned()),
+            Err(error) => {
+                let response = error.into_response();
+                let status = response.status();
+                let body = match axum::body::to_bytes(response.into_body(), usize::MAX).await {
+                    Ok(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
+                    Err(read_err) => format!("<unreadable body: {read_err}>"),
+                };
+                (status, body)
+            }
         };
+
+        assert_eq!(
+            status,
+            StatusCode::BAD_REQUEST,
+            "a traversal path must be rejected"
+        );
         assert!(
             !body.contains("/root") && !body.contains("id_ed25519") && !body.contains(probe),
             "the rejection body must not echo the supplied path, got {body}"
