@@ -37,13 +37,27 @@ impl<'ast> Visit<'ast> for RestrictedUse {
     }
 
     fn visit_macro(&mut self, node: &'ast syn::Macro) {
-        for token in node
-            .tokens
-            .to_string()
-            .split(|character: char| !(character.is_ascii_alphanumeric() || character == '_'))
-        {
-            if RESTRICTED.contains(&token) {
-                self.identifiers.insert(token.to_owned());
+        // WHY: a macro body is opaque to `syn`, so the token scan below matches a restricted
+        // name anywhere in it — including inside a string literal, which names an identifier
+        // without using one. Parse the body as expressions first so literals are seen as
+        // literals, and fall back to the scan only for bodies that are not expression lists.
+        if let Ok(arguments) = node.parse_body_with(
+            syn::punctuated::Punctuated::<syn::Expr, syn::Token![,]>::parse_terminated,
+        ) {
+            let mut parsed = Self::default();
+            for argument in &arguments {
+                parsed.visit_expr(argument);
+            }
+            self.identifiers.extend(parsed.identifiers);
+        } else {
+            for token in node
+                .tokens
+                .to_string()
+                .split(|character: char| !(character.is_ascii_alphanumeric() || character == '_'))
+            {
+                if RESTRICTED.contains(&token) {
+                    self.identifiers.insert(token.to_owned());
+                }
             }
         }
         visit::visit_macro(self, node);
@@ -95,6 +109,21 @@ fn caller_construction_aliases_are_detected() {
             "CallerResolver".to_owned(),
         ]),
         "renamed imports and turbofish calls must not bypass the boundary"
+    );
+}
+
+#[test]
+fn quoted_restricted_names_inside_macros_are_not_uses() {
+    let source = r#"
+        fn describe() {
+            assert_eq!(actual, expected, "CallerResolver must never be minted here");
+            println!("{}", CallerAuthority::describe());
+        }
+    "#;
+    assert_eq!(
+        restricted_identifiers(source),
+        BTreeSet::from(["CallerAuthority".to_owned()]),
+        "a quoted name names an identifier without using one, while a path inside a macro is a use"
     );
 }
 
