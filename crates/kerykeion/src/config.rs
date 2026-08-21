@@ -98,7 +98,37 @@ pub struct ChannelPsk {
     /// - 0 bytes: no encryption (use only for public channels).
     /// - 16 bytes: AES-128-CTR.
     /// - 32 bytes: AES-256-CTR.
+    ///
+    /// WHY(#229) this is checked at deserialization: the rule above was a
+    /// comment, and any length was accepted. A mistyped key in a config file
+    /// then travelled all the way to AES, which rejected it, and the channel was
+    /// skipped as though it had simply been unencrypted.
+    ///
+    /// The single-byte channel-index form that [`crate::crypto::resolve_psk`]
+    /// also accepts is deliberately not permitted here: that shorthand comes off
+    /// the wire, and an operator writing a config means a key.
+    #[serde(deserialize_with = "deserialize_psk")]
     pub psk: Vec<u8>,
+}
+
+/// Accept only the PSK lengths [`ChannelPsk::psk`] documents.
+fn deserialize_psk<'de, D>(deserializer: D) -> Result<Vec<u8>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::Deserialize as _;
+
+    let bytes = Vec::<u8>::deserialize(deserializer)?;
+    if matches!(
+        bytes.len(),
+        0 | crate::crypto::AES128_KEY_LEN | crate::crypto::AES256_KEY_LEN
+    ) {
+        return Ok(bytes);
+    }
+    Err(serde::de::Error::invalid_length(
+        bytes.len(),
+        &"0, 16, or 32 bytes",
+    ))
 }
 
 /// Store-and-forward server configuration.
@@ -437,6 +467,37 @@ impl Default for MessageConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// WHY(#229): the length rule was a doc comment and nothing enforced it, so
+    /// a mistyped key reached AES, was rejected there, and the channel was
+    /// skipped as though it had been unencrypted on purpose.
+    #[test]
+    fn a_psk_of_the_wrong_length_is_refused_at_the_config_boundary() {
+        for len in [1usize, 7, 15, 17, 31, 33, 64] {
+            let toml = format!(
+                "[[channel_psk]]\nindex = 0\nname = \"x\"\npsk = [{}]\n",
+                vec!["1"; len].join(", ")
+            );
+            let parsed: Result<MeshConfig, _> = toml::from_str(&toml);
+            assert!(
+                parsed.is_err(),
+                "a {len}-byte PSK must be refused, not carried to AES"
+            );
+        }
+    }
+
+    /// Anti-vacuity: the documented lengths must still parse.
+    #[test]
+    fn the_documented_psk_lengths_parse() {
+        for len in [0usize, 16, 32] {
+            let toml = format!(
+                "[[channel_psk]]\nindex = 0\nname = \"x\"\npsk = [{}]\n",
+                vec!["1"; len].join(", ")
+            );
+            let parsed: Result<MeshConfig, _> = toml::from_str(&toml);
+            assert!(parsed.is_ok(), "a {len}-byte PSK is documented as valid");
+        }
+    }
 
     const SAMPLE_TOML: &str = r#"
 [[connections]]
