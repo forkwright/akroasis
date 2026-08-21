@@ -1,9 +1,10 @@
 //! Vault data model: entries, headers, and credential types.
 
-use chacha20poly1305::aead::{Aead, Payload};
+use chacha20poly1305::aead::{Aead, AeadCore, Payload};
 use chacha20poly1305::{ChaCha20Poly1305, KeyInit, Nonce};
 use compact_str::CompactString;
 use jiff::Timestamp;
+use rand_core::OsRng;
 use serde::{Deserialize, Serialize};
 use snafu::ResultExt;
 use zeroize::Zeroizing;
@@ -278,10 +279,16 @@ fn signing_key_aad() -> Vec<u8> {
     aad
 }
 
-/// Encrypts the signing key of an [`InstallationIdentity`] with the given vault
-/// key and nonce, returning the ciphertext.
+/// Encrypts the signing key of an [`InstallationIdentity`] under the given
+/// vault key, returning `nonce || ciphertext || tag` — the same envelope
+/// [`crate::crypto::encrypt`] produces.
 ///
-/// The nonce must be unique per encryption operation with the same key.
+/// WHY the nonce is generated here rather than accepted: repeating a nonce
+/// under one key costs ChaCha20-Poly1305 both confidentiality and integrity,
+/// and the domain-separation AAD below does not mitigate it — that tag
+/// separates *purposes*, not *uses*, so two seals under one vault key are
+/// exactly the case it cannot see. A parameter is the only way a caller can
+/// repeat a nonce here, so there is no parameter.
 ///
 /// # Errors
 ///
@@ -289,10 +296,9 @@ fn signing_key_aad() -> Vec<u8> {
 pub fn seal_signing_key(
     identity: &InstallationIdentity,
     vault_key: &VaultKey,
-    nonce: &[u8; NONCE_LEN],
 ) -> Result<Vec<u8>, CryptoError> {
     let cipher = ChaCha20Poly1305::new(vault_key.as_bytes().into());
-    let nonce = Nonce::from_slice(nonce);
+    let nonce = ChaCha20Poly1305::generate_nonce(&mut OsRng);
     // WHY: `to_bytes()` returns the raw Ed25519 signing key in an ordinary
     // array; wrap immediately so this ephemeral copy is scrubbed on drop
     // rather than left on the stack after `encrypt` returns — the same
@@ -301,9 +307,9 @@ pub fn seal_signing_key(
     let plaintext = zeroizing_signing_key_bytes(identity);
     let aad = signing_key_aad();
 
-    cipher
+    let ciphertext = cipher
         .encrypt(
-            nonce,
+            &nonce,
             Payload {
                 msg: plaintext.as_ref(),
                 aad: &aad,
@@ -311,7 +317,12 @@ pub fn seal_signing_key(
         )
         .map_err(|e| CryptoError::EncryptionFailed {
             reason: e.to_string(),
-        })
+        })?;
+
+    let mut sealed = Vec::with_capacity(NONCE_LEN + ciphertext.len());
+    sealed.extend_from_slice(&nonce);
+    sealed.extend_from_slice(&ciphertext);
+    Ok(sealed)
 }
 
 /// Copies the signing key's raw bytes into a zero-on-drop buffer.
@@ -331,13 +342,22 @@ fn zeroizing_signing_key_bytes(
 /// the same key — see [`SIGNING_KEY_AAD_TAG`]).
 /// Returns [`CryptoError::KeyParse`] if the decrypted bytes are not a valid
 /// Ed25519 key.
+/// Returns [`CryptoError::InvalidNonceLength`] if `sealed` is shorter than the
+/// nonce it must carry.
 pub fn unseal_signing_key(
-    ciphertext: &[u8],
+    sealed: &[u8],
     vault_key: &VaultKey,
-    nonce: &[u8; NONCE_LEN],
 ) -> Result<InstallationIdentity, CryptoError> {
+    if sealed.len() < NONCE_LEN {
+        return Err(CryptoError::InvalidNonceLength {
+            expected: NONCE_LEN,
+            actual: sealed.len(),
+        });
+    }
+
+    let (nonce_bytes, ciphertext) = sealed.split_at(NONCE_LEN);
     let cipher = ChaCha20Poly1305::new(vault_key.as_bytes().into());
-    let nonce = Nonce::from_slice(nonce);
+    let nonce = Nonce::from_slice(nonce_bytes);
     let aad = signing_key_aad();
 
     // WHY: wrap at the point of allocation — `decrypt`'s return (the raw
@@ -535,10 +555,9 @@ mod tests {
     fn seal_unseal_round_trip_preserves_identity() {
         let identity = InstallationIdentity::generate();
         let vault_key = VaultKey::from_bytes([0x42; 32]);
-        let nonce = [0x01; NONCE_LEN];
 
-        let ciphertext = seal_signing_key(&identity, &vault_key, &nonce).unwrap();
-        let recovered = unseal_signing_key(&ciphertext, &vault_key, &nonce).unwrap();
+        let sealed = seal_signing_key(&identity, &vault_key).unwrap();
+        let recovered = unseal_signing_key(&sealed, &vault_key).unwrap();
 
         assert_eq!(
             identity.public_key_bytes(),
@@ -581,23 +600,86 @@ mod tests {
         let identity = InstallationIdentity::generate();
         let vault_key = VaultKey::from_bytes([0x42; 32]);
         let wrong_key = VaultKey::from_bytes([0xFF; 32]);
-        let nonce = [0x01; NONCE_LEN];
 
-        let ciphertext = seal_signing_key(&identity, &vault_key, &nonce).unwrap();
-        let result = unseal_signing_key(&ciphertext, &wrong_key, &nonce);
+        let sealed = seal_signing_key(&identity, &vault_key).unwrap();
+        let result = unseal_signing_key(&sealed, &wrong_key);
         assert!(result.is_err(), "decryption must fail with wrong vault key");
     }
 
+    /// The acceptance partner to every rejection test here, and the one that
+    /// actually witnesses the #231 fix: a caller can no longer choose a nonce,
+    /// so the property to prove is that the function chooses a different one
+    /// each time. Sealing the SAME identity under the SAME key twice must
+    /// still produce two distinct envelopes, and must differ in the nonce
+    /// prefix specifically — identical ciphertext bodies under one key would
+    /// be the exact two-time-pad break the parameter's removal exists to
+    /// prevent.
     #[test]
-    fn unseal_with_wrong_nonce_fails() {
+    fn seal_draws_a_fresh_nonce_on_every_call() {
         let identity = InstallationIdentity::generate();
         let vault_key = VaultKey::from_bytes([0x42; 32]);
-        let nonce = [0x01; NONCE_LEN];
-        let wrong_nonce = [0x02; NONCE_LEN];
 
-        let ciphertext = seal_signing_key(&identity, &vault_key, &nonce).unwrap();
-        let result = unseal_signing_key(&ciphertext, &vault_key, &wrong_nonce);
-        assert!(result.is_err(), "decryption must fail with wrong nonce");
+        let first = seal_signing_key(&identity, &vault_key).unwrap();
+        let second = seal_signing_key(&identity, &vault_key).unwrap();
+
+        assert_ne!(
+            first.get(..NONCE_LEN),
+            second.get(..NONCE_LEN),
+            "two seals under one key must not share a nonce"
+        );
+        assert_ne!(
+            first.get(NONCE_LEN..),
+            second.get(NONCE_LEN..),
+            "distinct nonces must yield distinct ciphertext for identical plaintext"
+        );
+
+        for sealed in [&first, &second] {
+            assert_eq!(
+                unseal_signing_key(sealed, &vault_key)
+                    .unwrap()
+                    .public_key_bytes(),
+                identity.public_key_bytes(),
+                "both envelopes must still round-trip"
+            );
+        }
+    }
+
+    /// The nonce now travels inside the envelope, so corrupting it is a
+    /// distinct failure path from corrupting the ciphertext body — this test
+    /// covers the prefix, `unseal_tampered_ciphertext_fails` covers the rest.
+    #[test]
+    fn unseal_with_tampered_nonce_fails() {
+        let identity = InstallationIdentity::generate();
+        let vault_key = VaultKey::from_bytes([0x42; 32]);
+
+        let mut sealed = seal_signing_key(&identity, &vault_key).unwrap();
+        sealed[0] ^= 0xFF;
+
+        let result = unseal_signing_key(&sealed, &vault_key);
+        assert!(
+            result.is_err(),
+            "decryption must fail when the carried nonce is altered"
+        );
+    }
+
+    /// An envelope too short to carry a nonce is malformed input, not a
+    /// failed decryption, and must be reported as such rather than reaching
+    /// the AEAD with a truncated slice.
+    #[test]
+    fn unseal_rejects_envelope_shorter_than_its_nonce() {
+        let vault_key = VaultKey::from_bytes([0x42; 32]);
+        let truncated = [0u8; NONCE_LEN - 1];
+
+        let result = unseal_signing_key(&truncated, &vault_key);
+
+        assert!(
+            matches!(
+                result,
+                Err(CryptoError::InvalidNonceLength { expected, actual })
+                    if expected == NONCE_LEN && actual == NONCE_LEN - 1
+            ),
+            "got {result:?}"
+        );
     }
 
     #[test]
@@ -624,8 +706,9 @@ mod tests {
                 },
             )
             .unwrap();
+        let sealed = [&nonce[..], &ciphertext[..]].concat();
 
-        let result = unseal_signing_key(&ciphertext, &vault_key, &nonce);
+        let result = unseal_signing_key(&sealed, &vault_key);
 
         assert!(
             matches!(result, Err(CryptoError::KeyParse { .. })),
@@ -652,8 +735,9 @@ mod tests {
         let foreign_ciphertext = cipher
             .encrypt(Nonce::from_slice(&nonce), &[0x11u8; 32][..])
             .unwrap();
+        let foreign_envelope = [&nonce[..], &foreign_ciphertext[..]].concat();
 
-        let result = unseal_signing_key(&foreign_ciphertext, &vault_key, &nonce);
+        let result = unseal_signing_key(&foreign_envelope, &vault_key);
         assert!(
             result.is_err(),
             "a ciphertext sealed without the signing-key domain tag must \
@@ -665,11 +749,14 @@ mod tests {
     fn unseal_tampered_ciphertext_fails() {
         let identity = InstallationIdentity::generate();
         let vault_key = VaultKey::from_bytes([0x42; 32]);
-        let nonce = [0x01; NONCE_LEN];
 
-        let mut ciphertext = seal_signing_key(&identity, &vault_key, &nonce).unwrap();
-        ciphertext[0] ^= 0xFF;
-        let result = unseal_signing_key(&ciphertext, &vault_key, &nonce);
+        let mut sealed = seal_signing_key(&identity, &vault_key).unwrap();
+        // WHY not index 0: the envelope now leads with the nonce, so byte 0
+        // corrupts that rather than the ciphertext this test names.
+        // `unseal_with_tampered_nonce_fails` owns the prefix.
+        sealed[NONCE_LEN] ^= 0xFF;
+
+        let result = unseal_signing_key(&sealed, &vault_key);
         assert!(
             result.is_err(),
             "decryption must fail with tampered ciphertext"

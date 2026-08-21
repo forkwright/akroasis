@@ -207,6 +207,68 @@ mod tests {
         assert_eq!(config.port, 443, "non-string value must pass through");
     }
 
+    /// A vault stores arbitrary bytes while `figment::Value::String` holds a
+    /// `String`, so resolution has to refuse a secret that is not UTF-8. The
+    /// production path for that refusal existed with nothing exercising it
+    /// (forkwright/akroasis#231).
+    #[test]
+    fn non_utf8_vault_entry_returns_error_naming_entry() {
+        let dir = tempfile::tempdir().unwrap();
+        let vault_path = dir.path().join("vault");
+        let vault = Vault::create(&vault_path, TEST_PASSPHRASE).unwrap();
+        // A lone 0xFF is not a legal UTF-8 byte in any position.
+        vault
+            .add("binary_key", CredentialType::ApiKey, &[0xFF, 0xFE, 0x00])
+            .unwrap();
+
+        let inner = Serialized::defaults(TestConfig {
+            api_key: "vault:binary_key".to_owned(),
+            host: "test.invalid".to_owned(),
+            port: 8080,
+        });
+
+        let result: Result<TestConfig, _> =
+            Figment::from(VaultProvider::new(inner, vault)).extract();
+
+        let message = result
+            .expect_err("non-UTF-8 secret must not resolve")
+            .to_string();
+        assert!(
+            message.contains("binary_key") && message.contains("non-UTF-8"),
+            "error must name the offending entry and the reason, got: {message}"
+        );
+    }
+
+    /// The acceptance partner to `non_utf8_vault_entry_returns_error_naming_entry`.
+    /// Without it that test passes just as well against a resolver that
+    /// rejects every byte sequence outside ASCII, which would be a different
+    /// bug wearing the same green check.
+    #[test]
+    fn multibyte_utf8_vault_entry_resolves() {
+        let dir = tempfile::tempdir().unwrap();
+        let vault_path = dir.path().join("vault");
+        let vault = Vault::create(&vault_path, TEST_PASSPHRASE).unwrap();
+        let secret = "κρυφός-π@ss–word✓";
+        vault
+            .add("unicode_key", CredentialType::ApiKey, secret.as_bytes())
+            .unwrap();
+
+        let inner = Serialized::defaults(TestConfig {
+            api_key: "vault:unicode_key".to_owned(),
+            host: "test.invalid".to_owned(),
+            port: 8080,
+        });
+
+        let config: TestConfig = Figment::from(VaultProvider::new(inner, vault))
+            .extract()
+            .unwrap();
+
+        assert_eq!(
+            config.api_key, secret,
+            "a multi-byte UTF-8 secret must survive resolution intact"
+        );
+    }
+
     #[test]
     fn missing_vault_entry_returns_error_naming_entry() {
         let dir = tempfile::tempdir().unwrap();

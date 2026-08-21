@@ -114,6 +114,28 @@ fn corrupted_tamper_log_blocks_further_vault_mutations() {
         "a vault mutation on top of a compromised tamper log must surface \
          VaultError::TamperLog, got {result:?}"
     );
+
+    // WHY this second assertion (forkwright/akroasis#231): the error type
+    // alone is what this test used to check, and it held just as well when
+    // the mutation was applied and durably persisted BEFORE the audit
+    // append that failed — so the entry existed and this test's own name was
+    // aspirational. Auditing ahead of the mutation is what makes the block
+    // real, and only an absence check can witness it.
+    assert!(
+        matches!(
+            vault.get("failure-path-cred"),
+            Err(VaultError::EntryNotFound { .. })
+        ),
+        "a mutation refused by the tamper log must leave no entry behind"
+    );
+
+    // The acceptance partner: the entries written before the corruption are
+    // untouched, so the assertion above is reporting a blocked write rather
+    // than a vault that has simply stopped answering.
+    assert!(
+        vault.get("setup-cred").is_ok(),
+        "entries committed before the tamper-log corruption must still read"
+    );
 }
 
 #[test]

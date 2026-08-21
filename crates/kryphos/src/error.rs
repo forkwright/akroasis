@@ -98,11 +98,40 @@ pub enum VaultError {
         name: String,
     },
 
+    /// The entry has expired and cannot be retrieved.
+    #[snafu(display("entry expired: {name}"))]
+    EntryExpired {
+        /// Name of the expired entry.
+        name: String,
+    },
+
     /// A revoked entry cannot be deleted (audit trail).
     #[snafu(display("cannot DELETE revoked entry: {name} (audit trail)"))]
     EntryNotDeletable {
         /// Name of the revoked entry.
         name: String,
+    },
+
+    /// The audit entry for a vault mutation was written, but the mutation
+    /// itself then failed.
+    ///
+    /// WHY this is a distinct variant rather than the underlying error alone:
+    /// the two failure directions carry opposite consequences and a caller
+    /// must be able to tell them apart. A plain mutation error means nothing
+    /// happened. This one means the tamper-evident log now carries an entry
+    /// for an operation that did not take effect, so a later reader
+    /// reconciling the log against the vault will find a record with no
+    /// corresponding change and must not read that as tampering.
+    #[snafu(display(
+        "vault audit for '{operation}' on '{name}' was recorded but the mutation failed: {source}"
+    ))]
+    AuditedMutationFailed {
+        /// Name of the entry the mutation targeted.
+        name: String,
+        /// The operation recorded in the audit log.
+        operation: &'static str,
+        /// Why the mutation failed after its audit entry was written.
+        source: Box<Self>,
     },
 
     /// Writing the tamper-evident vault audit log failed.
