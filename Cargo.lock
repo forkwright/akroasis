@@ -50,6 +50,7 @@ dependencies = [
  "serde",
  "serde_json",
  "snafu",
+ "syn 2.0.117",
  "syntonia",
  "tempfile",
  "tokio",

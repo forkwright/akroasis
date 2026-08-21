@@ -8,6 +8,7 @@
     reason = "command modules pre-date the lib target; doc coverage deferred to API stabilisation"
 )]
 
+pub mod caller;
 pub mod mesh;
 pub mod radio;
 pub mod vault;
