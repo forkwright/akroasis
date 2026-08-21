@@ -68,7 +68,12 @@ jobs:
       - uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
         with:
           command: check advisories licenses bans sources
-          arguments: --all-features --manifest-path fuzz/Cargo.toml
+          arguments: --all-features
+          # WHY the action's own input rather than a flag in `arguments`: the
+          # action always passes `--manifest-path` from this input (defaulting
+          # to ./Cargo.toml), so putting one in `arguments` supplies the flag
+          # twice and cargo-deny rejects it outright.
+          manifest-path: fuzz/Cargo.toml
 
   cargo-audit:
     # WHY: cargo-deny's advisories check overlaps but uses a different code
