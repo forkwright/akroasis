@@ -332,8 +332,8 @@ mod tests {
                 "index {index} is within the defined range"
             );
         }
-        assert!(key_of(&vec![0xAA; AES128_KEY_LEN]).is_some());
-        assert!(key_of(&vec![0xAA; AES256_KEY_LEN]).is_some());
+        assert!(key_of(&[0xAA; AES128_KEY_LEN]).is_some());
+        assert!(key_of(&[0xAA; AES256_KEY_LEN]).is_some());
     }
 
     #[test]
