@@ -34,14 +34,20 @@ cargo +nightly fuzz run frame_decode fuzz/artifacts/frame_decode/crash-<hash>
 | Target | Surface | Property |
 |---|---|---|
 | `frame_decode` | `codec::MeshCodec` | never panics; a yielded frame consumed input |
-| `message_parse` | `FromRadio` / `ToRadio` | decoding fails cleanly; an accepted message re-encodes losslessly |
+| `message_parse` | `FromRadio` / `ToRadio` | decoding fails cleanly; re-encoding reaches a fixed point |
 | `routing_decision` | `RoutingProcessor::process_routing` | every decodable packet gets a verdict |
 
 `frame_decode` asserts progress rather than only absence of panic: a decoder that reports a frame
 without consuming bytes turns `Framed`'s loop into a hang, which a panic-only check would not see.
 
-`message_parse` asserts a round trip, so a parser that accepts more than the type can represent fails
-here rather than silently producing a value the encoder cannot express.
+`message_parse` asserts that encoding reaches a fixed point — a second pass produces the same bytes as
+the first — so a parser accepting more than the type can represent shows up as a field that survives
+one round and not two.
+
+It compares **bytes**, not decoded values, and that distinction was found rather than designed. These
+messages carry `f32` fields and `NaN != NaN`, so a value comparison reported a byte-perfect round trip
+of a NaN `NodeInfo.snr` as a failure. The fuzzer produced it within a minute of the target first
+running; `corpus/message_parse/nan_snr.bin` is that exact input.
 
 ## The corpus
 
