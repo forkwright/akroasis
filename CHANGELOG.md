@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.3.0](https://github.com/forkwright/akroasis/compare/v0.2.0...v0.3.0) (2026-08-21)
+
+
+### Features
+
+* **security:** add validated caller contract ([#412](https://github.com/forkwright/akroasis/issues/412)) ([040eccb](https://github.com/forkwright/akroasis/commit/040eccb73ccbd6e133da3412f92f923a274ccc73))
+
+
+### Bug Fixes
+
+* **ci:** report every gate failure, not whichever one is reached first ([#415](https://github.com/forkwright/akroasis/issues/415)) ([1efdad9](https://github.com/forkwright/akroasis/commit/1efdad991bbcf4044092f6e44fb8be9937ccd04c)), closes [#414](https://github.com/forkwright/akroasis/issues/414)
+
 ## [0.2.0](https://github.com/forkwright/akroasis/compare/v0.1.25...v0.2.0) (2026-08-19)
 
 
