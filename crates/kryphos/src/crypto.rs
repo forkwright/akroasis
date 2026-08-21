@@ -8,9 +8,11 @@ use rand_core::{OsRng, RngCore};
 
 use snafu::ResultExt;
 
-use crate::error::{CryptoError, InvalidSaltLengthSnafu, SerializationSnafu, VaultError};
+use crate::error::{
+    CryptoError, InvalidKdfParamsSnafu, InvalidSaltLengthSnafu, SerializationSnafu, VaultError,
+};
 use crate::key::VaultKey;
-use crate::vault::{CredentialType, NONCE_LEN};
+use crate::vault::{CredentialType, KdfParams, NONCE_LEN};
 
 /// Salt length for Argon2id key derivation (256 bits).
 pub const SALT_LEN: usize = 32;
@@ -24,14 +26,65 @@ pub const SALT_LEN: usize = 32;
 /// binding scheme does not force every unrelated header field to bump.
 pub(crate) const ENTRY_ENVELOPE_VERSION: u8 = 1;
 
-/// Argon2id memory cost: 64 MiB.
-const KDF_M_COST: u32 = 65_536;
+/// The weakest KDF parameters accepted from a stored vault header.
+///
+/// WHY a floor exists at all: [`derive_key`] now honours the parameters a vault
+/// records rather than ignoring them, which means a file supplies them. Without
+/// a floor, a vault handed to an operator could specify parameters weak enough
+/// to make an offline attack on the passphrase they type into it cheap.
+///
+/// WHY these values: they are what this crate has written for the whole life of
+/// the format, so nothing it produced is excluded. **If the defaults are ever
+/// raised, this floor stays where it is** rather than following them — moving it
+/// up would stop every previously written vault from opening, which is the
+/// migration the header exists to make possible.
+const MIN_KDF_MEMORY_KIB: u32 = 65_536;
+/// See [`MIN_KDF_MEMORY_KIB`].
+const MIN_KDF_TIME_COST: u32 = 3;
+/// See [`MIN_KDF_MEMORY_KIB`].
+const MIN_KDF_PARALLELISM: u32 = 4;
 
-/// Argon2id time cost: 3 iterations.
-const KDF_T_COST: u32 = 3;
+/// The most work a stored header may demand, in KiB of memory.
+///
+/// WHY: Argon2 allocates this before doing anything, so an unbounded value read
+/// from a file is a memory-exhaustion vector rather than a strong setting.
+const MAX_KDF_MEMORY_KIB: u32 = 1_048_576;
+/// See [`MAX_KDF_MEMORY_KIB`]; bounds CPU rather than memory.
+const MAX_KDF_TIME_COST: u32 = 16;
+/// See [`MAX_KDF_MEMORY_KIB`]; bounds thread count.
+const MAX_KDF_PARALLELISM: u32 = 16;
 
-/// Argon2id parallelism: 4 lanes.
-const KDF_P_COST: u32 = 4;
+/// Reject KDF parameters outside the accepted range.
+fn check_kdf_params(params: &KdfParams) -> Result<(), CryptoError> {
+    for (label, value, min, max) in [
+        (
+            "memory_cost_kib",
+            params.memory_cost_kib,
+            MIN_KDF_MEMORY_KIB,
+            MAX_KDF_MEMORY_KIB,
+        ),
+        (
+            "time_cost",
+            params.time_cost,
+            MIN_KDF_TIME_COST,
+            MAX_KDF_TIME_COST,
+        ),
+        (
+            "parallelism",
+            params.parallelism,
+            MIN_KDF_PARALLELISM,
+            MAX_KDF_PARALLELISM,
+        ),
+    ] {
+        if value < min || value > max {
+            return InvalidKdfParamsSnafu {
+                reason: format!("{label} {value} is outside {min}..={max}"),
+            }
+            .fail();
+        }
+    }
+    Ok(())
+}
 
 /// Generates a 32-byte random salt using the OS CSPRNG.
 #[must_use]
@@ -43,7 +96,10 @@ pub fn generate_salt() -> [u8; SALT_LEN] {
 
 /// Derives a 256-bit symmetric key FROM a passphrase and salt using Argon2id.
 ///
-/// Uses secure defaults: m=64 MiB, t=3 iterations, p=4 lanes.
+/// `kdf` comes from the vault header, so a caller opening an existing vault
+/// passes what that vault recorded rather than the current defaults. See
+/// [`MIN_KDF_MEMORY_KIB`] for why the accepted range has a floor as well as a
+/// ceiling.
 ///
 /// # Errors
 ///
@@ -52,19 +108,16 @@ pub fn generate_salt() -> [u8; SALT_LEN] {
 /// variable-length field, so this is the reachable case rather than a
 /// defensive one.
 ///
-/// Returns [`CryptoError::EncryptionFailed`] if Argon2id itself rejects the
-/// inputs. The length check above covers the reachable cause, so this is
-/// defence for a future caller.
+/// Returns [`CryptoError::InvalidKdfParams`] if `kdf` falls outside the accepted
+/// range, or if Argon2id rejects it. Both are reachable from a stored header.
 ///
-/// # Panics
-///
-/// Panics if Argon2id parameter construction fails (should not happen
-/// with compile-time constants).
-#[expect(
-    clippy::expect_used,
-    reason = "Argon2id params are compile-time constants; construction cannot fail"
-)]
-pub fn derive_key(passphrase: &[u8], salt: &[u8]) -> Result<VaultKey, CryptoError> {
+/// Returns [`CryptoError::EncryptionFailed`] if Argon2id itself fails on
+/// otherwise acceptable inputs.
+pub fn derive_key(
+    passphrase: &[u8],
+    salt: &[u8],
+    kdf: &KdfParams,
+) -> Result<VaultKey, CryptoError> {
     // WHY this is fallible: the salt reaching here can come off disk. A stored
     // vault header carries it as a variable-length field, so a corrupt or
     // tampered file can supply one shorter than Argon2 accepts. That used to
@@ -78,8 +131,21 @@ pub fn derive_key(passphrase: &[u8], salt: &[u8]) -> Result<VaultKey, CryptoErro
         .fail();
     }
 
-    let params = argon2::Params::new(KDF_M_COST, KDF_T_COST, KDF_P_COST, Some(32))
-        .expect("Argon2id params are compile-time constants"); // SAFETY: KDF_M_COST/T_COST/P_COST are compile-time constants within valid ranges per argon2 docs
+    // WHY(#231) the stored parameters are read rather than assumed: the header
+    // records them and documents itself as carrying everything needed to
+    // re-derive the key, but derivation used hardcoded constants and ignored
+    // them. The recorded values were decorative, and raising the constants
+    // would have made every existing vault un-openable with no way back.
+    check_kdf_params(kdf)?;
+    let params = argon2::Params::new(
+        kdf.memory_cost_kib,
+        kdf.time_cost,
+        kdf.parallelism,
+        Some(32),
+    )
+    .map_err(|source| CryptoError::InvalidKdfParams {
+        reason: format!("Argon2id rejected the parameters: {source}"),
+    })?;
     let argon2 = argon2::Argon2::new(
         argon2::Algorithm::Argon2id,
         argon2::Version::default(),
@@ -258,7 +324,7 @@ mod tests {
             vec![0xAA; SALT_LEN + 1], // one byte over
             vec![0xAA; 4096],         // absurd, from a hand-edited header
         ] {
-            let error = derive_key(passphrase, &salt).unwrap_err();
+            let error = derive_key(passphrase, &salt, &KdfParams::default()).unwrap_err();
             assert!(
                 matches!(error, CryptoError::InvalidSaltLength { expected, actual }
                     if expected == SALT_LEN && actual == salt.len()),
@@ -276,9 +342,116 @@ mod tests {
         let salt = generate_salt();
         assert_eq!(salt.len(), SALT_LEN);
         assert!(
-            derive_key(b"correct horse battery staple", &salt).is_ok(),
+            derive_key(
+                b"correct horse battery staple",
+                &salt,
+                &KdfParams::default()
+            )
+            .is_ok(),
             "a freshly generated salt must derive"
         );
+    }
+
+    /// The migration rule, held mechanically rather than in a comment: the
+    /// floor must never rise above what this crate writes, or every vault
+    /// written before the change stops opening.
+    #[test]
+    fn kdf_default_is_within_the_accepted_range() {
+        let default = KdfParams::default();
+        assert!(
+            check_kdf_params(&default).is_ok(),
+            "this crate must be able to open the vaults it writes"
+        );
+        assert!(default.memory_cost_kib >= MIN_KDF_MEMORY_KIB);
+        assert!(default.time_cost >= MIN_KDF_TIME_COST);
+        assert!(default.parallelism >= MIN_KDF_PARALLELISM);
+    }
+
+    /// WHY(#231) this is the point of the change: the header records these and
+    /// derivation ignored them, so they were decorative. Two acceptable
+    /// parameter sets must produce different keys, or they are still ignored.
+    #[test]
+    fn stored_parameters_change_the_derived_key() {
+        let passphrase = b"correct horse battery staple";
+        let salt = [0xAA; SALT_LEN];
+        let default = KdfParams::default();
+        let stronger = KdfParams {
+            memory_cost_kib: default.memory_cost_kib * 2,
+            ..default
+        };
+        assert!(check_kdf_params(&stronger).is_ok(), "fixture must be valid");
+
+        let with_default = derive_key(passphrase, &salt, &default).unwrap();
+        let with_stronger = derive_key(passphrase, &salt, &stronger).unwrap();
+
+        assert_ne!(
+            with_default.as_bytes(),
+            with_stronger.as_bytes(),
+            "the recorded parameters must reach Argon2, not just sit in the header"
+        );
+    }
+
+    #[test]
+    fn parameters_outside_the_accepted_range_are_rejected() {
+        let default = KdfParams::default();
+        for (label, params) in [
+            (
+                "memory below the floor",
+                KdfParams {
+                    memory_cost_kib: MIN_KDF_MEMORY_KIB - 1,
+                    ..default
+                },
+            ),
+            (
+                "memory above the ceiling",
+                KdfParams {
+                    memory_cost_kib: MAX_KDF_MEMORY_KIB + 1,
+                    ..default
+                },
+            ),
+            (
+                "time cost below the floor",
+                KdfParams {
+                    time_cost: MIN_KDF_TIME_COST - 1,
+                    ..default
+                },
+            ),
+            (
+                "time cost above the ceiling",
+                KdfParams {
+                    time_cost: MAX_KDF_TIME_COST + 1,
+                    ..default
+                },
+            ),
+            (
+                "parallelism below the floor",
+                KdfParams {
+                    parallelism: MIN_KDF_PARALLELISM - 1,
+                    ..default
+                },
+            ),
+            (
+                "parallelism above the ceiling",
+                KdfParams {
+                    parallelism: MAX_KDF_PARALLELISM + 1,
+                    ..default
+                },
+            ),
+            (
+                "all zero",
+                KdfParams {
+                    memory_cost_kib: 0,
+                    time_cost: 0,
+                    parallelism: 0,
+                },
+            ),
+        ] {
+            let error = derive_key(b"passphrase", &[0xAA; SALT_LEN], &params).unwrap_err();
+            assert!(
+                matches!(error, CryptoError::InvalidKdfParams { .. }),
+                "{label} must be rejected as invalid parameters, got {error}"
+            );
+        }
     }
 
     #[test]
@@ -286,8 +459,8 @@ mod tests {
         let passphrase = b"correct horse battery staple";
         let salt = [0xAA; SALT_LEN];
 
-        let key1 = derive_key(passphrase, &salt).unwrap();
-        let key2 = derive_key(passphrase, &salt).unwrap();
+        let key1 = derive_key(passphrase, &salt, &KdfParams::default()).unwrap();
+        let key2 = derive_key(passphrase, &salt, &KdfParams::default()).unwrap();
 
         assert_eq!(
             key1.as_bytes(),
@@ -300,8 +473,8 @@ mod tests {
     fn derive_key_differs_with_different_salt() {
         let passphrase = b"correct horse battery staple";
 
-        let key1 = derive_key(passphrase, &[0xAA; SALT_LEN]).unwrap();
-        let key2 = derive_key(passphrase, &[0xBB; SALT_LEN]).unwrap();
+        let key1 = derive_key(passphrase, &[0xAA; SALT_LEN], &KdfParams::default()).unwrap();
+        let key2 = derive_key(passphrase, &[0xBB; SALT_LEN], &KdfParams::default()).unwrap();
 
         assert_ne!(
             key1.as_bytes(),
@@ -314,8 +487,8 @@ mod tests {
     fn derive_key_differs_with_different_passphrase() {
         let salt = [0xAA; SALT_LEN];
 
-        let key1 = derive_key(b"passphrase-one", &salt).unwrap();
-        let key2 = derive_key(b"passphrase-two", &salt).unwrap();
+        let key1 = derive_key(b"passphrase-one", &salt, &KdfParams::default()).unwrap();
+        let key2 = derive_key(b"passphrase-two", &salt, &KdfParams::default()).unwrap();
 
         assert_ne!(
             key1.as_bytes(),
@@ -326,7 +499,7 @@ mod tests {
 
     #[test]
     fn encrypt_decrypt_round_trip() {
-        let key = derive_key(b"test-passphrase", &[0x42; SALT_LEN]).unwrap();
+        let key = derive_key(b"test-passphrase", &[0x42; SALT_LEN], &KdfParams::default()).unwrap();
         let plaintext = b"secret vault entry data";
 
         let ciphertext = encrypt(&key, plaintext, b"").unwrap();
@@ -340,7 +513,7 @@ mod tests {
 
     #[test]
     fn encrypt_decrypt_empty_plaintext() {
-        let key = derive_key(b"test-passphrase", &[0x42; SALT_LEN]).unwrap();
+        let key = derive_key(b"test-passphrase", &[0x42; SALT_LEN], &KdfParams::default()).unwrap();
 
         let ciphertext = encrypt(&key, b"", b"").unwrap();
         let decrypted = decrypt(&key, &ciphertext, b"").unwrap();
@@ -353,7 +526,7 @@ mod tests {
 
     #[test]
     fn encrypt_decrypt_large_payload() {
-        let key = derive_key(b"test-passphrase", &[0x42; SALT_LEN]).unwrap();
+        let key = derive_key(b"test-passphrase", &[0x42; SALT_LEN], &KdfParams::default()).unwrap();
         let plaintext = vec![0xAB; 1_000_000];
 
         let ciphertext = encrypt(&key, &plaintext, b"").unwrap();
@@ -367,8 +540,18 @@ mod tests {
 
     #[test]
     fn decrypt_with_wrong_key_returns_error() {
-        let key1 = derive_key(b"correct-passphrase", &[0x42; SALT_LEN]).unwrap();
-        let key2 = derive_key(b"wrong-passphrase", &[0x42; SALT_LEN]).unwrap();
+        let key1 = derive_key(
+            b"correct-passphrase",
+            &[0x42; SALT_LEN],
+            &KdfParams::default(),
+        )
+        .unwrap();
+        let key2 = derive_key(
+            b"wrong-passphrase",
+            &[0x42; SALT_LEN],
+            &KdfParams::default(),
+        )
+        .unwrap();
 
         let ciphertext = encrypt(&key1, b"secret data", b"").unwrap();
         let result = decrypt(&key2, &ciphertext, b"");
@@ -381,7 +564,7 @@ mod tests {
 
     #[test]
     fn tampered_ciphertext_returns_error() {
-        let key = derive_key(b"test-passphrase", &[0x42; SALT_LEN]).unwrap();
+        let key = derive_key(b"test-passphrase", &[0x42; SALT_LEN], &KdfParams::default()).unwrap();
 
         let mut ciphertext = encrypt(&key, b"secret data", b"").unwrap();
 
@@ -399,7 +582,7 @@ mod tests {
 
     #[test]
     fn encrypt_decrypt_round_trip_with_associated_data() {
-        let key = derive_key(b"test-passphrase", &[0x42; SALT_LEN]).unwrap();
+        let key = derive_key(b"test-passphrase", &[0x42; SALT_LEN], &KdfParams::default()).unwrap();
         let plaintext = b"secret vault entry data";
         let aad = b"entry-identity-binding";
 
@@ -414,7 +597,7 @@ mod tests {
 
     #[test]
     fn decrypt_with_mismatched_associated_data_fails() {
-        let key = derive_key(b"test-passphrase", &[0x42; SALT_LEN]).unwrap();
+        let key = derive_key(b"test-passphrase", &[0x42; SALT_LEN], &KdfParams::default()).unwrap();
         let plaintext = b"secret vault entry data";
 
         let ciphertext = encrypt(&key, plaintext, b"entry-a").unwrap();
@@ -430,7 +613,7 @@ mod tests {
 
     #[test]
     fn decrypt_with_empty_aad_against_bound_ciphertext_fails() {
-        let key = derive_key(b"test-passphrase", &[0x42; SALT_LEN]).unwrap();
+        let key = derive_key(b"test-passphrase", &[0x42; SALT_LEN], &KdfParams::default()).unwrap();
 
         let ciphertext = encrypt(&key, b"secret data", b"entry-a").unwrap();
         let result = decrypt(&key, &ciphertext, b"");
@@ -444,7 +627,7 @@ mod tests {
 
     #[test]
     fn nonce_is_random_per_encryption() {
-        let key = derive_key(b"test-passphrase", &[0x42; SALT_LEN]).unwrap();
+        let key = derive_key(b"test-passphrase", &[0x42; SALT_LEN], &KdfParams::default()).unwrap();
         let plaintext = b"identical plaintext";
 
         let ct1 = encrypt(&key, plaintext, b"").unwrap();
@@ -465,7 +648,7 @@ mod tests {
 
     #[test]
     fn ciphertext_includes_nonce_prefix() {
-        let key = derive_key(b"test-passphrase", &[0x42; SALT_LEN]).unwrap();
+        let key = derive_key(b"test-passphrase", &[0x42; SALT_LEN], &KdfParams::default()).unwrap();
         let plaintext = b"hello";
 
         let ciphertext = encrypt(&key, plaintext, b"").unwrap();
@@ -480,7 +663,7 @@ mod tests {
 
     #[test]
     fn decrypt_rejects_too_short_input() {
-        let key = derive_key(b"test-passphrase", &[0x42; SALT_LEN]).unwrap();
+        let key = derive_key(b"test-passphrase", &[0x42; SALT_LEN], &KdfParams::default()).unwrap();
 
         let result = decrypt(&key, &[0u8; 5], b"");
         assert!(
