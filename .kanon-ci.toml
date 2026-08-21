@@ -33,6 +33,16 @@
 # holds the compile-and-test half of the invariant so it cannot regress while
 # #264 is open.
 
+# WHY(#414): --keep-going on check/clippy and --no-fail-fast on nextest. Without
+# them cargo stops scheduling units at the first error and nextest cancels at the
+# first failing test, so a red run reports whichever failures were reached rather
+# than the ones that exist -- and a partial report is shaped exactly like a
+# complete one. Measured on PR #412: six red cycles, each naming one layer, the
+# last printing "1065/1162 tests were not run due to test failure". Green runs are
+# unaffected; only red runs get longer, by the work needed to finish the survey
+# they already claim to report. Matches utilities/pre-push-verify.sh, which
+# carries both flags for this reason.
+
 [pipeline]
 stages = ["cargo fmt", "cargo check", "cargo clippy", "cargo nextest", "kanon lint"]
 
@@ -41,15 +51,15 @@ cmd = "cargo fmt --all -- --check"
 timeout_secs = 300
 
 [stages."cargo check"]
-cmd = "cargo check --workspace --all-targets --features syntonia/hardware-serial --jobs 8"
+cmd = "cargo check --workspace --all-targets --features syntonia/hardware-serial --jobs 8 --keep-going"
 timeout_secs = 900
 
 [stages."cargo clippy"]
-cmd = "cargo clippy --workspace --all-targets --jobs 8 -- -D warnings"
+cmd = "cargo clippy --workspace --all-targets --jobs 8 --keep-going -- -D warnings"
 timeout_secs = 900
 
 [stages."cargo nextest"]
-cmd = "cargo nextest run --workspace --features syntonia/hardware-serial --build-jobs 8 --test-threads 8"
+cmd = "cargo nextest run --workspace --features syntonia/hardware-serial --build-jobs 8 --test-threads 8 --no-fail-fast"
 # 2700s (45 min) accommodates the cold-compile path under the 8-thread cap.
 # Warm-cache runs complete in ~30s; the headroom only matters when the build
 # cache is cold (first run after daemon restart or cache eviction). See #109.
