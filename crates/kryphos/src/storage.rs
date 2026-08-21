@@ -18,10 +18,10 @@ use crate::error::{
     EntryNotDeletableSnafu, EntryRevokedSnafu, IoSnafu, NotInitializedSnafu, SerializationSnafu,
     TamperLogSnafu, VaultError, WrongPassphraseSnafu,
 };
-use crate::key::VaultKey;
+use crate::key::{InstallationIdentity, VaultKey};
 use crate::vault::{
     CredentialType, EntryMetadata, EntryStatus, HistoryEvent, HistoryEventKind, KdfParams,
-    MIN_SUPPORTED_VAULT_VERSION, VAULT_VERSION,
+    MIN_SUPPORTED_VAULT_VERSION, VAULT_VERSION, seal_signing_key, unseal_signing_key,
 };
 
 /// Sentinel `envelope_version` marking a pre-#283 entry: no `envelope_version`
@@ -67,6 +67,25 @@ struct StoredHeader {
     salt: Vec<u8>,
     kdf_params: KdfParams,
     key_check: Vec<u8>,
+    /// This installation's Ed25519 verifying key, stored UNSEALED.
+    ///
+    /// WHY in the clear: a verifying key is public by construction, and
+    /// provenance that can only be checked by whoever holds the passphrase is
+    /// not provenance — it is a second copy of the secret's authority. Keeping
+    /// it readable is what lets [`Vault::installation_public_key`] answer from
+    /// the header alone (forkwright/akroasis#284).
+    ///
+    /// `None` on any vault created before this field existed. Absence is a
+    /// real state, not an error: those vaults have no identity to report.
+    #[serde(default)]
+    installation_public_key: Option<Vec<u8>>,
+    /// The matching signing key, sealed under the vault key as
+    /// `nonce || ciphertext || tag` by [`crate::vault::seal_signing_key`].
+    ///
+    /// `None` under the same condition as the field above; the two are written
+    /// together and neither is written alone.
+    #[serde(default)]
+    sealed_signing_key: Option<Vec<u8>>,
 }
 
 /// Entry as stored in fjall (JSON-serialized value).
@@ -302,11 +321,21 @@ impl Vault {
 
         let key_check = encrypt(&key, KEY_CHECK_PLAINTEXT, b"").context(EntryCryptoSnafu)?;
 
+        // WHY minted here rather than lazily on first use: an identity that
+        // appears when something first needs it cannot answer "which
+        // installation wrote this" for anything written before that moment,
+        // which is the whole question it exists to answer
+        // (forkwright/akroasis#284).
+        let identity = InstallationIdentity::generate();
+        let sealed_signing_key = seal_signing_key(&identity, &key).context(EntryCryptoSnafu)?;
+
         let header = StoredHeader {
             version: VAULT_VERSION,
             salt: salt.to_vec(),
             kdf_params: KdfParams::default(),
             key_check,
+            installation_public_key: Some(identity.public_key_bytes().to_vec()),
+            sealed_signing_key: Some(sealed_signing_key),
         };
 
         let header_json = serde_json::to_string_pretty(&header).context(SerializationSnafu)?;
@@ -427,6 +456,78 @@ impl Vault {
             path: path.to_path_buf(),
             tamper_log_guard: std::sync::Mutex::new(()),
         })
+    }
+
+    /// Reads this vault's installation verifying key without a passphrase.
+    ///
+    /// WHY an associated function taking a path rather than a method: the
+    /// whole point of storing the verifying key unsealed is that checking
+    /// provenance does not require the vault's secret. A method would demand
+    /// an opened `Vault`, which demands the passphrase and takes the
+    /// directory lock — so provenance would be checkable only by the one
+    /// party who least needs to be convinced, and never while a daemon holds
+    /// the vault (forkwright/akroasis#284).
+    ///
+    /// `Ok(None)` means the vault predates installation identity. That is a
+    /// real state rather than a failure, and callers must render it as
+    /// "none recorded" rather than inventing one.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`VaultError::Io`] if the header cannot be read, or
+    /// [`VaultError::Serialization`] if it cannot be parsed.
+    pub fn installation_public_key(path: impl AsRef<Path>) -> Result<Option<Vec<u8>>, VaultError> {
+        let path = path.as_ref();
+        let header_bytes = fs::read(path.join(HEADER_FILE)).context(IoSnafu { path })?;
+        let header: StoredHeader =
+            serde_json::from_slice(&header_bytes).context(SerializationSnafu)?;
+        Ok(header.installation_public_key)
+    }
+
+    /// Recovers this vault's installation identity, signing key included.
+    ///
+    /// Requires the opened vault because the signing half is sealed under the
+    /// vault key. Use [`Self::installation_public_key`] for anything that only
+    /// needs to verify.
+    ///
+    /// `Ok(None)` means the vault predates installation identity.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`VaultError::Io`] or [`VaultError::Serialization`] if the
+    /// header cannot be read or parsed, and [`VaultError::EntryCrypto`] if the
+    /// sealed signing key does not unseal under this vault's key — which,
+    /// given the vault opened, means the header's two identity fields have
+    /// been tampered with or replaced.
+    pub fn installation_identity(&self) -> Result<Option<InstallationIdentity>, VaultError> {
+        let path = self.path.as_path();
+        let header_bytes = fs::read(path.join(HEADER_FILE)).context(IoSnafu { path })?;
+        let header: StoredHeader =
+            serde_json::from_slice(&header_bytes).context(SerializationSnafu)?;
+
+        let Some(sealed) = header.sealed_signing_key else {
+            return Ok(None);
+        };
+
+        let identity = unseal_signing_key(&sealed, &self.key).context(EntryCryptoSnafu)?;
+
+        // WHY cross-check rather than trust the unseal: the unseal proves the
+        // sealed half is authentic under this vault's key, and says nothing
+        // about the verifying key stored beside it in the clear. Those two
+        // fields are written together and must stay a pair — an unsealed key
+        // swapped for another installation's would otherwise be reported by
+        // `installation_public_key` while every signature verified against a
+        // different key entirely, which is the substitution this identity
+        // exists to make detectable.
+        if header.installation_public_key.as_deref() != Some(&identity.public_key_bytes()[..]) {
+            return Err(VaultError::InvalidHeader {
+                reason: String::from(
+                    "installation_public_key does not match the sealed signing key",
+                ),
+            });
+        }
+
+        Ok(Some(identity))
     }
 
     /// Stores a new credential in the vault.
