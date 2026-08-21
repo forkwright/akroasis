@@ -125,6 +125,21 @@ pub struct DecryptedEntry {
     pub metadata: EntryMetadata,
 }
 
+/// What a [`Vault::list`] call found, including what it could not read.
+///
+/// WHY(#231) the count is carried rather than logged: one unreadable record used
+/// to abort the whole listing, and skipping silently would trade that for an
+/// operator who cannot tell a missing credential from a damaged one. kryphos
+/// takes no logging dependency — a credential vault that writes to a log is a
+/// leak waiting to happen — so the caller is told through the return value.
+#[derive(Debug, Clone)]
+pub struct VaultListing {
+    /// Entries that were read successfully.
+    pub entries: Vec<EntryInfo>,
+    /// How many stored records could not be parsed or decrypted.
+    pub unreadable: usize,
+}
+
 // WHY: manual Debug instead of #[derive(Debug)] — `secret` holds the
 // decrypted plaintext credential; redact it so an accidental `{:?}` log
 // never prints it (RUST/no-debug-derive-on-public-types).
@@ -563,8 +578,9 @@ impl Vault {
     ///
     /// Returns [`VaultError::StorageBackend`] on iteration errors.
     /// Returns [`VaultError::EntryCrypto`] if metadata decryption fails.
-    pub fn list(&self) -> Result<Vec<EntryInfo>, VaultError> {
+    pub fn list(&self) -> Result<VaultListing, VaultError> {
         let mut entries = Vec::new();
+        let mut unreadable = 0usize;
 
         for guard in self.keyspace.iter() {
             let (_key, value) = guard.into_inner().map_err(fjall_err)?;
@@ -573,11 +589,11 @@ impl Vault {
             // row hid every good one and the operator could not see the
             // credentials they still had.
             let Ok(entry) = serde_json::from_slice::<StoredEntry>(&value) else {
-                tracing::warn!("skipping a vault entry whose stored record does not parse");
+                unreadable += 1;
                 continue;
             };
             let Ok(record) = self.decrypt_metadata(&entry) else {
-                tracing::warn!("skipping a vault entry whose metadata does not decrypt");
+                unreadable += 1;
                 continue;
             };
 
@@ -589,7 +605,10 @@ impl Vault {
             });
         }
 
-        Ok(entries)
+        Ok(VaultListing {
+            entries,
+            unreadable,
+        })
     }
 
     /// Removes a credential from the vault.

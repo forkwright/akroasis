@@ -776,13 +776,17 @@ fn one_unreadable_entry_does_not_hide_the_readable_ones() {
         .into_inner()
         .unwrap()
         .0;
-    vault.keyspace.insert(&key, b"not json").unwrap();
+    vault.keyspace.insert(key, b"not json").unwrap();
 
     let listed = vault.list().unwrap();
 
     assert_eq!(
-        listed.len(),
+        listed.entries.len(),
         1,
         "the surviving entry must still be listed; one bad row is not a dead vault"
+    );
+    assert_eq!(
+        listed.unreadable, 1,
+        "and the caller must be told one record could not be read"
     );
 }
