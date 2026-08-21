@@ -296,6 +296,7 @@ mod tests {
                 name: String::new(),
                 radio_model: None,
                 channels: vec![channel_named(name)],
+                created: None,
             };
 
             let mut csv = Vec::new();
