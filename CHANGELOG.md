@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.3](https://github.com/forkwright/akroasis/compare/v0.4.2...v0.4.3) (2026-08-21)
+
+
+### Bug Fixes
+
+* **koinon:** make the seal rename durable, and prove every stage recovers ([#443](https://github.com/forkwright/akroasis/issues/443)) ([08ff014](https://github.com/forkwright/akroasis/commit/08ff014a48afdcf638c6b6f6d9034ba50e1a4038))
+* **kryphos:** close the wave-1 batch — nonce, audit ordering, lifecycle gate, UTF-8 coverage ([#441](https://github.com/forkwright/akroasis/issues/441)) ([1b972ee](https://github.com/forkwright/akroasis/commit/1b972ee1302636c5c0d517fc73619515ee2c1f36))
+
 ## [0.4.2](https://github.com/forkwright/akroasis/compare/v0.4.1...v0.4.2) (2026-08-21)
 
 
