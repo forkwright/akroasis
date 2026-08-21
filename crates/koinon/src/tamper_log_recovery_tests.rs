@@ -19,7 +19,7 @@ fn test_key() -> ChainKey {
 
 fn vault_kind() -> LogEntryKind {
     LogEntryKind::VaultMutation {
-        credential_name: CompactString::from("recovery-test-cred"),
+        credential_ref: CompactString::from("0f1e2d3c4b5a6978"),
         operation: CompactString::from("test"),
     }
 }
