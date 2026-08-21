@@ -185,6 +185,28 @@ pub const MAX_CHANNELS: u8 = 8;
 /// Maximum hop limit for a mesh packet.
 pub const MAX_HOP_LIMIT: u8 = 7;
 
+/// Hop count derived from a packet's wire hop fields, or `None` when they do
+/// not describe a hop count this protocol can produce.
+///
+/// WHY(#229) this is bounded rather than cast: both fields are `u32` read
+/// straight off the radio. The call sites justified an unchecked `as u8` on the
+/// grounds that Meshtastic firmware bounds them by [`MAX_HOP_LIMIT`] — true of
+/// firmware, and not true of a neighbour that is hostile or merely wrong. A
+/// `hop_start` of 1000 truncated to 232, so the claimed bound produced a value
+/// outside it.
+///
+/// `hop_limit` above `hop_start` is rejected rather than saturated: the
+/// difference is meaningless, and reporting zero hops for it invents a
+/// measurement the packet did not carry.
+pub(crate) fn hop_count_from_wire(hop_start: u32, hop_limit: u32) -> Option<u8> {
+    if hop_start == 0 || hop_limit > hop_start {
+        return None;
+    }
+    u8::try_from(hop_start - hop_limit)
+        .ok()
+        .filter(|&hops| hops <= MAX_HOP_LIMIT)
+}
+
 /// Maximum protobuf payload size enforced by Meshtastic firmware.
 pub const MAX_PACKET_SIZE: usize = 512;
 
@@ -255,6 +277,45 @@ mod tests {
         assert_eq!(MAX_PACKET_SIZE, 512);
         assert_eq!(MAX_CHANNELS, 8);
         assert_eq!(MAX_HOP_LIMIT, 7);
+    }
+
+    /// Anti-vacuity: ordinary packets must still yield a hop count, or the
+    /// rejection cases below would pass against a function returning None for
+    /// everything.
+    #[test]
+    fn ordinary_hop_fields_produce_a_count() {
+        assert_eq!(hop_count_from_wire(7, 7), Some(0));
+        assert_eq!(hop_count_from_wire(7, 4), Some(3));
+        assert_eq!(hop_count_from_wire(3, 0), Some(3));
+        assert_eq!(
+            hop_count_from_wire(u32::from(MAX_HOP_LIMIT), 0),
+            Some(MAX_HOP_LIMIT)
+        );
+    }
+
+    /// WHY(#229): the call sites cast these straight to u8 on the grounds that
+    /// firmware bounds them. A hostile neighbour is not running that firmware,
+    /// and 1000 truncates to 232 — a value outside the very bound the cast
+    /// claimed to rely on.
+    #[test]
+    fn wire_hop_fields_beyond_the_protocol_bound_are_rejected() {
+        assert_eq!(hop_count_from_wire(1000, 0), None, "would truncate to 232");
+        assert_eq!(hop_count_from_wire(u32::MAX, 0), None);
+        assert_eq!(hop_count_from_wire(256, 0), None, "would truncate to 0");
+        assert_eq!(
+            hop_count_from_wire(u32::from(MAX_HOP_LIMIT) + 1, 0),
+            None,
+            "one hop past the protocol maximum is still past it"
+        );
+    }
+
+    /// A hop_limit above hop_start describes no journey. Saturating it to zero
+    /// would report a measurement the packet never carried.
+    #[test]
+    fn an_inverted_hop_pair_is_rejected_rather_than_saturated() {
+        assert_eq!(hop_count_from_wire(3, 9), None);
+        assert_eq!(hop_count_from_wire(0, 0), None);
+        assert_eq!(hop_count_from_wire(0, 5), None);
     }
 
     // ── Property tests ──────────────────────────────────────────────────────

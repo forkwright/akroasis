@@ -118,16 +118,11 @@ impl MeshCollector {
     }
 
     /// Computes hop count FROM packet hop fields.
-    #[expect(
-        clippy::cast_possible_truncation,
-        reason = "hop VALUES are bounded by MAX_HOP_LIMIT (7) in Meshtastic firmware"
-    )]
-    const fn compute_hop_count(hop_start: u32, hop_limit: u32) -> Option<u8> {
-        if hop_start > 0 && hop_limit <= hop_start {
-            Some((hop_start - hop_limit) as u8) // SAFETY: hop_start >= hop_limit is checked by caller; difference fits u8
-        } else {
-            None
-        }
+    ///
+    /// Delegates to [`crate::types::hop_count_from_wire`] so the bound lives in
+    /// one place; see there for why the fields cannot be trusted to hold it.
+    fn compute_hop_count(hop_start: u32, hop_limit: u32) -> Option<u8> {
+        crate::types::hop_count_from_wire(hop_start, hop_limit)
     }
 
     /// Processes a single `FromRadio` message, updating the node database.

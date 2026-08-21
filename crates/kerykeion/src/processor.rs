@@ -190,15 +190,7 @@ impl PacketProcessor {
             Some(packet.rx_snr)
         };
 
-        let hop_count = if packet.hop_start > 0 {
-            #[expect(
-                clippy::cast_possible_truncation,
-                reason = "hop VALUES are bounded by MAX_HOP_LIMIT (7)"
-            )]
-            Some((packet.hop_start.saturating_sub(packet.hop_limit)) as u8) // SAFETY: saturating_sub result is bounded by hop_start (u8 domain)
-        } else {
-            None
-        };
+        let hop_count = crate::types::hop_count_from_wire(packet.hop_start, packet.hop_limit);
 
         // WHY: UPDATE or CREATE the node record with latest packet metadata.
         let mut node = self.node_db.get(from).cloned().unwrap_or(MeshNode {
@@ -302,6 +294,21 @@ impl PacketProcessor {
         // WHY: Meshtastic encodes lat/lon as integer degrees × 1e7.
         let lat = f64::from(pos_proto.latitude_i) * 1e-7;
         let lon = f64::from(pos_proto.longitude_i) * 1e-7;
+
+        // WHY(#229): `latitude_i` is an i32 straight off the radio, so its full
+        // range scales to ±214.7 degrees — a neighbour that is hostile or simply
+        // wrong can place a node off the planet, and the value was persisted
+        // unchecked. `Coordinates::new` already owns this rule for the whole
+        // fleet, so it is reused rather than restated; it also rejects NaN,
+        // which a bare range comparison would silently admit.
+        if let Err(error) = koinon::Coordinates::new(lat, lon, None) {
+            tracing::warn!(
+                from = from.0,
+                %error,
+                "discarding POSITION_APP payload with out-of-range coordinates"
+            );
+            return;
+        }
         let alt = if pos_proto.altitude != 0 {
             Some(pos_proto.altitude)
         } else {

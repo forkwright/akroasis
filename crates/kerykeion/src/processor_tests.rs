@@ -91,6 +91,71 @@ fn process_position_updates_node_and_emits_event() {
     );
 }
 
+/// WHY(#229): `latitude_i` is an i32 straight off the radio, so its extremes
+/// scale to ±214.7 degrees. A neighbour that is hostile or simply wrong could
+/// place a node off the planet and the value was stored unchecked, from where it
+/// reaches the topology and signal paths.
+#[test]
+fn a_position_outside_the_planet_is_discarded() {
+    for (label, latitude_i, longitude_i) in [
+        ("latitude past the pole", 900_000_001, 0),
+        ("latitude at the i32 extreme", i32::MAX, 0),
+        ("longitude past the meridian", 0, 1_800_000_001),
+        ("longitude at the i32 minimum", 0, i32::MIN),
+    ] {
+        let mut proc = make_processor();
+        let pos = crate::proto::Position {
+            latitude_i,
+            longitude_i,
+            altitude: 0,
+            time: 1_700_000_000,
+        };
+        let mut payload = Vec::new();
+        pos.encode(&mut payload).unwrap();
+
+        let events =
+            proc.process_mesh_packet(&make_mesh_packet(0xBEEF, portnum::POSITION_APP, payload));
+
+        assert!(
+            !events
+                .iter()
+                .any(|e| matches!(e, MeshEvent::PositionUpdate { .. })),
+            "{label}: an out-of-range position must not emit an update"
+        );
+        assert!(
+            proc.node_db()
+                .get(NodeNum(0xBEEF))
+                .is_none_or(|node| node.position.is_none()),
+            "{label}: an out-of-range position must not be stored"
+        );
+    }
+}
+
+/// Anti-vacuity for the case above, distinct from the existing happy path: a
+/// position exactly at the limits is valid and must survive.
+#[test]
+fn a_position_at_the_coordinate_limits_is_kept() {
+    let mut proc = make_processor();
+    let pos = crate::proto::Position {
+        latitude_i: 900_000_000,     // +90.0
+        longitude_i: -1_800_000_000, // -180.0
+        altitude: 0,
+        time: 1_700_000_000,
+    };
+    let mut payload = Vec::new();
+    pos.encode(&mut payload).unwrap();
+
+    let events =
+        proc.process_mesh_packet(&make_mesh_packet(0xBEEF, portnum::POSITION_APP, payload));
+
+    assert!(
+        events
+            .iter()
+            .any(|e| matches!(e, MeshEvent::PositionUpdate { .. })),
+        "the limits themselves are valid coordinates"
+    );
+}
+
 #[test]
 fn process_telemetry_updates_metrics() {
     let mut proc = make_processor();
