@@ -197,6 +197,13 @@ pub enum CryptoError {
         actual: usize,
     },
 
+    /// The KDF parameters are outside the accepted range.
+    #[snafu(display("unacceptable KDF parameters: {reason}"))]
+    InvalidKdfParams {
+        /// Which bound was violated, and by what.
+        reason: String,
+    },
+
     /// The provided salt has the wrong length.
     #[snafu(display("invalid salt length: expected {expected}, got {actual}"))]
     InvalidSaltLength {
