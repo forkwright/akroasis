@@ -103,7 +103,7 @@ fn list_returns_metadata_without_secrets() {
         .add("cred-b", CredentialType::Psk, b"secret-b")
         .unwrap();
 
-    let entries = vault.list().unwrap();
+    let entries = vault.list().unwrap().entries;
     assert_eq!(entries.len(), 2, "list must return all entries");
 
     for info in &entries {
@@ -129,7 +129,7 @@ fn remove_deletes_entry() {
     let result = vault.get("disposable");
     assert!(result.is_err(), "get after remove must fail");
 
-    let entries = vault.list().unwrap();
+    let entries = vault.list().unwrap().entries;
     assert!(entries.is_empty(), "list after remove must be empty");
 }
 
@@ -338,7 +338,7 @@ fn revoked_entry_not_deletable() {
         "removing a revoked entry must fail for audit trail"
     );
 
-    let entries = vault.list().unwrap();
+    let entries = vault.list().unwrap().entries;
     assert_eq!(entries.len(), 1, "revoked entry must remain in the vault");
 }
 
@@ -458,7 +458,7 @@ fn list_shows_entry_status() {
         .unwrap();
     vault.revoke("revoked-key").unwrap();
 
-    let entries = vault.list().unwrap();
+    let entries = vault.list().unwrap().entries;
     assert_eq!(entries.len(), 2, "list must return all entries");
 
     for info in &entries {
