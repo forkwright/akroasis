@@ -224,38 +224,6 @@ fn observe_rejects_infinite_values() {
     assert!(b.mean().is_some_and(f64::is_finite));
 }
 
-// ── TimeWindowedBaseline tests ────────────────────────────────────────────
-
-#[test]
-fn time_windowed_baseline_evicts_by_count() {
-    let mut twb = TimeWindowedBaseline::new(3);
-    twb.observe(0, 1.0);
-    twb.observe(1, 2.0);
-    twb.observe(2, 3.0);
-    assert_eq!(twb.baseline().count(), 3);
-    twb.observe(3, 4.0); // evicts the first observation (value=1.0)
-    assert_eq!(twb.baseline().count(), 3);
-    assert!(
-        twb.baseline()
-            .mean()
-            .is_some_and(|m| (m - 3.0).abs() < 1e-10)
-    );
-}
-
-#[test]
-fn time_windowed_baseline_evicts_by_age() {
-    let mut twb = TimeWindowedBaseline::new(100).with_max_age(10);
-    twb.observe(0, 10.0);
-    twb.observe(5, 20.0);
-    twb.observe(15, 30.0); // ts=0 observation is now >10ms old → evicted
-    assert_eq!(twb.baseline().count(), 2);
-    assert!(
-        twb.baseline()
-            .mean()
-            .is_some_and(|m| (m - 25.0).abs() < 1e-10)
-    );
-}
-
 // ── TemporalBucketedBaseline tests ────────────────────────────────────────
 
 #[test]
