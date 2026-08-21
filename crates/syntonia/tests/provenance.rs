@@ -1,5 +1,10 @@
 //! Enforces `provenance.toml` against the tree it describes.
 
+#![expect(
+    clippy::panic,
+    reason = "integration test — a panic is the correct failure mode"
+)]
+
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -27,8 +32,8 @@ fn crate_root() -> PathBuf {
 
 fn ledger() -> Ledger {
     let path = crate_root().join("provenance.toml");
-    let text = fs::read_to_string(&path)
-        .unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()));
+    let text =
+        fs::read_to_string(&path).unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()));
     toml::from_str(&text).unwrap_or_else(|e| panic!("cannot parse {}: {e}", path.display()))
 }
 
@@ -60,9 +65,7 @@ fn walk(dir: &Path, out: &mut Vec<PathBuf>) {
 
 fn mentions(path: &str, needle: &str) -> bool {
     let full = crate_root().join(path);
-    fs::read_to_string(&full)
-        .map(|text| text.to_lowercase().contains(&needle.to_lowercase()))
-        .unwrap_or(false)
+    fs::read_to_string(&full).is_ok_and(|text| text.to_lowercase().contains(&needle.to_lowercase()))
 }
 
 /// The case the ledger exists to catch: a file that names an upstream and has
@@ -139,24 +142,21 @@ fn each_upstream_licence_is_named_exactly_once_and_in_a_derived_file() {
             .filter(|path| mentions(path, &upstream.license))
             .collect();
 
-        assert_eq!(
-            naming.len(),
-            1,
-            "the licence '{}' for upstream '{}' must be stated in exactly one \
-             source file, with the other derived files pointing at it. Found it \
-             in: {naming:?}",
-            upstream.license,
-            upstream.name
-        );
-
-        let sole = naming.first().expect("length asserted as 1 above");
-        assert!(
-            upstream.derived.contains(sole),
-            "the licence '{}' is stated in '{sole}', which provenance.toml does \
-             not list as derived from '{}' — the statement belongs with the code \
-             it governs",
-            upstream.license,
-            upstream.name
-        );
+        match naming.as_slice() {
+            [sole] => assert!(
+                upstream.derived.contains(sole),
+                "the licence '{}' is stated in '{sole}', which provenance.toml \
+                 does not list as derived from '{}' — the statement belongs with \
+                 the code it governs",
+                upstream.license,
+                upstream.name
+            ),
+            found => panic!(
+                "the licence '{}' for upstream '{}' must be stated in exactly one \
+                 source file, with the other derived files pointing at it. Found \
+                 it in: {found:?}",
+                upstream.license, upstream.name
+            ),
+        }
     }
 }

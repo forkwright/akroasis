@@ -8,8 +8,8 @@
 //! `ftm3200d.py`, `ftm7250d.py`, each granting "either version 3 of the
 //! License, or (at your option) any later version").
 //!
-//! Akroasis is AGPL-3.0, which satisfies that obligation — GPLv3 §13 permits
-//! combining a covered work with an AGPLv3 work, and the combination is
+//! Akroasis is AGPL-3.0, which satisfies that obligation — GPL-3.0 §13 permits
+//! combining a covered work with an AGPL-3.0 work, and the combination is
 //! governed by the AGPL's terms.
 //!
 //! WARNING: every derived item in this module points here rather than
