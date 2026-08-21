@@ -505,8 +505,36 @@ impl Vault {
         let header: StoredHeader =
             serde_json::from_slice(&header_bytes).context(SerializationSnafu)?;
 
-        let Some(sealed) = header.sealed_signing_key else {
-            return Ok(None);
+        // WHY both-or-neither rather than keying off the sealed half alone:
+        // this code never writes one without the other, so exactly one
+        // present is a state only an editor of the header can produce.
+        // Reading it as absence would let anyone who can strip the sealed
+        // key silently disable signing while `installation_public_key`
+        // continues to report an identity — the same fail-closed reasoning
+        // the tamper log applies to its seal (forkwright/akroasis#285): a
+        // state an interrupted write can reach must recover, a state only an
+        // actor can reach must not.
+        let sealed = match (header.sealed_signing_key, &header.installation_public_key) {
+            (None, None) => return Ok(None),
+            (Some(sealed), Some(_)) => sealed,
+            (sealed, recorded) => {
+                return Err(VaultError::InvalidHeader {
+                    reason: format!(
+                        "installation identity is half-present: sealed signing key {}, \
+                         verifying key {}",
+                        if sealed.is_some() {
+                            "present"
+                        } else {
+                            "absent"
+                        },
+                        if recorded.is_some() {
+                            "present"
+                        } else {
+                            "absent"
+                        },
+                    ),
+                });
+            }
         };
 
         let identity = unseal_signing_key(&sealed, &self.key).context(EntryCryptoSnafu)?;

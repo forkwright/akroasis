@@ -860,6 +860,33 @@ fn a_substituted_public_key_is_rejected() {
     );
 }
 
+/// The two identity fields are written together and never apart, so exactly
+/// one present is a state only an editor of the header can produce. Reading
+/// it as absence would let anyone able to strip the sealed key silently
+/// disable signing while the verifying key still reports an identity.
+#[test]
+fn a_half_present_identity_is_refused_rather_than_read_as_absent() {
+    for strip in ["sealed_signing_key", "installation_public_key"] {
+        let dir = tempfile::tempdir().unwrap();
+        let vault_path = dir.path().join("test-vault");
+        drop(Vault::create(&vault_path, TEST_PASSPHRASE).unwrap());
+
+        let header_path = vault_path.join("header.json");
+        let mut header: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&header_path).unwrap()).unwrap();
+        header.as_object_mut().unwrap().remove(strip);
+        std::fs::write(&header_path, serde_json::to_vec(&header).unwrap()).unwrap();
+
+        let vault = Vault::open(&vault_path, TEST_PASSPHRASE).unwrap();
+        let result = vault.installation_identity();
+        assert!(
+            matches!(result, Err(VaultError::InvalidHeader { .. })),
+            "stripping only `{strip}` must be refused, not reported as no identity \
+             at all — got {result:?}"
+        );
+    }
+}
+
 /// A vault predating this field has no identity. Both accessors must report
 /// that as absence rather than erroring or inventing one.
 #[test]
