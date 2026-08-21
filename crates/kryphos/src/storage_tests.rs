@@ -752,6 +752,50 @@ fn a_wrong_passphrase_still_reports_itself() {
     );
 }
 
+/// WHY(#231): `get` gated on `Revoked` with an equality check, so an entry in
+/// any other non-active status handed back its secret — `Expired` among them.
+/// No public operation sets `Expired` yet, which is exactly why the gap went
+/// unnoticed: the status is in the model, and the gate has to cover it before
+/// something starts producing it rather than after.
+#[test]
+fn get_refuses_an_expired_entry() {
+    let dir = tempfile::tempdir().unwrap();
+    let vault_path = dir.path().join("test-vault");
+    let vault = Vault::create(&vault_path, TEST_PASSPHRASE).unwrap();
+    vault
+        .add("aging", CredentialType::ApiKey, b"secret")
+        .unwrap();
+
+    assert!(
+        vault.get("aging").is_ok(),
+        "precondition: the entry must read while Active, or this test proves nothing"
+    );
+
+    // No public lifecycle call produces `Expired`, so drive the stored record
+    // to that status directly. What is under test is `get`'s gate, not the
+    // route by which an entry comes to be expired.
+    let key = vault.lookup_key("aging");
+    let raw = vault.keyspace.get(key).unwrap().unwrap();
+    let entry: StoredEntry = serde_json::from_slice(&raw).unwrap();
+    let mut record = vault.decrypt_metadata(&entry).unwrap();
+    record.status = EntryStatus::Expired;
+    let expired = StoredEntry {
+        envelope_version: entry.envelope_version,
+        encrypted_secret: entry.encrypted_secret,
+        encrypted_metadata: vault.encrypt_metadata(&record).unwrap(),
+    };
+    vault
+        .keyspace
+        .insert(key, serde_json::to_vec(&expired).unwrap())
+        .unwrap();
+
+    let result = vault.get("aging");
+    assert!(
+        matches!(result, Err(VaultError::EntryExpired { .. })),
+        "an expired entry must refuse to hand back its secret, got {result:?}"
+    );
+}
+
 /// WHY(#231): a single unparseable record used to abort the whole listing, so
 /// one bad row hid every good one and the operator could not see the
 /// credentials they still had.

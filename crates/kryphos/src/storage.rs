@@ -14,7 +14,7 @@ use zeroize::Zeroizing;
 
 use crate::crypto::{self, ENTRY_ENVELOPE_VERSION, decrypt, encrypt, entry_aad};
 use crate::error::{
-    AlreadyExistsSnafu, CryptoError, EmptyPassphraseSnafu, EntryCryptoSnafu,
+    AlreadyExistsSnafu, CryptoError, EmptyPassphraseSnafu, EntryCryptoSnafu, EntryExpiredSnafu,
     EntryNotDeletableSnafu, EntryRevokedSnafu, IoSnafu, NotInitializedSnafu, SerializationSnafu,
     TamperLogSnafu, VaultError, WrongPassphraseSnafu,
 };
@@ -489,13 +489,9 @@ impl Vault {
         };
 
         let value = serde_json::to_vec(&entry).context(SerializationSnafu)?;
-        self.keyspace.insert(key, value).map_err(fjall_err)?;
-        self.db
-            .persist(fjall::PersistMode::SyncAll)
-            .map_err(fjall_err)?;
-        self.append_vault_audit(name, "add")?;
-
-        Ok(())
+        self.commit_audited(name, "add", || {
+            self.keyspace.insert(key, value).map_err(fjall_err)
+        })
     }
 
     /// Retrieves and decrypts a credential by name.
@@ -516,8 +512,18 @@ impl Vault {
         let entry: StoredEntry = serde_json::from_slice(&raw).context(SerializationSnafu)?;
         let record = self.decrypt_metadata(&entry)?;
 
-        if record.status == EntryStatus::Revoked {
-            return EntryRevokedSnafu { name }.fail();
+        // WHY an exhaustive match rather than an equality check against the
+        // one status that must be refused: this is the lifecycle gate on
+        // secret retrieval, and an `if status == Revoked` gate answers
+        // "retrievable?" for exactly one variant while silently returning
+        // the secret for every other — which is how `Expired` came to be
+        // served (forkwright/akroasis#231). Matching every arm makes the
+        // question total, so adding a status to `EntryStatus` fails to
+        // compile here until someone decides whether it may be read.
+        match record.status {
+            EntryStatus::Active => {}
+            EntryStatus::Revoked => return EntryRevokedSnafu { name }.fail(),
+            EntryStatus::Expired => return EntryExpiredSnafu { name }.fail(),
         }
 
         // WHY branch on envelope_version rather than always building an AAD:
@@ -644,13 +650,9 @@ impl Vault {
             return EntryNotDeletableSnafu { name }.fail();
         }
 
-        self.keyspace.remove(key).map_err(fjall_err)?;
-        self.db
-            .persist(fjall::PersistMode::SyncAll)
-            .map_err(fjall_err)?;
-        self.append_vault_audit(name, "remove")?;
-
-        Ok(())
+        self.commit_audited(name, "remove", || {
+            self.keyspace.remove(key).map_err(fjall_err)
+        })
     }
 
     /// Rotates a credential's secret, preserving name and metadata.
@@ -716,13 +718,9 @@ impl Vault {
         };
 
         let value = serde_json::to_vec(&entry).context(SerializationSnafu)?;
-        self.keyspace.insert(key, value).map_err(fjall_err)?;
-        self.db
-            .persist(fjall::PersistMode::SyncAll)
-            .map_err(fjall_err)?;
-        self.append_vault_audit(name, "rotate")?;
-
-        Ok(())
+        self.commit_audited(name, "rotate", || {
+            self.keyspace.insert(key, value).map_err(fjall_err)
+        })
     }
 
     /// Revokes a credential, preventing future retrieval.
@@ -775,13 +773,9 @@ impl Vault {
         };
 
         let value = serde_json::to_vec(&entry).context(SerializationSnafu)?;
-        self.keyspace.insert(key, value).map_err(fjall_err)?;
-        self.db
-            .persist(fjall::PersistMode::SyncAll)
-            .map_err(fjall_err)?;
-        self.append_vault_audit(name, "revoke")?;
-
-        Ok(())
+        self.commit_audited(name, "revoke", || {
+            self.keyspace.insert(key, value).map_err(fjall_err)
+        })
     }
 
     /// Returns the lifecycle history for a credential.
@@ -866,6 +860,52 @@ impl Vault {
     fn encrypt_metadata(&self, record: &EntryMetadataRecord) -> Result<Vec<u8>, VaultError> {
         let metadata_bytes = serde_json::to_vec(record).context(SerializationSnafu)?;
         encrypt(&self.key, &metadata_bytes, b"").context(EntryCryptoSnafu)
+    }
+
+    /// Records `operation` against `name` in the tamper-evident log, then
+    /// applies `mutate` and commits it durably.
+    ///
+    /// WHY the audit precedes the mutation rather than following it: the
+    /// tamper log and the fjall keyspace are separate stores with no shared
+    /// transaction, so one of them necessarily lands first and either order
+    /// can be interrupted between the two. The orders are not equivalent.
+    ///
+    /// Mutating first leaves a durable but *unrecorded* change whenever the
+    /// append fails — a hole in the log, which is the precise event the log
+    /// exists to make impossible, and which anything able to break the
+    /// append (an unwritable log file, a full disk) can therefore cause on
+    /// demand. Auditing first leaves at worst a recorded change that did not
+    /// take effect: visible to anyone reconciling the log against the vault,
+    /// and reported here as [`VaultError::AuditedMutationFailed`] rather
+    /// than as an ordinary failure, so that reconciliation is not misread as
+    /// tampering.
+    ///
+    /// A log that over-reports is noisy. A log that under-reports is not a
+    /// tamper log. So this fails closed: nothing reaches the keyspace until
+    /// its audit entry is durable.
+    ///
+    /// INVARIANT: every mutating public method routes its keyspace write
+    /// through here. That is what makes the ordering a property of the vault
+    /// rather than of four call sites that must each remember it.
+    fn commit_audited(
+        &self,
+        name: &str,
+        operation: &'static str,
+        mutate: impl FnOnce() -> Result<(), VaultError>,
+    ) -> Result<(), VaultError> {
+        self.append_vault_audit(name, operation)?;
+
+        mutate()
+            .and_then(|()| {
+                self.db
+                    .persist(fjall::PersistMode::SyncAll)
+                    .map_err(fjall_err)
+            })
+            .map_err(|source| VaultError::AuditedMutationFailed {
+                name: name.to_owned(),
+                operation,
+                source: Box::new(source),
+            })
     }
 
     fn append_vault_audit(&self, name: &str, operation: &str) -> Result<(), VaultError> {
