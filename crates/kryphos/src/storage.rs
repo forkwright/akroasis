@@ -273,7 +273,13 @@ impl Vault {
 
         let lock = acquire_lock(path)?;
         let salt = crypto::generate_salt();
-        let key = crypto::derive_key(passphrase, &salt);
+        // The salt here is freshly generated at SALT_LEN, so this cannot fail;
+        // it is mapped rather than unwrapped so no future change to salt
+        // generation can turn that assumption into a panic.
+        let key =
+            crypto::derive_key(passphrase, &salt).map_err(|source| VaultError::InvalidHeader {
+                reason: source.to_string(),
+            })?;
 
         let key_check = encrypt(&key, KEY_CHECK_PLAINTEXT, b"").context(EntryCryptoSnafu)?;
 
@@ -362,7 +368,15 @@ impl Vault {
             });
         }
 
-        let key = crypto::derive_key(passphrase, &header.salt);
+        // WHY(#231) this is the reachable one: `header.salt` is a
+        // variable-length field read from the stored JSON, so a corrupt or
+        // tampered vault can carry a salt Argon2 will not accept. A bad file
+        // must open as an invalid header, not crash the process.
+        let key = crypto::derive_key(passphrase, &header.salt).map_err(|source| {
+            VaultError::InvalidHeader {
+                reason: source.to_string(),
+            }
+        })?;
 
         let plaintext =
             decrypt(&key, &header.key_check, b"").map_err(|_| VaultError::WrongPassphrase)?;

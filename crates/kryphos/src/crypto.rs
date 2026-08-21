@@ -8,7 +8,7 @@ use rand_core::{OsRng, RngCore};
 
 use snafu::ResultExt;
 
-use crate::error::{CryptoError, SerializationSnafu, VaultError};
+use crate::error::{CryptoError, InvalidSaltLengthSnafu, SerializationSnafu, VaultError};
 use crate::key::VaultKey;
 use crate::vault::{CredentialType, NONCE_LEN};
 
@@ -54,7 +54,20 @@ pub fn generate_salt() -> [u8; SALT_LEN] {
     clippy::expect_used,
     reason = "Argon2id params are compile-time constants; construction cannot fail"
 )]
-pub fn derive_key(passphrase: &[u8], salt: &[u8]) -> VaultKey {
+pub fn derive_key(passphrase: &[u8], salt: &[u8]) -> Result<VaultKey, CryptoError> {
+    // WHY this is fallible: the salt reaching here can come off disk. A stored
+    // vault header carries it as a variable-length field, so a corrupt or
+    // tampered file can supply one shorter than Argon2 accepts. That used to
+    // reach an `expect` whose stated justification covered only the output
+    // length, turning a bad file into a panic instead of an error.
+    if salt.len() != SALT_LEN {
+        return InvalidSaltLengthSnafu {
+            expected: SALT_LEN,
+            actual: salt.len(),
+        }
+        .fail();
+    }
+
     let params = argon2::Params::new(KDF_M_COST, KDF_T_COST, KDF_P_COST, Some(32))
         .expect("Argon2id params are compile-time constants"); // SAFETY: KDF_M_COST/T_COST/P_COST are compile-time constants within valid ranges per argon2 docs
     let argon2 = argon2::Argon2::new(
@@ -64,11 +77,17 @@ pub fn derive_key(passphrase: &[u8], salt: &[u8]) -> VaultKey {
     );
 
     let mut key_bytes = [0u8; 32];
+    // WHY mapped rather than expected: the length check above already rejects
+    // the reachable failure, so this arm is defence for a future caller. Turning
+    // it into an error rather than a panic costs nothing and means no later
+    // change to the parameters can reintroduce the crash.
     argon2
         .hash_password_into(passphrase, salt, &mut key_bytes)
-        .expect("Argon2id KDF should not fail with valid inputs"); // SAFETY: key_bytes length (32) is within the OUTPUT_SIZE range documented by argon2::Params
+        .map_err(|source| CryptoError::EncryptionFailed {
+            reason: format!("Argon2id key derivation failed: {source}"),
+        })?;
 
-    VaultKey::from_bytes(key_bytes)
+    Ok(VaultKey::from_bytes(key_bytes))
 }
 
 /// Encrypts plaintext with ChaCha20-Poly1305.
@@ -214,13 +233,51 @@ fn checked_len_prefix(field: &'static str, len: usize) -> Result<[u8; 4], VaultE
 mod tests {
     use super::*;
 
+    /// WHY(#231): a stored vault header carries its salt as a variable-length
+    /// field, so a corrupt or tampered file can supply one Argon2 rejects. That
+    /// used to reach an `expect` and crash the process. Every length that is not
+    /// the one this crate writes must now be an error.
+    #[test]
+    fn a_salt_of_the_wrong_length_is_an_error_rather_than_a_panic() {
+        let passphrase = b"correct horse battery staple";
+
+        for salt in [
+            vec![],                   // empty, as a truncated file would give
+            vec![0xAA; 1],            // shorter than Argon2's own minimum
+            vec![0xAA; SALT_LEN - 1], // one byte short of what this crate writes
+            vec![0xAA; SALT_LEN + 1], // one byte over
+            vec![0xAA; 4096],         // absurd, from a hand-edited header
+        ] {
+            let error = derive_key(passphrase, &salt).unwrap_err();
+            assert!(
+                matches!(error, CryptoError::InvalidSaltLength { expected, actual }
+                    if expected == SALT_LEN && actual == salt.len()),
+                "a {}-byte salt must report its own length, got {error}",
+                salt.len()
+            );
+        }
+    }
+
+    /// Anti-vacuity for the case above: the length this crate actually writes
+    /// must still derive, or the rejection test would pass against a function
+    /// that refuses everything.
+    #[test]
+    fn a_generated_salt_still_derives() {
+        let salt = generate_salt();
+        assert_eq!(salt.len(), SALT_LEN);
+        assert!(
+            derive_key(b"correct horse battery staple", &salt).is_ok(),
+            "a freshly generated salt must derive"
+        );
+    }
+
     #[test]
     fn derive_key_is_deterministic() {
         let passphrase = b"correct horse battery staple";
         let salt = [0xAA; SALT_LEN];
 
-        let key1 = derive_key(passphrase, &salt);
-        let key2 = derive_key(passphrase, &salt);
+        let key1 = derive_key(passphrase, &salt).unwrap();
+        let key2 = derive_key(passphrase, &salt).unwrap();
 
         assert_eq!(
             key1.as_bytes(),
@@ -233,8 +290,8 @@ mod tests {
     fn derive_key_differs_with_different_salt() {
         let passphrase = b"correct horse battery staple";
 
-        let key1 = derive_key(passphrase, &[0xAA; SALT_LEN]);
-        let key2 = derive_key(passphrase, &[0xBB; SALT_LEN]);
+        let key1 = derive_key(passphrase, &[0xAA; SALT_LEN]).unwrap();
+        let key2 = derive_key(passphrase, &[0xBB; SALT_LEN]).unwrap();
 
         assert_ne!(
             key1.as_bytes(),
@@ -247,8 +304,8 @@ mod tests {
     fn derive_key_differs_with_different_passphrase() {
         let salt = [0xAA; SALT_LEN];
 
-        let key1 = derive_key(b"passphrase-one", &salt);
-        let key2 = derive_key(b"passphrase-two", &salt);
+        let key1 = derive_key(b"passphrase-one", &salt).unwrap();
+        let key2 = derive_key(b"passphrase-two", &salt).unwrap();
 
         assert_ne!(
             key1.as_bytes(),
