@@ -145,9 +145,14 @@ impl OutboundQueue {
     /// to whoever asked to send, the other returns the message to
     /// store-and-forward — and neither can do that with a message this queue
     /// has already discarded.
-    pub fn enqueue(&mut self, msg: PendingMessage) -> Result<(), PendingMessage> {
+    ///
+    /// WHY boxed: a [`PendingMessage`] carries a whole packet, and an `Err`
+    /// variant that large is paid for by every `Result` in the call chain
+    /// rather than only on the refusal. The allocation happens on the path that
+    /// is already the exception.
+    pub fn enqueue(&mut self, msg: PendingMessage) -> Result<(), Box<PendingMessage>> {
         if self.pending.len() >= self.max_pending {
-            return Err(msg);
+            return Err(Box::new(msg));
         }
         let insert_pos = self
             .pending
