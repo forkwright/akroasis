@@ -58,6 +58,34 @@ const SEAL_MAC_LEN: usize = 32;
 /// Total on-disk seal file length: count || `segment_start_hash` || MAC.
 const SEAL_FILE_LEN: usize = SEAL_COUNT_LEN + SEAL_LINK_LEN + SEAL_MAC_LEN;
 
+/// Domain separator for a seal that carries installation provenance.
+///
+/// Distinct from [`SEAL_DOMAIN`] so a MAC computed over an unsigned seal can
+/// never authenticate a signed one or the reverse, whatever the field bytes
+/// happen to be.
+const SIGNED_SEAL_DOMAIN: &[u8] = b"koinon/tamper-log/seal-signed/v1";
+
+/// Domain separator for the payload an installation signs.
+///
+/// WHY the signature covers a domain-separated string rather than the bare
+/// terminal hash: a signature over a raw 32-byte value proves only that the
+/// key signed *some* 32 bytes, so the same signature would be replayable
+/// wherever else that key signs a hash. Binding the purpose makes the
+/// signature a claim about this log's tip specifically.
+pub(super) const TIP_SIGNING_DOMAIN: &[u8] = b"koinon/tamper-log/tip/v1";
+
+/// Length of the short installation key identifier stored in a signed seal.
+pub const KEY_ID_LEN: usize = 8;
+
+/// Length of the tip signature stored in a signed seal.
+pub const TIP_SIGNATURE_LEN: usize = 64;
+
+/// Length of a seal that carries provenance: the unsigned fields, plus the
+/// terminal hash the signature commits to, the key id, and the signature —
+/// with the MAC last, as in the unsigned layout.
+const SIGNED_SEAL_FILE_LEN: usize =
+    SEAL_COUNT_LEN + SEAL_LINK_LEN + SEAL_LINK_LEN + KEY_ID_LEN + TIP_SIGNATURE_LEN + SEAL_MAC_LEN;
+
 /// Secret key that binds a tamper log's hash chain to its owner.
 ///
 /// Every link in the chain is keyed with [`blake3::Hasher::new_keyed`]
@@ -111,6 +139,60 @@ pub(super) fn genesis_hash(chain_key: &ChainKey) -> [u8; 32] {
     blake3::keyed_hash(chain_key.as_bytes(), GENESIS_DOMAIN).into()
 }
 
+/// Signs a tamper log's terminal hash on behalf of an installation.
+///
+/// WHY a trait here rather than a concrete key type: koinon owns the chain and
+/// its keyed hashing, not the fleet's choice of signature scheme. The identity
+/// layer lives in `kryphos`, which depends on this crate — so a concrete
+/// Ed25519 type in this signature would invert that dependency. Implementors
+/// supply an opaque signature over whatever bytes they are handed.
+pub trait TipSigner {
+    /// Stable short identifier for the signing installation.
+    ///
+    /// A digest of the verifying key rather than the key itself, so a log left
+    /// on disk names its origin without publishing material that identifies it
+    /// to a reader who does not already hold the key.
+    fn key_id(&self) -> [u8; KEY_ID_LEN];
+
+    /// Signs `payload`, which is already domain-separated by the caller.
+    fn sign_tip(&self, payload: &[u8]) -> [u8; TIP_SIGNATURE_LEN];
+}
+
+/// Verifies a tamper log's tip signature against a known installation.
+///
+/// The counterpart to [`TipSigner`], and deliberately a separate trait: a
+/// verifier holds only public material, and nothing that verifies should need
+/// a type that can also sign.
+pub trait TipVerifier {
+    /// Stable short identifier for the installation this verifier represents.
+    fn key_id(&self) -> [u8; KEY_ID_LEN];
+
+    /// Reports whether `signature` is a valid signature over `payload`.
+    fn verify_tip(&self, payload: &[u8], signature: &[u8; TIP_SIGNATURE_LEN]) -> bool;
+}
+
+/// Installation provenance recorded alongside a seal.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TipProvenance {
+    /// Short identifier of the installation that signed this tip.
+    pub key_id: [u8; KEY_ID_LEN],
+    /// The terminal chain hash the signature commits to.
+    pub terminal_hash: [u8; SEAL_LINK_LEN],
+    /// Signature over [`TIP_SIGNING_DOMAIN`] followed by `terminal_hash`.
+    pub signature: [u8; TIP_SIGNATURE_LEN],
+}
+
+/// Builds the exact bytes a [`TipSigner`] signs and a [`TipVerifier`] checks.
+///
+/// One function so the two directions cannot drift: a verifier reconstructing
+/// this by hand is a verifier that will one day reconstruct it differently.
+pub(super) fn tip_payload(terminal_hash: &[u8; SEAL_LINK_LEN]) -> Vec<u8> {
+    let mut payload = Vec::with_capacity(TIP_SIGNING_DOMAIN.len() + SEAL_LINK_LEN);
+    payload.extend_from_slice(TIP_SIGNING_DOMAIN);
+    payload.extend_from_slice(terminal_hash);
+    payload
+}
+
 /// Result of reading and authenticating a sidecar seal file.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum SealState {
@@ -130,6 +212,13 @@ pub(super) enum SealState {
         /// Authenticated chain-start hash this segment's first entry was
         /// linked from.
         segment_start_hash: [u8; 32],
+        /// Installation provenance, when this seal carries it.
+        ///
+        /// `None` on a log written before provenance existed, or by a writer
+        /// with no identity. Present means the MAC authenticated it along with
+        /// everything else, so a reader can trust the key id and terminal hash
+        /// as far as it trusts the count.
+        provenance: Option<TipProvenance>,
     },
 }
 
@@ -156,12 +245,51 @@ fn seal_mac(chain_key: &ChainKey, entry_count: u64, segment_start_hash: &[u8; 32
     hasher.finalize().into()
 }
 
+/// Computes the MAC over a seal that carries provenance.
+///
+/// WHY the provenance fields go under the seal's own MAC rather than relying
+/// on the signature alone: the signature proves an installation committed to a
+/// terminal hash, and says nothing about the count or link beside it. Covering
+/// everything with one MAC keyed by `chain_key` means a reader that trusts the
+/// count trusts the key id and terminal hash to exactly the same degree, and an
+/// editor of any one field invalidates the whole seal rather than leaving a
+/// self-consistent record with one value swapped.
+fn signed_seal_mac(
+    chain_key: &ChainKey,
+    entry_count: u64,
+    segment_start_hash: &[u8; 32],
+    provenance: &TipProvenance,
+) -> [u8; 32] {
+    let mut hasher = blake3::Hasher::new_keyed(chain_key.as_bytes());
+    hasher.update(SIGNED_SEAL_DOMAIN);
+    hasher.update(&entry_count.to_le_bytes());
+    hasher.update(segment_start_hash);
+    hasher.update(&provenance.terminal_hash);
+    hasher.update(&provenance.key_id);
+    hasher.update(&provenance.signature);
+    hasher.finalize().into()
+}
+
 /// Reads and authenticates the seal sidecar for `log_path`.
 pub(super) fn read_seal(log_path: &Path, chain_key: &ChainKey) -> SealState {
     let Ok(bytes) = fs::read(seal_path(log_path)) else {
         return SealState::Absent;
     };
-    let Ok(raw) = <[u8; SEAL_FILE_LEN]>::try_from(bytes.as_slice()) else {
+    // WHY length discriminates the two layouts rather than a version byte: a
+    // seal is a fixed-width record with no header, so its length already
+    // distinguishes them unambiguously, and each layout's MAC is
+    // domain-separated from the other. Anything that is neither length is not a
+    // seal this code wrote.
+    match bytes.len() {
+        SEAL_FILE_LEN => read_unsigned_seal(&bytes, chain_key),
+        SIGNED_SEAL_FILE_LEN => read_signed_seal(&bytes, chain_key),
+        _ => SealState::Invalid,
+    }
+}
+
+/// Reads a seal written without installation provenance.
+fn read_unsigned_seal(bytes: &[u8], chain_key: &ChainKey) -> SealState {
+    let Ok(raw) = <[u8; SEAL_FILE_LEN]>::try_from(bytes) else {
         return SealState::Invalid;
     };
 
@@ -180,6 +308,57 @@ pub(super) fn read_seal(log_path: &Path, chain_key: &ChainKey) -> SealState {
         SealState::Valid {
             entry_count: count,
             segment_start_hash,
+            provenance: None,
+        }
+    } else {
+        SealState::Invalid
+    }
+}
+
+/// Reads a seal that carries installation provenance.
+fn read_signed_seal(bytes: &[u8], chain_key: &ChainKey) -> SealState {
+    let Ok(raw) = <[u8; SIGNED_SEAL_FILE_LEN]>::try_from(bytes) else {
+        return SealState::Invalid;
+    };
+
+    let mut cursor = 0;
+    let mut take = |len: usize| -> &[u8] {
+        let start = cursor;
+        cursor += len;
+        raw.get(start..cursor).unwrap_or(&[])
+    };
+
+    let mut count_bytes = [0u8; SEAL_COUNT_LEN];
+    count_bytes.copy_from_slice(take(SEAL_COUNT_LEN));
+    let count = u64::from_le_bytes(count_bytes);
+
+    let mut segment_start_hash = [0u8; SEAL_LINK_LEN];
+    segment_start_hash.copy_from_slice(take(SEAL_LINK_LEN));
+
+    let mut terminal_hash = [0u8; SEAL_LINK_LEN];
+    terminal_hash.copy_from_slice(take(SEAL_LINK_LEN));
+
+    let mut key_id = [0u8; KEY_ID_LEN];
+    key_id.copy_from_slice(take(KEY_ID_LEN));
+
+    let mut signature = [0u8; TIP_SIGNATURE_LEN];
+    signature.copy_from_slice(take(TIP_SIGNATURE_LEN));
+
+    let mut stored_mac = [0u8; SEAL_MAC_LEN];
+    stored_mac.copy_from_slice(take(SEAL_MAC_LEN));
+
+    let provenance = TipProvenance {
+        key_id,
+        terminal_hash,
+        signature,
+    };
+
+    let expected_mac = signed_seal_mac(chain_key, count, &segment_start_hash, &provenance);
+    if bool::from(expected_mac.ct_eq(&stored_mac)) {
+        SealState::Valid {
+            entry_count: count,
+            segment_start_hash,
+            provenance: Some(provenance),
         }
     } else {
         SealState::Invalid
@@ -337,17 +516,34 @@ pub(super) fn write_seal(
     chain_key: &ChainKey,
     entry_count: u64,
     segment_start_hash: &[u8; 32],
+    provenance: Option<&TipProvenance>,
 ) -> Result<(), TamperLogError> {
     let target = seal_path(log_path);
     let mut tmp_name = target.clone().into_os_string();
     tmp_name.push(".tmp");
     let tmp = PathBuf::from(tmp_name);
 
-    let mac = seal_mac(chain_key, entry_count, segment_start_hash);
-    let mut payload = Vec::with_capacity(SEAL_FILE_LEN);
-    payload.extend_from_slice(&entry_count.to_le_bytes());
-    payload.extend_from_slice(segment_start_hash);
-    payload.extend_from_slice(&mac);
+    let payload = match provenance {
+        None => {
+            let mac = seal_mac(chain_key, entry_count, segment_start_hash);
+            let mut payload = Vec::with_capacity(SEAL_FILE_LEN);
+            payload.extend_from_slice(&entry_count.to_le_bytes());
+            payload.extend_from_slice(segment_start_hash);
+            payload.extend_from_slice(&mac);
+            payload
+        }
+        Some(tip) => {
+            let mac = signed_seal_mac(chain_key, entry_count, segment_start_hash, tip);
+            let mut payload = Vec::with_capacity(SIGNED_SEAL_FILE_LEN);
+            payload.extend_from_slice(&entry_count.to_le_bytes());
+            payload.extend_from_slice(segment_start_hash);
+            payload.extend_from_slice(&tip.terminal_hash);
+            payload.extend_from_slice(&tip.key_id);
+            payload.extend_from_slice(&tip.signature);
+            payload.extend_from_slice(&mac);
+            payload
+        }
+    };
 
     {
         #[cfg(test)]
@@ -464,13 +660,14 @@ mod tests {
         let k = key(0x55);
         let start = link(0x01);
 
-        write_seal(&log_path, &k, 7, &start).unwrap();
+        write_seal(&log_path, &k, 7, &start, None).unwrap();
         let state = read_seal(&log_path, &k);
         assert_eq!(
             state,
             SealState::Valid {
                 entry_count: 7,
                 segment_start_hash: start,
+                provenance: None,
             }
         );
     }
@@ -486,7 +683,7 @@ mod tests {
         let k = key(0x59);
         let start = link(0xAB);
 
-        write_seal(&log_path, &k, 2, &start).unwrap();
+        write_seal(&log_path, &k, 2, &start, None).unwrap();
         let state = read_seal(&log_path, &k);
         match state {
             SealState::Valid {
@@ -509,7 +706,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let log_path = dir.path().join("audit.log");
 
-        write_seal(&log_path, &key(0xAA), 3, &link(0x01)).unwrap();
+        write_seal(&log_path, &key(0xAA), 3, &link(0x01), None).unwrap();
         let state = read_seal(&log_path, &key(0xBB));
         assert_eq!(state, SealState::Invalid);
     }
@@ -520,7 +717,7 @@ mod tests {
         let log_path = dir.path().join("audit.log");
         let k = key(0x77);
 
-        write_seal(&log_path, &k, 4, &link(0x01)).unwrap();
+        write_seal(&log_path, &k, 4, &link(0x01), None).unwrap();
         let mut bytes = fs::read(seal_path(&log_path)).unwrap();
         let last = bytes.len() - 1;
         bytes[last] ^= 0xFF;
@@ -540,7 +737,7 @@ mod tests {
         let log_path = dir.path().join("audit.log");
         let k = key(0x66);
 
-        write_seal(&log_path, &k, 4, &link(0x01)).unwrap();
+        write_seal(&log_path, &k, 4, &link(0x01), None).unwrap();
         let mut bytes = fs::read(seal_path(&log_path)).unwrap();
         bytes[0] = 99; // low byte of the little-endian count
         fs::write(seal_path(&log_path), &bytes).unwrap();
@@ -560,7 +757,7 @@ mod tests {
         let log_path = dir.path().join("audit.log");
         let k = key(0x68);
 
-        write_seal(&log_path, &k, 4, &link(0x01)).unwrap();
+        write_seal(&log_path, &k, 4, &link(0x01), None).unwrap();
         let mut bytes = fs::read(seal_path(&log_path)).unwrap();
         bytes[SEAL_COUNT_LEN] ^= 0xFF; // first byte of segment_start_hash
         fs::write(seal_path(&log_path), &bytes).unwrap();
@@ -574,7 +771,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let from = dir.path().join("a.log");
         let to = dir.path().join("a.1.log");
-        write_seal(&from, &key(0x01), 1, &link(0x02)).unwrap();
+        write_seal(&from, &key(0x01), 1, &link(0x02), None).unwrap();
 
         rename_seal(&from, &to).unwrap();
 

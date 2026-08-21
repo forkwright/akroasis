@@ -126,7 +126,14 @@ fn log_ahead_of_a_valid_seal_classifies_as_unsealed_not_truncated() {
     }
     drop(log);
 
-    seal::write_seal(&path, &test_key(), 3, &seal::genesis_hash(&test_key())).unwrap();
+    seal::write_seal(
+        &path,
+        &test_key(),
+        3,
+        &seal::genesis_hash(&test_key()),
+        None,
+    )
+    .unwrap();
 
     let result = verify_chain(&path, &test_key()).unwrap();
     assert_eq!(
@@ -157,7 +164,14 @@ fn open_resumes_an_unsealed_log_and_reseals_to_the_true_count() {
     }
     drop(log);
 
-    seal::write_seal(&path, &test_key(), 3, &seal::genesis_hash(&test_key())).unwrap();
+    seal::write_seal(
+        &path,
+        &test_key(),
+        3,
+        &seal::genesis_hash(&test_key()),
+        None,
+    )
+    .unwrap();
 
     // Before the fix this was refused as ChainCompromised(Truncated); the
     // fix must resume it instead.
@@ -356,6 +370,7 @@ fn every_pre_rename_seal_stage_failure_recovers_on_reopen() {
             seal::SealState::Valid {
                 entry_count: 3,
                 segment_start_hash: seal::genesis_hash(&test_key()),
+                provenance: None,
             },
             "{stage:?} must leave the previous seal intact and valid"
         );
@@ -413,6 +428,7 @@ fn a_failed_rename_preserves_the_previous_seal_and_recovers() {
         seal::SealState::Valid {
             entry_count: 2,
             segment_start_hash: seal::genesis_hash(&test_key()),
+            provenance: None,
         },
         "and must still authenticate at its old count"
     );
