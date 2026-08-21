@@ -600,16 +600,16 @@ pub(super) fn write_seal(
     tmp_name.push(".tmp");
     let tmp = PathBuf::from(tmp_name);
 
-    let payload = match provenance {
-        None => {
+    let payload = provenance.map_or_else(
+        || {
             let mac = seal_mac(chain_key, entry_count, segment_start_hash);
             let mut payload = Vec::with_capacity(SEAL_FILE_LEN);
             payload.extend_from_slice(&entry_count.to_le_bytes());
             payload.extend_from_slice(segment_start_hash);
             payload.extend_from_slice(&mac);
             payload
-        }
-        Some(tip) => {
+        },
+        |tip| {
             let mac = signed_seal_mac(chain_key, entry_count, segment_start_hash, tip);
             let mut payload = Vec::with_capacity(SIGNED_SEAL_FILE_LEN);
             payload.extend_from_slice(&entry_count.to_le_bytes());
@@ -619,8 +619,8 @@ pub(super) fn write_seal(
             payload.extend_from_slice(&tip.signature);
             payload.extend_from_slice(&mac);
             payload
-        }
-    };
+        },
+    );
 
     {
         #[cfg(test)]

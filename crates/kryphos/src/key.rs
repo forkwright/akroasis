@@ -198,7 +198,7 @@ fn installation_key_id(verifying: &VerifyingKey) -> [u8; koinon::KEY_ID_LEN] {
 
 impl koinon::TipSigner for InstallationIdentity {
     fn key_id(&self) -> [u8; koinon::KEY_ID_LEN] {
-        installation_key_id(&self.verifying_key())
+        installation_key_id(self.verifying_key())
     }
 
     fn sign_tip(&self, payload: &[u8]) -> [u8; koinon::TIP_SIGNATURE_LEN] {

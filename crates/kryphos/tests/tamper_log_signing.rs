@@ -9,12 +9,12 @@
 
 #![expect(
     clippy::unwrap_used,
-    clippy::panic,
+    clippy::indexing_slicing,
     reason = "integration test — panics are the correct failure mode"
 )]
 
 use koinon::TipStatus;
-use kryphos::{CredentialType, Vault, VaultError};
+use kryphos::{CredentialType, Vault};
 
 const TEST_PASSPHRASE: &[u8] = b"correct horse battery staple";
 
