@@ -4,8 +4,6 @@
 //! baseline, temporal bucketing across 168 time slots (7 days × 24 hours), and
 //! [`AnomalyScore`] classification for anomaly detection across every domain.
 
-use std::collections::VecDeque;
-
 use serde::{Deserialize, Serialize};
 
 /// Single-pass online mean, variance, and standard deviation computation.
@@ -272,84 +270,6 @@ impl Default for ScoringConfig {
             anomalous_threshold: 3.0,
             min_observations: 10,
         }
-    }
-}
-
-/// A sliding-window baseline that evicts observations by count or age.
-///
-/// Maintains a ring buffer of `(timestamp_ms, value)` pairs. On each call to
-/// [`observe`](Self::observe), stale entries are evicted and the INNER [`Baseline`]
-/// is rebuilt FROM the surviving observations.
-#[derive(Debug, Clone)]
-pub struct TimeWindowedBaseline {
-    /// Ring buffer of `(timestamp_millis, value)` pairs.
-    observations: VecDeque<(i64, f64)>,
-    /// Maximum number of observations to retain.
-    max_observations: usize,
-    /// Maximum age of observations in milliseconds. [`None`] means no time LIMIT.
-    max_age_ms: Option<i64>,
-    /// Current computed baseline, rebuilt after each eviction.
-    baseline: Baseline,
-}
-
-impl TimeWindowedBaseline {
-    /// Creates a new windowed baseline that retains at most `max_observations` entries.
-    #[must_use]
-    pub const fn new(max_observations: usize) -> Self {
-        Self {
-            observations: VecDeque::new(),
-            max_observations,
-            max_age_ms: None,
-            baseline: Baseline::new(),
-        }
-    }
-
-    /// Limits retained observations to those no older than `duration_ms` milliseconds.
-    #[must_use]
-    pub const fn with_max_age(mut self, duration_ms: i64) -> Self {
-        self.max_age_ms = Some(duration_ms);
-        self
-    }
-
-    /// Records an observation at `timestamp_ms`, evicting stale entries as needed.
-    ///
-    /// After eviction the INNER baseline is rebuilt FROM all surviving observations.
-    pub fn observe(&mut self, timestamp_ms: i64, value: f64) {
-        self.observations.push_back((timestamp_ms, value));
-
-        // Evict by count.
-        while self.observations.len() > self.max_observations {
-            self.observations.pop_front();
-        }
-
-        // Evict by age.
-        if let Some(max_age) = self.max_age_ms {
-            while self
-                .observations
-                .front()
-                .is_some_and(|&(ts, _)| timestamp_ms - ts > max_age)
-            {
-                self.observations.pop_front();
-            }
-        }
-
-        // Rebuild FROM surviving observations.
-        self.baseline = Baseline::new();
-        for &(_, v) in &self.observations {
-            self.baseline.observe(v);
-        }
-    }
-
-    /// Scores `value` against the current windowed baseline.
-    #[must_use]
-    pub fn score(&self, value: f64) -> AnomalyScore {
-        self.baseline.score(value)
-    }
-
-    /// Returns a read-only reference to the current INNER baseline.
-    #[must_use]
-    pub const fn baseline(&self) -> &Baseline {
-        &self.baseline
     }
 }
 

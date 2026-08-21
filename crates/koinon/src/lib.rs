@@ -18,9 +18,7 @@ pub mod signal;
 pub mod tamper_log;
 pub mod timestamp;
 
-pub use baseline::{
-    AnomalyScore, Baseline, ScoringConfig, TemporalBucketedBaseline, TimeWindowedBaseline,
-};
+pub use baseline::{AnomalyScore, Baseline, ScoringConfig, TemporalBucketedBaseline};
 pub use caller::{
     AuthorityClaims, AuthorityClaimsBuilder, AuthorityDecision, AuthorityGrant,
     AuthorizationDenial, AuthorizationRequirement, AuthorizedCaller, CALLER_CONTEXT_VERSION,
