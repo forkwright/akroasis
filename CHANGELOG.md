@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.4.0](https://github.com/forkwright/akroasis/compare/v0.3.0...v0.4.0) (2026-08-21)
+
+
+### Features
+
+* **kerykeion:** add the BLE transport and its injectable scan/GATT seam ([#420](https://github.com/forkwright/akroasis/issues/420)) ([f9fc620](https://github.com/forkwright/akroasis/commit/f9fc6204c85b5645b6b753c8b49dde82fbdf7fd0))
+
+
+### Bug Fixes
+
+* **akroasis-server:** validate the serial port path before it reaches a device open ([#421](https://github.com/forkwright/akroasis/issues/421)) ([47eb3a9](https://github.com/forkwright/akroasis/commit/47eb3a93a95b4c62265eb6f5538c58d53078d12c))
+* **akroasis:** zeroize vault passphrase and new-secret terminal input ([#425](https://github.com/forkwright/akroasis/issues/425)) ([97b7b2f](https://github.com/forkwright/akroasis/commit/97b7b2f08238f3b07d8e0fafc6f89ed65ca8b245)), closes [#379](https://github.com/forkwright/akroasis/issues/379)
+* **semaino:** scope convergence detection to the signal's own cell ([#424](https://github.com/forkwright/akroasis/issues/424)) ([bd8e569](https://github.com/forkwright/akroasis/commit/bd8e569abb853f78ac8272e0eed6dd21e6ad7518))
+
 ## [0.3.0](https://github.com/forkwright/akroasis/compare/v0.2.0...v0.3.0) (2026-08-21)
 
 
