@@ -6,6 +6,7 @@ use std::path::PathBuf;
 use clap::Subcommand;
 use comfy_table::{Cell, Table};
 use snafu::{ResultExt, Snafu};
+use zeroize::Zeroizing;
 
 use kryphos::{CredentialType, EntryInfo, InstallationIdentity, Vault, VaultError};
 
@@ -125,8 +126,15 @@ fn parse_credential_type(s: &str) -> Result<CredentialType, String> {
 }
 
 /// Reads a passphrase from the terminal (no echo).
-fn read_passphrase(prompt: &str) -> Result<String, VaultCliError> {
-    rpassword::prompt_password(prompt).context(PassphraseInputSnafu)
+///
+/// WHY(#379) `Zeroizing`: what the operator types is the same plaintext
+/// credential material a `DecryptedEntry` protects on the way out, so it is
+/// wrapped on the way in too. A bare `String` leaves the passphrase in freed
+/// heap memory after the last use.
+fn read_passphrase(prompt: &str) -> Result<Zeroizing<String>, VaultCliError> {
+    rpassword::prompt_password(prompt)
+        .map(Zeroizing::new)
+        .context(PassphraseInputSnafu)
 }
 
 /// Validates a passphrase confirmation: the two entries must match, and the
@@ -161,7 +169,7 @@ fn confirm_passphrase(first: &str, second: &str) -> Result<(), VaultCliError> {
 /// double-Enter fails immediately with a clear retry message rather than
 /// silently succeeding and relying on `Vault::create`'s own rejection to
 /// surface as a less specific downstream error (forkwright/akroasis#287).
-fn read_passphrase_confirmed(prompt: &str) -> Result<String, VaultCliError> {
+fn read_passphrase_confirmed(prompt: &str) -> Result<Zeroizing<String>, VaultCliError> {
     let first = read_passphrase(prompt)?;
     let second = read_passphrase("Confirm passphrase: ")?;
 
@@ -171,8 +179,14 @@ fn read_passphrase_confirmed(prompt: &str) -> Result<String, VaultCliError> {
 }
 
 /// Reads a secret value from the terminal (no echo).
-fn read_secret(prompt: &str) -> Result<String, VaultCliError> {
-    rpassword::prompt_password(prompt).context(PassphraseInputSnafu)
+///
+/// WHY(#379) `Zeroizing`: a freshly typed replacement secret is credential
+/// material before it ever reaches the vault, and is wrapped for the same
+/// reason as [`read_passphrase`].
+fn read_secret(prompt: &str) -> Result<Zeroizing<String>, VaultCliError> {
+    rpassword::prompt_password(prompt)
+        .map(Zeroizing::new)
+        .context(PassphraseInputSnafu)
 }
 
 /// Dispatches a vault subcommand.
