@@ -24,6 +24,9 @@
 pub mod baofeng;
 pub mod channel;
 pub mod config;
+// WHY private: the CSV formula guard is an implementation detail shared by the
+// export and import paths, not part of this crate's surface.
+mod csv_formula;
 pub mod error;
 pub mod export;
 #[cfg(feature = "hardware-serial")]

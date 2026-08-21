@@ -216,7 +216,7 @@ fn parse_record(
     let rx_freq = Frequency::hz(mhz_to_hz(freq_mhz));
 
     let location = parse_location(col(record, 0), row, warnings);
-    let name = col(record, 1).to_string();
+    let name = crate::csv_formula::restore(col(record, 1)).to_string();
 
     let duplex = col(record, 3);
     let offset_hz = parse_offset_hz(col(record, 4), row, warnings);
