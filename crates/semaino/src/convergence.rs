@@ -75,9 +75,13 @@ pub struct DomainHit {
 pub struct Convergence {
     /// Approximate centre coordinates of the convergence cell.
     pub center: Coordinates,
-    /// All domain observations inside this cell within the time window.
-    pub hits: Vec<DomainHit>,
-    /// Number of distinct [`SignalKind`] domains represented in `hits`.
+    /// Number of distinct [`SignalKind`] domains observed in this cell within
+    /// the time window.
+    ///
+    /// WHY(#223) there is no `hits` field: this type previously also carried
+    /// every windowed [`DomainHit`], cloned on every detection. No consumer
+    /// ever read it -- the alert path reads only this count -- so the clone was
+    /// pure cost that scaled with input volume.
     pub domain_count: usize,
 }
 
@@ -135,6 +139,16 @@ impl DomainSlots {
             .iter()
             .filter_map(Option::as_ref)
             .filter(move |h| h.timestamp.as_unix_millis() >= cutoff_ms)
+    }
+
+    /// Count domains with a live hit at or after `cutoff_ms`.
+    ///
+    /// WHY this is the distinct count rather than a set built from the hits:
+    /// a slot holds at most one hit per domain discriminant by construction,
+    /// so a live slot *is* a distinct domain. Building a `HashSet` to
+    /// rediscover that re-derives an invariant the type already guarantees.
+    fn distinct_domains(&self, cutoff_ms: i64) -> usize {
+        self.within_window(cutoff_ms).count()
     }
 
     /// Drop hits older than `cutoff_ms`. Returns `true` if any slot remains.
@@ -218,24 +232,51 @@ impl ConvergenceGrid {
         let window_ms = window.as_millis() as i64; // SAFETY: Duration::as_millis() returns u128 but real windows are bounded; fits i64
         let cutoff_ms = now.as_unix_millis() - window_ms;
 
-        let mut result = Vec::new();
+        self.cells
+            .keys()
+            .filter_map(|&cell| self.converged_cell(cell, min_domains, cutoff_ms))
+            .collect()
+    }
 
-        for (&cell, slots) in &self.cells {
-            let window_hits: Vec<&DomainHit> = slots.within_window(cutoff_ms).collect();
+    /// Convergence for the cell containing `coords`, if that one cell has
+    /// `>= min_domains` distinct domains within `window`.
+    ///
+    /// WHY(#223) this exists alongside [`detect`]: a caller evaluating one
+    /// signal wants that signal's cell, and scanning the whole grid to find it
+    /// makes per-signal work scale with the number of populated cells rather
+    /// than with the one cell in question. Reading the cell directly is a hash
+    /// lookup regardless of how much of the grid an adversary has populated.
+    ///
+    /// [`detect`]: ConvergenceGrid::detect
+    #[must_use]
+    pub fn detect_at(
+        &self,
+        coords: &Coordinates,
+        min_domains: usize,
+        window: std::time::Duration,
+        now: Timestamp,
+    ) -> Option<Convergence> {
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "Duration::as_millis() returns u128; converting to i64 is safe for any reasonable window (i64::MAX ms >> practical window sizes)"
+        )]
+        let window_ms = window.as_millis() as i64; // SAFETY: Duration::as_millis() returns u128 but real windows are bounded; fits i64
+        let cutoff_ms = now.as_unix_millis() - window_ms;
+        self.converged_cell(quantize(coords, self.resolution), min_domains, cutoff_ms)
+    }
 
-            // Count distinct domain discriminants.
-            let distinct = domain_count(&window_hits);
-            if distinct >= min_domains {
-                let center = cell_center(cell, self.resolution);
-                result.push(Convergence {
-                    center,
-                    hits: window_hits.into_iter().cloned().collect(),
-                    domain_count: distinct,
-                });
-            }
-        }
-
-        result
+    /// Evaluate one cell against the domain threshold.
+    fn converged_cell(
+        &self,
+        cell: GridCell,
+        min_domains: usize,
+        cutoff_ms: i64,
+    ) -> Option<Convergence> {
+        let distinct = self.cells.get(&cell)?.distinct_domains(cutoff_ms);
+        (distinct >= min_domains).then(|| Convergence {
+            center: cell_center(cell, self.resolution),
+            domain_count: distinct,
+        })
     }
 
     /// Remove all hits older than `older_than` from every cell.
@@ -250,14 +291,6 @@ impl ConvergenceGrid {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-/// Count distinct top-level domain discriminants in a slice of [`DomainHit`] refs.
-fn domain_count(hits: &[&DomainHit]) -> usize {
-    use std::collections::HashSet;
-
-    let discriminants: HashSet<u8> = hits.iter().map(|h| kind_discriminant(&h.kind)).collect();
-    discriminants.len()
-}
 
 /// Map a [`SignalKind`] to a stable integer discriminant for domain counting.
 ///
@@ -422,6 +455,116 @@ mod tests {
             cell,
             GridCell(-2, -2),
             "floor(-1.5) must be -2, not -1 (truncation-toward-zero)"
+        );
+    }
+
+    /// Anti-vacuity for the scoping cases below: `detect_at` must be able to
+    /// return `Some`, or a test asserting `None` elsewhere proves nothing.
+    #[test]
+    fn detect_at_finds_the_convergence_in_its_own_cell() {
+        let loc = coords(51.5, -0.1);
+        let mut grid = ConvergenceGrid::new(10_000);
+        grid.ingest(&signal_at(rf_kind(), loc));
+        grid.ingest(&signal_at(mesh_kind(), loc));
+
+        let found = grid.detect_at(&loc, 2, std::time::Duration::from_secs(30), ts_now());
+
+        assert!(
+            found.is_some_and(|c| c.domain_count == 2),
+            "two domains in this cell must converge here"
+        );
+    }
+
+    #[test]
+    fn detect_at_is_none_where_nothing_converged() {
+        let busy = coords(51.5, -0.1);
+        let quiet = coords(48.85, 2.35);
+        let mut grid = ConvergenceGrid::new(10_000);
+        grid.ingest(&signal_at(rf_kind(), busy));
+        grid.ingest(&signal_at(mesh_kind(), busy));
+
+        assert!(
+            grid.detect_at(&quiet, 2, std::time::Duration::from_secs(30), ts_now())
+                .is_none(),
+            "a convergence elsewhere must not be reported for this cell"
+        );
+    }
+
+    /// The scoping property: what `detect_at` returns depends only on the cell
+    /// asked about, so one cell's contents cannot answer for another's.
+    #[test]
+    fn detect_at_reports_the_asked_cell_not_the_busiest_one() {
+        let quiet = coords(48.85, 2.35);
+        let busy = coords(51.5, -0.1);
+        let mut grid = ConvergenceGrid::new(10_000);
+        // Three domains in the busy cell, one in the quiet cell.
+        grid.ingest(&signal_at(rf_kind(), busy));
+        grid.ingest(&signal_at(mesh_kind(), busy));
+        grid.ingest(&signal_at(
+            SignalKind::Gps(GpsDetail::SpoofingSuspected { confidence: 0.9 }),
+            busy,
+        ));
+        grid.ingest(&signal_at(rf_kind(), quiet));
+
+        let window = std::time::Duration::from_secs(30);
+        let now = ts_now();
+
+        assert!(
+            grid.detect_at(&quiet, 2, window, now).is_none(),
+            "one domain in the quiet cell must not converge"
+        );
+        assert_eq!(
+            grid.detect_at(&busy, 2, window, now)
+                .map(|c| c.domain_count),
+            Some(3),
+            "the busy cell must report its own three domains"
+        );
+    }
+
+    /// The bound #223 exists for: a sustained flood at one coordinate cannot
+    /// grow that cell past one retained hit per domain, so neither its reported
+    /// count nor the work of reading it scales with input rate.
+    #[test]
+    fn a_flood_at_one_coordinate_cannot_grow_past_the_domain_bound() {
+        let loc = coords(51.5, -0.1);
+        let mut grid = ConvergenceGrid::new(10_000);
+        for _ in 0..10_000 {
+            grid.ingest(&signal_at(rf_kind(), loc));
+            grid.ingest(&signal_at(mesh_kind(), loc));
+        }
+
+        let found = grid
+            .detect_at(&loc, 2, std::time::Duration::from_secs(30), ts_now())
+            .expect("two domains must converge");
+
+        assert_eq!(
+            found.domain_count, 2,
+            "20 000 ingests of two domains must still report two"
+        );
+        assert!(
+            DOMAIN_SLOTS <= 8,
+            "per-cell retention is bounded by DOMAIN_SLOTS, not by input volume"
+        );
+    }
+
+    /// `detect` and `detect_at` must not disagree about the same cell.
+    #[test]
+    fn detect_at_agrees_with_the_full_scan_for_that_cell() {
+        let loc = coords(51.5, -0.1);
+        let mut grid = ConvergenceGrid::new(10_000);
+        grid.ingest(&signal_at(rf_kind(), loc));
+        grid.ingest(&signal_at(mesh_kind(), loc));
+
+        let window = std::time::Duration::from_secs(30);
+        let now = ts_now();
+        let scanned = grid.detect(2, window, now);
+        let scoped = grid.detect_at(&loc, 2, window, now);
+
+        assert_eq!(scanned.len(), 1, "one cell converged");
+        assert_eq!(
+            scanned.first().map(|c| c.domain_count),
+            scoped.map(|c| c.domain_count),
+            "the scoped read and the full scan must agree about this cell"
         );
     }
 

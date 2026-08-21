@@ -256,14 +256,21 @@ impl SemainoPipeline {
         self.grid.ingest(&aggregated.signal);
 
         let now = koinon::Timestamp::now();
-        let convergences = self
-            .grid
-            .detect(self.min_convergence_domains, self.time_window, now);
+        // WHY(#223): this read the whole grid and then took `.first()`, under a
+        // comment claiming it was "the cell matching the signal". A HashMap has
+        // no first, so with more than one converged cell the alert was attributed
+        // to an arbitrary one and the choice varied between runs. Asking for the
+        // triggering signal's own cell is both what the comment meant and a hash
+        // lookup instead of a scan whose cost an adversary controls.
+        let matching_convergence = aggregated.signal.location.as_ref().and_then(|coords| {
+            self.grid
+                .detect_at(coords, self.min_convergence_domains, self.time_window, now)
+        });
 
-        // Use the first convergence event for the cell matching the signal, if any.
-        let matching_convergence = convergences.first();
-
-        if let Some(alert) = self.alerts.process(aggregated, matching_convergence) {
+        if let Some(alert) = self
+            .alerts
+            .process(aggregated, matching_convergence.as_ref())
+        {
             tracing::info!(
                 alert_id = %alert.id,
                 severity = ?alert.severity,
@@ -540,6 +547,81 @@ mod tests {
             "an Elevated score with 2-domain convergence classifies as \
              Medium; a Low severity here means the RF trigger's own signal \
              was missing from the grid at detection time (#224)"
+        );
+    }
+
+    /// WHY(#223): convergence detection read the whole grid and then took
+    /// `.first()`, so a cluster anywhere on the map could supply the
+    /// convergence used to classify a signal that landed somewhere else
+    /// entirely. Here the trigger's own cell holds only the trigger, and a
+    /// two-domain cluster sits far away; an Elevated score with no convergence
+    /// at the trigger must classify Low. Under the old scan-then-first this
+    /// returned Medium, escalating an alert on the strength of an unrelated
+    /// location.
+    #[test]
+    fn a_convergence_in_another_cell_does_not_escalate_this_signal() {
+        use koinon::signal::MeshDetail;
+
+        let elsewhere = Coordinates::new(51.5, -0.1, None).expect("valid coordinates");
+        let trigger_loc = Coordinates::new(48.85, 2.35, None).expect("valid coordinates");
+
+        let mut pipeline = SemainoPipeline::new(&SemainoConfig {
+            suppression_window_secs: 0,
+            min_convergence_domains: 2,
+            ..SemainoConfig::default()
+        });
+        let sink = CollectingSink::default();
+        let sink_data = Arc::clone(&sink.0);
+        pipeline.add_sink(sink);
+
+        // A genuine two-domain convergence, far from the signal below.
+        pipeline.grid.ingest(&GeoSignal::new(
+            SignalKind::Mesh(MeshDetail::NodeSeen {
+                node_id: 1,
+                snr: 5.0,
+                hop_count: 1,
+            }),
+            Timestamp::now(),
+            Some(elsewhere),
+        ));
+        pipeline.grid.ingest(&GeoSignal::new(
+            SignalKind::Rf(RfDetail::Transmission {
+                frequency: Frequency::mhz(146),
+                power: Power::dbm(50.0),
+                modulation: "FM".into(),
+                bandwidth: Frequency::khz(25),
+            }),
+            Timestamp::now(),
+            Some(elsewhere),
+        ));
+
+        let aggregated = AggregatedSignal {
+            signal: GeoSignal::new(
+                SignalKind::Rf(RfDetail::Transmission {
+                    frequency: Frequency::mhz(433),
+                    power: Power::dbm(20.0),
+                    modulation: "FM".into(),
+                    bandwidth: Frequency::khz(25),
+                }),
+                Timestamp::now(),
+                Some(trigger_loc),
+            ),
+            score: AnomalyScore::Elevated(2.2),
+            baseline_mean: Some(-50.0),
+            baseline_stddev: Some(1.0),
+        };
+
+        pipeline.handle_aggregated(&aggregated);
+
+        let first_severity = {
+            let alerts = sink_data.lock().expect("sink lock");
+            alerts.first().map(|a| a.severity.clone())
+        };
+        assert_eq!(
+            first_severity,
+            Some(koinon::signal::AlertSeverity::Low),
+            "the trigger's own cell holds one domain, so this must classify \
+             Low; Medium means an unrelated cell's convergence was used"
         );
     }
 
