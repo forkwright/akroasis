@@ -52,20 +52,57 @@ pub(crate) fn build_nonce(packet_id: u32, from_node: u32) -> [u8; 16] {
 
 /// Resolve a PSK to its full-length key bytes.
 ///
-/// - Empty slice → `None` (channel has no encryption).
+/// Length of an AES-128 key, in bytes.
+///
+/// WHY named here rather than written inline: the accepted PSK lengths are one
+/// fact used by both this module and the config boundary that validates what an
+/// operator writes. Two literals would be free to disagree.
+pub(crate) const AES128_KEY_LEN: usize = 16;
+
+/// Length of an AES-256 key, in bytes. See [`AES128_KEY_LEN`].
+pub(crate) const AES256_KEY_LEN: usize = 32;
+
+/// What a channel's PSK bytes resolve to.
+///
+/// WHY(#229) three states rather than an `Option`: a PSK of an undefined shape
+/// used to be indistinguishable from a channel that carries no encryption. Both
+/// ended in the same silent `continue`, so a misconfigured channel looked
+/// exactly like a public one and nothing said otherwise.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum PskResolution {
+    /// The channel carries no encryption.
+    Unencrypted,
+    /// A usable AES key.
+    Key(Vec<u8>),
+    /// The bytes match no shape this protocol defines.
+    Undefined {
+        /// Length of the rejected material. The bytes themselves are key
+        /// material and are not carried into a log line.
+        len: usize,
+    },
+}
+
+/// - Empty slice → [`PskResolution::Unencrypted`].
 /// - Single byte `n` (1–10) → [`DEFAULT_PSK`] with byte 15 SET to `n`.
 /// - 16 or 32 bytes → used as-is.
-///
-/// Returns `None` if the PSK is empty (unencrypted channel), otherwise `Some(key)`.
-pub(crate) fn resolve_psk(psk: &[u8]) -> Option<Vec<u8>> {
+/// - Anything else → [`PskResolution::Undefined`].
+pub(crate) fn resolve_psk(psk: &[u8]) -> PskResolution {
     match psk {
-        [] => None,
+        [] => PskResolution::Unencrypted,
         [n] if *n >= 1 && *n <= 10 => {
             let mut key = DEFAULT_PSK;
             key[15] = *n; // kanon:ignore RUST/indexing-slicing -- key is fixed-size [u8; 16], index 15 is compile-time bounded
-            Some(key.to_vec())
+            PskResolution::Key(key.to_vec())
         }
-        _ => Some(psk.to_vec()),
+        // WHY(#229) the two accepted key lengths are named rather than left to a
+        // catch-all: the arm below used to be `_ => Some(psk.to_vec())`, which
+        // handed AES whatever it was given. A single byte of 0, or of 11, or a
+        // seven-byte blob, all became "keys" — the doc above said 16 or 32 and
+        // the code accepted every length.
+        [_, ..] if psk.len() == AES128_KEY_LEN || psk.len() == AES256_KEY_LEN => {
+            PskResolution::Key(psk.to_vec())
+        }
+        other => PskResolution::Undefined { len: other.len() },
     }
 }
 
@@ -126,9 +163,20 @@ pub fn encrypt(
     from_node: u32,
     psk: &[u8],
 ) -> Result<Vec<u8>, Error> {
-    let Some(key) = resolve_psk(psk) else {
+    let key = match resolve_psk(psk) {
+        PskResolution::Key(key) => key,
         // Unencrypted channel: return plaintext unchanged.
-        return Ok(plaintext.to_vec());
+        PskResolution::Unencrypted => return Ok(plaintext.to_vec()),
+        // WHY(#229) an error rather than a pass-through: sending is the
+        // dangerous direction. A misconfigured PSK previously became a bad key,
+        // and returning the plaintext instead would transmit in the clear on a
+        // channel the operator believes is encrypted.
+        PskResolution::Undefined { len } => {
+            return EncryptionSnafu {
+                detail: format!("channel PSK is {len} bytes, which defines no key"),
+            }
+            .fail();
+        }
     };
     let mut buf = plaintext.to_vec();
     apply_aes_ctr(&mut buf, packet_id, from_node, &key)?;
@@ -152,9 +200,22 @@ pub fn decrypt(
     channel_psks: &[(usize, Vec<u8>)],
 ) -> Result<(Vec<u8>, usize), Error> {
     for (channel_idx, psk) in channel_psks {
-        let Some(key) = resolve_psk(psk) else {
+        let key = match resolve_psk(psk) {
+            PskResolution::Key(key) => key,
             // Skip unencrypted-channel PSKs.
-            continue;
+            PskResolution::Unencrypted => continue,
+            // WHY(#229) logged rather than skipped silently: this used to be
+            // indistinguishable from an unencrypted channel, so a channel that
+            // simply could not decrypt anything looked like one that was never
+            // meant to.
+            PskResolution::Undefined { len } => {
+                tracing::warn!(
+                    channel = channel_idx,
+                    psk_len = len,
+                    "skipping channel whose PSK defines no key"
+                );
+                continue;
+            }
         };
 
         let mut candidate = ciphertext.to_vec();
@@ -177,6 +238,19 @@ pub fn decrypt(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The key a PSK resolves to, if it resolves to one.
+    ///
+    /// Returns an `Option` rather than panicking so the call sites keep their
+    /// existing `unwrap` — and with it the `#[expect(clippy::unwrap_used)]`
+    /// attributes that would otherwise go unfulfilled, which is itself an error
+    /// under this workspace's lints.
+    fn key_of(psk: &[u8]) -> Option<Vec<u8>> {
+        match resolve_psk(psk) {
+            PskResolution::Key(key) => Some(key),
+            PskResolution::Unencrypted | PskResolution::Undefined { .. } => None,
+        }
+    }
 
     // ── Nonce construction ──────────────────────────────────────────────────
 
@@ -221,20 +295,58 @@ mod tests {
 
     #[test]
     fn psk_empty_returns_none() {
-        assert!(resolve_psk(&[]).is_none());
+        assert_eq!(resolve_psk(&[]), PskResolution::Unencrypted);
+    }
+
+    /// WHY(#229): the arm these fall into used to be `_ => Some(psk.to_vec())`,
+    /// so each of these became an AES "key" of its own length. A single byte of
+    /// 0 or 11 is an index this protocol does not define, not a one-byte key.
+    #[test]
+    fn a_psk_of_no_defined_shape_is_not_a_key() {
+        for psk in [
+            vec![0x00],     // index 0
+            vec![0x0B],     // index 11, one past the defined range
+            vec![0xFF],     // index 255
+            vec![0xAA; 7],  // neither key length
+            vec![0xAA; 15], // one short of AES-128
+            vec![0xAA; 31], // one short of AES-256
+            vec![0xAA; 33], // one over AES-256
+        ] {
+            assert_eq!(
+                resolve_psk(&psk),
+                PskResolution::Undefined { len: psk.len() },
+                "a {}-byte PSK defines no key",
+                psk.len()
+            );
+        }
+    }
+
+    /// Anti-vacuity: the shapes the protocol does define must still resolve, or
+    /// the case above would pass against a function that rejects everything.
+    #[test]
+    fn the_defined_psk_shapes_still_resolve() {
+        assert_eq!(resolve_psk(&[]), PskResolution::Unencrypted);
+        for index in 1..=10u8 {
+            assert!(
+                key_of(&[index]).is_some(),
+                "index {index} is within the defined range"
+            );
+        }
+        assert!(key_of(&vec![0xAA; AES128_KEY_LEN]).is_some());
+        assert!(key_of(&vec![0xAA; AES256_KEY_LEN]).is_some());
     }
 
     #[test]
     fn psk_0x01_resolves_to_default_key() {
         #[expect(clippy::unwrap_used, reason = "test-only")]
-        let key = resolve_psk(&[0x01]).unwrap();
+        let key = key_of(&[0x01]).unwrap();
         assert_eq!(key, DEFAULT_PSK.to_vec());
     }
 
     #[test]
     fn psk_0x05_sets_last_byte() {
         #[expect(clippy::unwrap_used, reason = "test-only")]
-        let key = resolve_psk(&[0x05]).unwrap();
+        let key = key_of(&[0x05]).unwrap();
         assert_eq!(key.len(), 16);
         assert_eq!(key.last().copied(), Some(0x05u8));
         // key and DEFAULT_PSK are both 16 bytes; get(..15) never returns None.
@@ -247,7 +359,7 @@ mod tests {
     #[test]
     fn psk_0x0a_sets_last_byte() {
         #[expect(clippy::unwrap_used, reason = "test-only")]
-        let key = resolve_psk(&[0x0A]).unwrap();
+        let key = key_of(&[0x0A]).unwrap();
         assert_eq!(key.last().copied(), Some(0x0Au8));
     }
 
@@ -255,7 +367,7 @@ mod tests {
     fn psk_16_bytes_used_as_is() {
         let raw = [0xAAu8; 16];
         #[expect(clippy::unwrap_used, reason = "test-only")]
-        let key = resolve_psk(&raw).unwrap();
+        let key = key_of(&raw).unwrap();
         assert_eq!(key, raw.to_vec());
     }
 
@@ -263,7 +375,7 @@ mod tests {
     fn psk_32_bytes_used_as_is() {
         let raw = [0xBBu8; 32];
         #[expect(clippy::unwrap_used, reason = "test-only")]
-        let key = resolve_psk(&raw).unwrap();
+        let key = key_of(&raw).unwrap();
         assert_eq!(key, raw.to_vec());
     }
 
