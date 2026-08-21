@@ -12,7 +12,7 @@ use koinon::{
     signal::{EnvironmentalDetail, GpsDetail, MeshDetail, ProximityDetail, RfDetail, SignalKind},
 };
 use snafu::Snafu;
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::mpsc;
 
 // ---------------------------------------------------------------------------
 // Error
@@ -84,7 +84,7 @@ impl KindKey {
 
 /// Signal aggregator with per-kind temporal baselines.
 ///
-/// Receives [`GeoSignal`]s from a broadcast channel, maintains per-kind
+/// Receives [`GeoSignal`]s from a bounded channel, maintains per-kind
 /// [`TemporalBucketedBaseline`]s, scores each signal, and forwards
 /// [`AggregatedSignal`]s downstream when the score is elevated or anomalous.
 pub struct SignalAggregator {
@@ -145,8 +145,15 @@ impl SignalAggregator {
     ///
     /// # Cancellation Safety
     ///
-    /// `recv()` on a broadcast receiver is cancel-safe; no signal is lost on
+    /// `recv()` on an mpsc receiver is cancel-safe; no signal is lost on
     /// cancellation at the `select!` boundary.
+    ///
+    /// # Why the output is unbounded (#232)
+    ///
+    /// This task has exactly one await — its input `recv`. That is what makes a
+    /// bounded input safe: the aggregator can never be blocked by its consumer,
+    /// so the consumer can block on sending to it without the two deadlocking.
+    /// A bounded output would restore that await and close the cycle.
     #[tracing::instrument(
         level = "debug",
         skip(self, rx, tx),
@@ -154,20 +161,13 @@ impl SignalAggregator {
     )]
     pub async fn run(
         &mut self,
-        mut rx: broadcast::Receiver<GeoSignal>,
-        tx: mpsc::Sender<AggregatedSignal>,
+        mut rx: mpsc::Receiver<GeoSignal>,
+        tx: mpsc::UnboundedSender<AggregatedSignal>,
     ) {
         loop {
-            let signal = match rx.recv().await {
-                Ok(s) => s,
-                Err(broadcast::error::RecvError::Closed) => {
-                    tracing::debug!("aggregator: broadcast channel closed");
-                    return;
-                }
-                Err(broadcast::error::RecvError::Lagged(n)) => {
-                    tracing::warn!(dropped = n, "aggregator: lagged behind broadcast");
-                    continue;
-                }
+            let Some(signal) = rx.recv().await else {
+                tracing::debug!("aggregator: signal channel closed");
+                return;
             };
 
             tracing::trace!(signal_id = %signal.signal_id, kind = ?KindKey::from_signal(&signal.kind), "signal received");
@@ -215,7 +215,7 @@ impl SignalAggregator {
                     "aggregator: anomaly emitted"
                 );
 
-                if tx.send(aggregated).await.is_err() {
+                if tx.send(aggregated).is_err() {
                     tracing::debug!("aggregator: downstream receiver dropped, exiting");
                     return;
                 }
@@ -444,19 +444,19 @@ mod tests {
 
     #[tokio::test]
     async fn aggregator_scores_anomaly_after_baseline() {
-        let (broadcast_tx, broadcast_rx) = broadcast::channel::<GeoSignal>(64);
-        let (agg_tx, mut agg_rx) = mpsc::channel::<AggregatedSignal>(64);
+        let (signal_tx, signal_rx) = mpsc::channel::<GeoSignal>(64);
+        let (agg_tx, mut agg_rx) = mpsc::unbounded_channel::<AggregatedSignal>();
 
         let mut aggregator = SignalAggregator::new();
         let handle = tokio::spawn(async move {
-            aggregator.run(broadcast_rx, agg_tx).await;
+            aggregator.run(signal_rx, agg_tx).await;
         });
 
         // Feed 20 normal signals around -50.0 dBm to build a stable baseline.
         for i in 0..20_i32 {
             // Vary slightly so stddev > 0.
             let power = -50.0 + f64::from(i % 3);
-            broadcast_tx.send(rf_signal(power)).unwrap();
+            signal_tx.send(rf_signal(power)).await.unwrap();
         }
 
         // Small delay to ensure the aggregator processes the normal signals before
@@ -467,7 +467,7 @@ mod tests {
         while agg_rx.try_recv().is_ok() {}
 
         // Send a clear outlier far from the baseline mean.
-        broadcast_tx.send(rf_signal(50.0)).unwrap();
+        signal_tx.send(rf_signal(50.0)).await.unwrap();
 
         // Wait for the aggregated signal to arrive.
         let result =
@@ -485,7 +485,7 @@ mod tests {
             aggregated.score
         );
 
-        drop(broadcast_tx);
+        drop(signal_tx);
         handle.await.unwrap();
     }
 
@@ -513,23 +513,26 @@ mod tests {
         // across i in 0..20, so the baseline mean is -50 + 19/20.
         const EXPECTED_MEAN: f64 = -49.05;
 
-        let (broadcast_tx, broadcast_rx) = broadcast::channel::<GeoSignal>(64);
-        let (agg_tx, mut agg_rx) = mpsc::channel::<AggregatedSignal>(64);
+        let (signal_tx, signal_rx) = mpsc::channel::<GeoSignal>(64);
+        let (agg_tx, mut agg_rx) = mpsc::unbounded_channel::<AggregatedSignal>();
 
         let mut aggregator = SignalAggregator::new();
         let handle = tokio::spawn(async move {
-            aggregator.run(broadcast_rx, agg_tx).await;
+            aggregator.run(signal_rx, agg_tx).await;
         });
 
         for i in 0..20_i32 {
             let power = -50.0 + f64::from(i % 3);
-            broadcast_tx.send(rf_signal_at(power, BUCKET_MS)).unwrap();
+            signal_tx
+                .send(rf_signal_at(power, BUCKET_MS))
+                .await
+                .unwrap();
         }
 
         tokio::time::sleep(tokio::time::Duration::from_millis(20)).await; // kanon:ignore TESTING/sleep-in-test -- synchronises with the spawned aggregator task; a barrier would re-implement the channel's ready signal
         while agg_rx.try_recv().is_ok() {}
 
-        broadcast_tx.send(rf_signal_at(50.0, BUCKET_MS)).unwrap();
+        signal_tx.send(rf_signal_at(50.0, BUCKET_MS)).await.unwrap();
 
         let timed = tokio::time::timeout(tokio::time::Duration::from_millis(500), agg_rx.recv())
             .await
@@ -553,7 +556,7 @@ mod tests {
             "reported mean must predate the outlier: expected {EXPECTED_MEAN}, got {mean}"
         );
 
-        drop(broadcast_tx);
+        drop(signal_tx);
         handle.await.unwrap();
     }
 

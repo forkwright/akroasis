@@ -114,14 +114,28 @@ impl SemainoPipeline {
         // feed the grid from the same signal. The aggregator's public API is
         // sufficient: extract_feature and the internal baseline are accessed
         // through run(). We drive the aggregator's channel ourselves here.
-        let (agg_tx, mut agg_rx) = mpsc::channel::<AggregatedSignal>(256);
+        // WHY(#232) unbounded: the signal path below is lossless and applies
+        // backpressure, which is only safe because the aggregator cannot block.
+        // Its sole await is its input `recv`, so a bounded output here would
+        // give it a second one and close a cycle — main loop waiting to hand it
+        // a signal while it waits to hand back an aggregate. The alert stream is
+        // the filtered notable subset rather than every signal, so trading a
+        // bounded-memory guarantee on the low-volume leg for a no-loss guarantee
+        // on the high-volume one is the right way round.
+        let (agg_tx, mut agg_rx) = mpsc::unbounded_channel::<AggregatedSignal>();
         let (signal_tx, signal_rx) = mpsc::channel::<GeoSignal>(256);
 
         // Spawn aggregator task: receives GeoSignals via mpsc, emits AggregatedSignals.
         let mut aggregator = SignalAggregator::new();
         // WHY: We pipe GeoSignals into the aggregator via a local broadcast-backed
         // channel so we can reuse its run() loop without forking the implementation.
-        let (inner_tx, inner_rx) = broadcast::channel::<GeoSignal>(256);
+        // WHY(#232) mpsc rather than broadcast: a broadcast receiver that falls
+        // behind loses samples silently, so the aggregator's baselines could
+        // diverge from the grid's view of the same signals — under load, which
+        // is when the divergence matters. A bounded mpsc backpressures instead,
+        // and the caller's own broadcast stays the single place a signal can be
+        // dropped.
+        let (inner_tx, inner_rx) = mpsc::channel::<GeoSignal>(256);
         let agg_task = tokio::spawn(
             async move {
                 aggregator.run(inner_rx, agg_tx).await;
@@ -208,7 +222,7 @@ impl SemainoPipeline {
                             // Forward to the aggregator only now. This single
                             // line is the ordering guarantee (#224); moving it
                             // above the ingest reinstates the race.
-                            if let Err(error) = inner_tx.send(s) {
+                            if let Err(error) = inner_tx.send(s).await {
                                 tracing::trace!(
                                     %error,
                                     "aggregator channel closed, dropping signal"
@@ -344,6 +358,54 @@ mod tests {
             Timestamp::now(),
             None,
         )
+    }
+
+    /// WHY(#232): the saturation case. The internal signal channel holds 256,
+    /// so a burst larger than that is what forces the question the finding
+    /// asked — does a signal survive the hand-off when the aggregator is behind?
+    ///
+    /// It used to be a broadcast, which drops for a receiver that falls behind,
+    /// so the aggregator's baselines could diverge from the grid's view of the
+    /// same signals precisely under load. It is now a bounded mpsc, so the
+    /// producer waits instead and nothing between the fan and the aggregator is
+    /// lost.
+    ///
+    /// The outlier arrives last, after three hundred readings. It can only
+    /// produce an alert if it survived the burst, and the burst itself must
+    /// produce none: the first ten are insufficient data and the rest sit
+    /// exactly on a zero-variance baseline.
+    #[tokio::test]
+    async fn a_burst_larger_than_the_channel_loses_no_signal() {
+        const BURST: usize = 300;
+
+        let (tx, rx) = broadcast::channel::<GeoSignal>(1024);
+        let mut pipeline = SemainoPipeline::new(&SemainoConfig {
+            suppression_window_secs: 0,
+            ..SemainoConfig::default()
+        });
+        let sink = CollectingSink::default();
+        let sink_data = Arc::clone(&sink.0);
+        pipeline.add_sink(sink);
+
+        for _ in 0..BURST {
+            tx.send(rf_signal(-30.0)).expect("send burst");
+        }
+        tx.send(rf_signal(50.0)).expect("send outlier");
+        drop(tx);
+
+        pipeline.run(rx).await;
+
+        let severities: Vec<_> = {
+            let alerts = sink_data.lock().expect("sink lock");
+            alerts.iter().map(|a| a.severity.clone()).collect()
+        };
+        assert_eq!(
+            severities,
+            vec![koinon::signal::AlertSeverity::High],
+            "exactly one alert, from the outlier: an empty list means it was \
+             dropped crossing a saturated channel (#232), and more than one \
+             means the flat burst itself scored"
+        );
     }
 
     /// WHY(#224): the literal `Done when` — N co-located multi-domain signals
