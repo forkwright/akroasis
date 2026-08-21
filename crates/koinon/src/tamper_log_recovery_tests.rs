@@ -294,6 +294,213 @@ fn a_seal_destroyed_by_a_failed_rename_stays_fail_closed() {
 }
 
 // -----------------------------------------------------------------------
+// #285: every seal stage fails deterministically, and recovers
+// -----------------------------------------------------------------------
+
+/// Appends one entry with `stage` armed to fail, and returns the error the
+/// shipped `append` path surfaced.
+///
+/// Clears the injection unconditionally, so a failure to reach the
+/// assertion cannot leave a later test in this thread armed.
+fn append_failing_at(log: &mut TamperLog, stage: seal::inject::SealStage) -> TamperLogError {
+    seal::inject::fail_at(stage);
+    let result = log.append(vault_kind());
+    seal::inject::clear();
+    match result {
+        Err(error) => error,
+        Ok(_) => panic!("append must surface the injected {stage:?} failure, got Ok"),
+    }
+}
+
+/// Drives a log to `entries` appends, each verified.
+fn seeded_log(path: &std::path::Path, entries: usize) -> TamperLog {
+    let mut log = TamperLog::open(path, test_key()).unwrap();
+    for _ in 0..entries {
+        log.append(vault_kind()).unwrap();
+    }
+    log
+}
+
+/// The three stages that run before the rename all leave the previous seal
+/// in place, so each produces the same recoverable log-ahead state. Covering
+/// them individually is the point: they are separate failure sites with
+/// separate error paths, and a test that only ever exercises `create` cannot
+/// tell whether `write` and `sync` propagate at all or silently succeed.
+#[test]
+fn every_pre_rename_seal_stage_failure_recovers_on_reopen() {
+    for (index, stage) in [
+        seal::inject::SealStage::Create,
+        seal::inject::SealStage::Write,
+        seal::inject::SealStage::Sync,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(format!("stage-{index}.log"));
+
+        let mut log = seeded_log(&path, 3);
+        let error = append_failing_at(&mut log, stage);
+        assert!(
+            matches!(error, TamperLogError::Io { .. }),
+            "{stage:?} must surface as an Io error, got {error:?}"
+        );
+        drop(log);
+
+        // The seal that was already on disk is untouched and still
+        // authenticates — this is what separates a torn commit from an
+        // attack, and it is the precondition for recovering rather than
+        // refusing.
+        assert_eq!(
+            seal::read_seal(&path, &test_key()),
+            seal::SealState::Valid {
+                entry_count: 3,
+                segment_start_hash: seal::genesis_hash(&test_key()),
+            },
+            "{stage:?} must leave the previous seal intact and valid"
+        );
+
+        let mid = verify_chain(&path, &test_key()).unwrap();
+        assert_eq!(
+            mid.status,
+            ChainStatus::Unsealed {
+                verified_entries: 4,
+                sealed_entries: 3,
+            },
+            "{stage:?} must leave a log ahead of its seal, not a truncated one"
+        );
+
+        let resumed = TamperLog::open(&path, test_key()).unwrap();
+        assert_eq!(
+            resumed.entry_count(),
+            4,
+            "{stage:?} must resume at the true count"
+        );
+        drop(resumed);
+
+        let after = verify_chain(&path, &test_key()).unwrap();
+        assert_eq!(after.status, ChainStatus::Intact, "{stage:?} must reseal");
+        assert_eq!(after.entries_verified, 4);
+    }
+}
+
+/// The case `a_seal_destroyed_by_a_failed_rename_stays_fail_closed` cannot
+/// reach: that fixture has to replace the seal with a directory to make
+/// `rename` fail from outside, which destroys the stale seal along with it,
+/// so it proves the fail-closed branch and says nothing about the
+/// recoverable one. A rename that simply does not happen leaves the previous
+/// seal exactly where it was, which is the realistic crash shape and must
+/// recover.
+#[test]
+fn a_failed_rename_preserves_the_previous_seal_and_recovers() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("rename-preserved.log");
+
+    let mut log = seeded_log(&path, 2);
+    let error = append_failing_at(&mut log, seal::inject::SealStage::Rename);
+    assert!(
+        matches!(error, TamperLogError::Io { .. }),
+        "a rename-stage failure must surface as an Io error, got {error:?}"
+    );
+    drop(log);
+
+    assert!(
+        seal::seal_path(&path).exists(),
+        "the previous seal must survive a rename that never ran"
+    );
+    assert_eq!(
+        seal::read_seal(&path, &test_key()),
+        seal::SealState::Valid {
+            entry_count: 2,
+            segment_start_hash: seal::genesis_hash(&test_key()),
+        },
+        "and must still authenticate at its old count"
+    );
+
+    let resumed = TamperLog::open(&path, test_key()).unwrap();
+    assert_eq!(resumed.entry_count(), 3);
+    drop(resumed);
+
+    assert_eq!(
+        verify_chain(&path, &test_key()).unwrap().status,
+        ChainStatus::Intact
+    );
+}
+
+/// The directory sync runs after the rename has already published the new
+/// seal, so this failure reports an error over a state that is in fact fully
+/// sealed. The log must not be left worse off by the error it reported.
+#[test]
+fn a_failed_directory_sync_leaves_a_fully_sealed_log() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("dirsync.log");
+
+    let mut log = seeded_log(&path, 2);
+    let error = append_failing_at(&mut log, seal::inject::SealStage::DirSync);
+    assert!(
+        matches!(error, TamperLogError::Io { .. }),
+        "a directory-sync failure must surface as an Io error, got {error:?}"
+    );
+    drop(log);
+
+    let state = verify_chain(&path, &test_key()).unwrap();
+    assert_eq!(
+        state.status,
+        ChainStatus::Intact,
+        "the rename had already published the new seal, so the log is sealed"
+    );
+    assert_eq!(state.entries_verified, 3);
+
+    let resumed = TamperLog::open(&path, test_key()).unwrap();
+    assert_eq!(resumed.entry_count(), 3);
+}
+
+/// The security bound on `Unsealed`'s leniency. Resuming a log that is ahead
+/// of a valid seal is safe only because every extra entry is verified first;
+/// if that check were dropped, the same leniency would launder an appended
+/// forgery. A stale-but-valid seal with a corrupted entry beyond it must be
+/// refused, exactly like a truncated log.
+#[test]
+fn a_stale_seal_with_a_corrupted_extra_link_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("corrupt-suffix.log");
+
+    let mut log = seeded_log(&path, 3);
+    let sealed_len = fs::metadata(&path).unwrap().len();
+    append_failing_at(&mut log, seal::inject::SealStage::Create);
+    drop(log);
+
+    // Precondition: without the corruption this state recovers. Asserting it
+    // here is what makes the refusal below attributable to the corrupted
+    // link rather than to the log-ahead state itself.
+    assert!(
+        matches!(
+            verify_chain(&path, &test_key()).unwrap().status,
+            ChainStatus::Unsealed { .. }
+        ),
+        "the uncorrupted log-ahead state must be the recoverable one"
+    );
+
+    // Corrupt a byte inside the fourth entry — the one beyond the seal.
+    let mut bytes = fs::read(&path).unwrap();
+    let target = usize::try_from(sealed_len).unwrap() + 8;
+    bytes[target] ^= 0xFF;
+    fs::write(&path, &bytes).unwrap();
+
+    let reopened = TamperLog::open(&path, test_key());
+    let got = match &reopened {
+        Ok(_) => "Ok(TamperLog)".to_owned(),
+        Err(error) => format!("Err({error:?})"),
+    };
+    assert!(
+        matches!(reopened, Err(TamperLogError::ChainCompromised { .. })),
+        "an unverifiable entry beyond a valid seal must be refused, not \
+         resumed — otherwise the log-ahead allowance launders a forged \
+         append, got {got}"
+    );
+}
+
+// -----------------------------------------------------------------------
 // #211: cross-segment chain linkage survives rotation
 // -----------------------------------------------------------------------
 
