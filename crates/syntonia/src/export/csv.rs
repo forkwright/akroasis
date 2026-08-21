@@ -144,7 +144,7 @@ fn channel_to_record(ch: &Channel) -> [String; 19] {
 
     [
         ch.index.to_string(),
-        ch.name.clone(),
+        crate::csv_formula::neutralize(&ch.name).into_owned(),
         freq,
         duplex,
         offset,
@@ -227,6 +227,7 @@ mod tests {
     }
 
     /// Column indices in the CHIRP record produced by `channel_to_record`.
+    const COL_NAME: usize = 1;
     const COL_DUPLEX: usize = 3;
     const COL_OFFSET: usize = 4;
     const COL_TONE_MODE: usize = 5;
@@ -248,6 +249,65 @@ mod tests {
             bandwidth: Bandwidth::Wide,
             scan: ScanMode::Include,
             busy_lock: false,
+        }
+    }
+
+    // ── Formula injection (#233) ──────────────────────────────────────────
+
+    fn channel_named(name: &str) -> Channel {
+        Channel {
+            name: name.to_string(),
+            ..channel_with(FrequencyOffset::None, None)
+        }
+    }
+
+    /// WHY: a channel name reaches the export unmodified from the operator or
+    /// from a radio image, and a cell starting with a formula leader is executed
+    /// rather than shown when the file is opened in a spreadsheet. CSV quoting
+    /// does not prevent it — the quotes are stripped before evaluation.
+    #[test]
+    fn export_guards_a_name_that_would_read_as_a_formula() {
+        for name in ["=1+1", "+1", "-1", "@SUM(A1)"] {
+            let record = channel_to_record(&channel_named(name));
+            assert_eq!(
+                record[COL_NAME],
+                format!("'{name}"),
+                "{name:?} must be exported guarded"
+            );
+        }
+    }
+
+    /// Anti-vacuity: guarding everything would satisfy the case above while
+    /// corrupting every ordinary channel name.
+    #[test]
+    fn export_leaves_an_ordinary_name_alone() {
+        for name in ["TEST", "W1AW", "146520"] {
+            let record = channel_to_record(&channel_named(name));
+            assert_eq!(record[COL_NAME], name, "{name:?} must be exported as-is");
+        }
+    }
+
+    /// The guard is only correct if it is reversible: a name that survives
+    /// export must come back byte-identical through this crate's own importer.
+    #[test]
+    fn a_guarded_name_survives_an_export_import_round_trip() {
+        for name in ["=1+1", "@SUM(A1)", "-1", "'quoted", "'=ambiguous", "TEST"] {
+            let plan = FrequencyPlan {
+                name: String::new(),
+                radio_model: None,
+                channels: vec![channel_named(name)],
+                created: None,
+            };
+
+            let mut csv = Vec::new();
+            export_chirp_csv(&plan, &mut csv).unwrap();
+            let (reimported, _warnings) = import_chirp_csv_reader(csv.as_slice()).unwrap();
+
+            assert_eq!(
+                reimported.channels.first().map(|c| c.name.as_str()),
+                Some(name),
+                "{name:?} must round-trip byte-identically"
+            );
         }
     }
 
