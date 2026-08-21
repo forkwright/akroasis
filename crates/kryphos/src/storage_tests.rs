@@ -821,8 +821,8 @@ fn the_public_key_reads_without_a_passphrase_and_without_the_lock() {
         .unwrap();
 
     assert_eq!(
-        read,
-        expected.to_vec(),
+        read.as_bytes(),
+        &expected,
         "the recorded verifying key must be readable with no passphrase and no lock"
     );
 }

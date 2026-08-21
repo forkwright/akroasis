@@ -417,8 +417,9 @@ fn write_list_json_report(entries: &[EntryInfo], out: &mut dyn Write) -> Result<
 /// Needs no passphrase. The verifying key is stored unsealed precisely so
 /// that checking provenance does not require the secret.
 fn run_identity(path: &Path, json: bool, out: &mut dyn Write) -> Result<(), VaultCliError> {
-    let recorded = Vault::installation_public_key(path).context(VaultSnafu)?;
-    let public_key = recorded.map(hex_encode);
+    let public_key = Vault::installation_public_key(path)
+        .context(VaultSnafu)?
+        .map(|key| key.to_string());
 
     if json {
         let report = IdentityReport {
@@ -444,11 +445,6 @@ fn run_identity(path: &Path, json: bool, out: &mut dyn Write) -> Result<(), Vaul
         .context(IoSnafu)?,
     }
     Ok(())
-}
-
-/// Lowercase hex, matching the fingerprint format `VerifyingKey` renders.
-fn hex_encode(bytes: Vec<u8>) -> String {
-    bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
 /// Formats a jiff Timestamp as a human-readable string.

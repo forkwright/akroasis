@@ -18,7 +18,7 @@ use crate::error::{
     EntryNotDeletableSnafu, EntryRevokedSnafu, IoSnafu, NotInitializedSnafu, SerializationSnafu,
     TamperLogSnafu, VaultError, WrongPassphraseSnafu,
 };
-use crate::key::{InstallationIdentity, VaultKey};
+use crate::key::{InstallationIdentity, VaultKey, VerifyingKey};
 use crate::vault::{
     CredentialType, EntryMetadata, EntryStatus, HistoryEvent, HistoryEventKind, KdfParams,
     MIN_SUPPORTED_VAULT_VERSION, VAULT_VERSION, seal_signing_key, unseal_signing_key,
@@ -474,14 +474,34 @@ impl Vault {
     ///
     /// # Errors
     ///
-    /// Returns [`VaultError::Io`] if the header cannot be read, or
-    /// [`VaultError::Serialization`] if it cannot be parsed.
-    pub fn installation_public_key(path: impl AsRef<Path>) -> Result<Option<Vec<u8>>, VaultError> {
+    /// Returns [`VaultError::Io`] if the header cannot be read,
+    /// [`VaultError::Serialization`] if it cannot be parsed, or
+    /// [`VaultError::InvalidHeader`] if the recorded bytes are not a
+    /// well-formed Ed25519 verifying key.
+    ///
+    /// WHY a parsed [`VerifyingKey`] rather than the raw bytes: parsing at the
+    /// boundary makes a corrupt record an error here instead of a plausible
+    /// hex string further downstream, and it hands every caller this crate's
+    /// own canonical rendering rather than inviting each to hand-encode a
+    /// fingerprint and drift from the others.
+    pub fn installation_public_key(
+        path: impl AsRef<Path>,
+    ) -> Result<Option<VerifyingKey>, VaultError> {
         let path = path.as_ref();
         let header_bytes = fs::read(path.join(HEADER_FILE)).context(IoSnafu { path })?;
         let header: StoredHeader =
             serde_json::from_slice(&header_bytes).context(SerializationSnafu)?;
-        Ok(header.installation_public_key)
+
+        header
+            .installation_public_key
+            .map(|bytes| {
+                VerifyingKey::from_bytes(&bytes).map_err(|source| VaultError::InvalidHeader {
+                    reason: format!(
+                        "installation_public_key is not a valid verifying key: {source}"
+                    ),
+                })
+            })
+            .transpose()
     }
 
     /// Recovers this vault's installation identity, signing key included.
