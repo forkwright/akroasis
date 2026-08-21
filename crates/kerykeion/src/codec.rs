@@ -25,7 +25,7 @@ use crate::types::{FRAME_MAGIC, MAX_PACKET_SIZE};
 ///
 /// One codec instance is typically wrapped in a [`tokio_util::codec::Framed`] that
 /// sits on top of a serial port or TCP stream.
-pub(crate) struct MeshCodec;
+pub struct MeshCodec;
 
 impl Decoder for MeshCodec {
     type Item = FromRadio;

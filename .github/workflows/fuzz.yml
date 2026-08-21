@@ -1,0 +1,74 @@
+# WHY(#95): the fuzz targets live outside the workspace and need a nightly
+# toolchain, so the stable gate never compiles them. Without this job they would
+# be code that is never built and never run — indistinguishable, from the
+# outside, from targets that work. This is what makes them evidence.
+#
+# WHY not on every PR: fuzzing is not a correctness gate for unrelated changes,
+# and CI minutes are the fleet's binding constraint at parallelism. It runs when
+# the fuzz crate or the code under test changes, weekly to catch drift, and on
+# demand.
+name: Fuzz
+
+on:
+  pull_request:
+    paths:
+      - "fuzz/**"
+      - "crates/kerykeion/**"
+      - ".github/workflows/fuzz.yml"
+  schedule:
+    # Mondays, 05:00 UTC.
+    - cron: "0 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fuzz-${{ github.event_name == 'push' && github.sha || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fuzz:
+    name: fuzz (${{ matrix.target }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      # WHY: one target finding a crash must not cancel the others — the whole
+      # point is to learn about all three in one run.
+      fail-fast: false
+      matrix:
+        target: [frame_decode, message_parse, routing_decision]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+        with:
+          persist-credentials: false
+
+      # WHY nightly: cargo-fuzz builds with libFuzzer and a sanitizer, neither of
+      # which is available on stable. This is scoped to this job; the repository
+      # toolchain stays stable.
+      - uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1.17.0
+        with:
+          toolchain: nightly
+
+      - uses: taiki-e/install-action@288e746965032cfcc232e09af2daf5f23c14d780
+        with:
+          tool: cargo-fuzz
+
+      - name: Install protobuf compiler
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+
+      # WHY a time box rather than a run count: a smoke test answers "does this
+      # target build, load its corpus, and execute without crashing", which is a
+      # duration question. Finding new defects is the scheduled run's job.
+      - name: Fuzz ${{ matrix.target }}
+        run: cargo fuzz run ${{ matrix.target }} -- -max_total_time=60 -rss_limit_mb=4096
+
+      # WHY: libFuzzer writes a reproducer next to the crash. Without this the
+      # run tells you it failed and destroys the input that proves it.
+      - name: Upload crash artifacts
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v4
+        with:
+          name: fuzz-artifacts-${{ matrix.target }}
+          path: fuzz/artifacts/
+          if-no-files-found: ignore
