@@ -500,10 +500,7 @@ mod tests {
         // Three domains in the busy cell, one in the quiet cell.
         grid.ingest(&signal_at(rf_kind(), busy));
         grid.ingest(&signal_at(mesh_kind(), busy));
-        grid.ingest(&signal_at(
-            SignalKind::Gps(GpsDetail::SpoofingSuspected { confidence: 0.9 }),
-            busy,
-        ));
+        grid.ingest(&signal_at(gps_kind(), busy));
         grid.ingest(&signal_at(rf_kind(), quiet));
 
         let window = std::time::Duration::from_secs(30);
