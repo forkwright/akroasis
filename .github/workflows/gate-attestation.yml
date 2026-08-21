@@ -106,9 +106,9 @@ jobs:
     uses: forkwright/.github/.github/workflows/hybrid-gate.yml@main
     with:
       fmt_cmd: "cargo fmt --all -- --check"
-      check_cmd: "cargo check --workspace --all-targets --features syntonia/hardware-serial --jobs 8"
-      clippy_cmd: "cargo clippy --workspace --all-targets --jobs 8 -- -D warnings"
-      nextest_cmd: "cargo nextest run --workspace --features syntonia/hardware-serial --build-jobs 8 --test-threads 8"
+      check_cmd: "cargo check --workspace --all-targets --features syntonia/hardware-serial --jobs 8 --keep-going"
+      clippy_cmd: "cargo clippy --workspace --all-targets --jobs 8 --keep-going -- -D warnings"
+      nextest_cmd: "cargo nextest run --workspace --features syntonia/hardware-serial --build-jobs 8 --test-threads 8 --no-fail-fast"
       # WHY empty: nextest does not run doctests (kanon#3486). Left empty
       # here, not skipped by oversight -- every fenced block in a doc
       # comment across the workspace is ```text``` (ASCII diagrams) or
