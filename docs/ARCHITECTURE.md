@@ -11,14 +11,15 @@ Interface:      opsis (desktop-first via theatron); akroasis-server (axum HTTP/S
 Orchestration:  praxis (automation, playbooks, PACE)
 Analysis:       semaino (aggregation), ichneutes (correlation)
 Collection:     syntonia, kerykeion, dektis, engys, aspis, skopos, peira
-Foundation:     koinon (shared types), kryphos (encryption), lethe (privacy)
+Foundation:     stoicheion (vocabulary), tekmerion (evidence), kryphos (encryption), lethe (privacy)
 ```
 
 ## Crate registry
 
 | Crate | Layer | Purpose |
 |-------|-------|---------|
-| **koinon** | Foundation | Shared types, signal model, entity index, temporal baseline engine, tamper-evident logging |
+| **stoicheion** | Foundation | Shared types, signal model, entity index, temporal baseline engine |
+| **tekmerion** | Foundation | Validated callers and authority, effect receipts, tamper-evident logging |
 | **kryphos** | Foundation | Encryption, key management, forward secrecy, credential vault, identity management |
 | **lethe** | Foundation | Privacy infrastructure, VPN, anonymization, OPSEC scoring |
 | **syntonia** | Collection | Radio management, frequency plans, serial protocols, hardware programming |

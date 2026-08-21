@@ -26,7 +26,8 @@
 
 | Crate | Greek | Over | L3 Essential Nature |
 |-------|-------|------|---------------------|
-| **koinon** | κοινόν | "common/shared" | The commons - shared types, signal model, entity index, temporal engine, geographic primitives, hardware asset registry, simulation framework, tamper-evident logging. What belongs to everyone. The koinon was the federation - the shared structure that made cooperation between independent cities possible. |
+| **stoicheion** | στοιχεῖον | "element" | The elements - shared types, signal model, entity index, temporal engine, geographic primitives, hardware asset registry. The letters of the alphabet and the primary constituents of matter bore the same name: what everything else is composed of and stated in, carrying no argument of its own. |
+| **tekmerion** | τεκμήριον | "proof" | The evidence - validated callers and authority, effect receipts, tamper-evident logging. In Attic legal usage a τεκμήριον was conclusive proof, distinguished from σημεῖον, a mere sign: not what suggests a conclusion but what establishes it. What the system can still assert about its own past. |
 | **kryphos** | κρύφος | "crypto/identity" | The hidden - encryption, key management, forward secrecy, credential vault, identity/persona management, callsign compliance. That which is kryphos resists discovery by nature. |
 | **lethe** | λήθη | "privacy" | Forgetting - VPN/proxy management, anonymization, metadata scrubbing, counter-surveillance, OPSEC scoring, IMSI catcher detection. The river that makes what passes through it unseen. Etymological complement to Aletheia: ἀ-λήθεια negates λήθη. Same root, opposite directions. Strongest topological pairing in the ecosystem. |
 

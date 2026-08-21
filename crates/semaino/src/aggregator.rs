@@ -73,7 +73,7 @@ impl KindKey {
             SignalKind::Proximity(_) => Self::Proximity,
             SignalKind::Gps(_) => Self::Gps,
             SignalKind::Environmental(_) => Self::Environmental,
-            // WHY: SignalKind is #[non_exhaustive] in koinon; the wildcard arm
+            // WHY: SignalKind is #[non_exhaustive] in stoicheion; the wildcard arm
             // handles Osint and any future variants without triggering
             // unreachable_patterns. Grouping unknowns with Osint keeps the
             // baseline discriminant stable.
@@ -241,7 +241,7 @@ pub(crate) fn day_hour_from_timestamp(ts: &stoicheion::Timestamp) -> (u8, u8) {
         return (0, 0);
     };
     let dt = zoned.datetime();
-    // WHY: jiff Weekday is 1-indexed (Mon=1..Sun=7); subtract 1 to match koinon's 0-indexed layout.
+    // WHY: jiff Weekday is 1-indexed (Mon=1..Sun=7); subtract 1 to match stoicheion's 0-indexed layout.
     let day = match dt.weekday() {
         Weekday::Monday => 0u8,
         Weekday::Tuesday => 1,

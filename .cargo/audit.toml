@@ -13,7 +13,7 @@ ignore = [
     # rand 0.9.2 unsound only when a custom logger re-enters rand::rng();
     # akroasis uses tracing-subscriber with no custom logger that calls
     # into rand, so the condition is unreachable. Pulled in transitively
-    # via ulid 1.2.1 (semaino/koinon/syntonia/kryphos/kerykeion) and
+    # via ulid 1.2.1 (semaino/stoicheion/syntonia/kryphos/kerykeion) and
     # proptest 1.11.0 (dev-only).
     "RUSTSEC-2026-0097",
 ]

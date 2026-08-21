@@ -9,7 +9,7 @@
     not(feature = "hardware-serial"),
     expect(
         dead_code,
-        reason = "protocol constants used only with hardware-serial feature, tracked in #264"
+        reason = "protocol constants are consumed only by the hardware-serial protocol module, qualified by #79"
     )
 )]
 

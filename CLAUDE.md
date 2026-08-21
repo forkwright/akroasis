@@ -1,5 +1,5 @@
 <!--
-scope: akroasis repo conventions (SIGINT/comms crates: koinon, kryphos)
+scope: akroasis repo conventions (SIGINT/comms crates: stoicheion, tekmerion, kryphos)
 defers_to: ~/menos-ops/CLAUDE.md for machine topology; ~/.claude/CLAUDE.md for operator principles
 tightens: per-crate CLAUDE.md files may narrow within their layer
 -->
@@ -17,7 +17,7 @@ Writing: `~/dev/kanon/crates/basanos/standards/WRITING.md`
 
 ## Structure
 
-Foundation layer: `koinon` (shared types, signal model), `kryphos` (encryption, identity). See README.md for the full domain map with status markers and `docs/ARCHITECTURE.md` for layer structure.
+Foundation layer: `stoicheion` (the vocabulary: shared types, signal model), `tekmerion` (evidence: callers, effect receipts, tamper log), `kryphos` (encryption, identity). See README.md for the full domain map with status markers and `docs/ARCHITECTURE.md` for layer structure.
 
 ## Commands
 

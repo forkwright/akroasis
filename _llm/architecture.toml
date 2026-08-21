@@ -29,9 +29,14 @@ path = "crates/akroasis"
 role = "Single binary shell with CLI dispatch for shipped and future domain stubs."
 
 [[architecture.crates]]
-name = "koinon"
-path = "crates/koinon"
-role = "Shared IDs, coordinates, frequency/power types, GeoSignal model, hardware registry, baselines, and tamper log."
+name = "stoicheion"
+path = "crates/stoicheion"
+role = "The workspace vocabulary: shared IDs, coordinates, frequency/power types, GeoSignal model, hardware registry, and baselines."
+
+[[architecture.crates]]
+name = "tekmerion"
+path = "crates/tekmerion"
+role = "Evidence: validated callers and authority, effect receipts, and the tamper-evident log."
 
 [[architecture.crates]]
 name = "kryphos"

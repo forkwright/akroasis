@@ -85,7 +85,7 @@ fn a_substituted_signature_does_not_verify() {
     // The seal's MAC covers the signature field, so the edit is caught there
     // and the signature check never runs. That is the correct outer defence and
     // the honest thing for this test to assert — it does NOT cover
-    // `check_tip`'s signature arm, which koinon's own unit tests exercise
+    // `check_tip`'s signature arm, which tekmerion's own unit tests exercise
     // directly with a valid MAC over a bad signature.
     assert_eq!(
         status.unwrap(),
@@ -121,7 +121,7 @@ fn a_substituted_key_id_does_not_verify() {
         .verify_tamper_log_provenance();
 
     // As above: the MAC covers the key id too, so this is refused before the
-    // signature is examined. koinon's unit tests cover the case where the MAC
+    // signature is examined. tekmerion's unit tests cover the case where the MAC
     // is valid and the key id names a different installation.
     assert_eq!(
         status.unwrap(),
