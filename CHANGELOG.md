@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.4](https://github.com/forkwright/akroasis/compare/v0.4.3...v0.4.4) (2026-08-21)
+
+
+### Bug Fixes
+
+* **kryphos:** delete the dead vault types, and the wrong SALT_LEN they carried ([#445](https://github.com/forkwright/akroasis/issues/445)) ([e6ab46d](https://github.com/forkwright/akroasis/commit/e6ab46d3dded1bee118825af48f90f7d496bd807))
+
 ## [0.4.3](https://github.com/forkwright/akroasis/compare/v0.4.2...v0.4.3) (2026-08-21)
 
 
