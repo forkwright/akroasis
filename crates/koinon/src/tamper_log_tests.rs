@@ -55,7 +55,7 @@ fn action_kind() -> LogEntryKind {
 
 fn vault_mutation_kind() -> LogEntryKind {
     LogEntryKind::VaultMutation {
-        credential_name: CompactString::from("incident-radio-key"),
+        credential_ref: CompactString::from("a1b2c3d4e5f60718"),
         operation: CompactString::from("rotate"),
     }
 }

@@ -60,6 +60,16 @@ const CHAIN_KEY_DOMAIN: &[u8] = b"kryphos/tamper-log/chain-key/v1";
 /// to manage, mirroring [`CHAIN_KEY_DOMAIN`].
 const LOOKUP_KEY_DOMAIN: &[u8] = b"kryphos/vault/lookup-key/v1";
 
+/// Domain separator for the audit log's per-credential reference.
+///
+/// WHY a domain of its own rather than reusing [`LOOKUP_KEY_DOMAIN`]: the two
+/// identifiers answer different questions and should not be interchangeable.
+/// The lookup key addresses a record in the fjall store; this one groups
+/// entries in the audit log. Deriving both from the same domain would make an
+/// audit reference usable as a store key, which is a capability the audit log
+/// has no reason to hand anyone.
+const AUDIT_REF_DOMAIN: &[u8] = b"kryphos/vault/audit-ref/v1";
+
 /// Stands in for a vault that has recorded no installation identity.
 ///
 /// WHY a verifier that verifies nothing rather than skipping the check: the
@@ -1064,6 +1074,34 @@ impl Vault {
     /// Deterministic (same name -> same key), so `get`/`add`/`remove` stay
     /// O(1) keyspace lookups without ever storing the name itself. A fresh
     /// derivation on every call, mirroring [`Self::chain_key`].
+    /// Derives the audit log's opaque reference for `name`.
+    ///
+    /// Deterministic, so every entry touching one credential shares a
+    /// reference and its history stays followable; keyed by the vault key, so
+    /// a reader holding the log file and not the passphrase learns neither the
+    /// name nor whether two vaults hold the same one.
+    ///
+    /// WHY this exists at all: `#215` stopped the fjall store revealing
+    /// credential names, and the tamper log kept writing them in cleartext —
+    /// so the audit log became the weaker link for the exact threat that issue
+    /// named, filesystem access without the passphrase (forkwright/akroasis#378).
+    ///
+    /// Rendered hex rather than raw bytes because the field is a
+    /// `CompactString` that lands in CBOR; 16 hex characters of a keyed BLAKE3
+    /// is ample to keep credentials distinct within one vault's log while
+    /// keeping entries small.
+    fn audit_ref(&self, name: &str) -> CompactString {
+        let subkey = blake3::keyed_hash(self.key.as_bytes(), AUDIT_REF_DOMAIN);
+        let digest = blake3::keyed_hash(subkey.as_bytes(), name.as_bytes());
+        let bytes = digest.as_bytes();
+        let mut rendered = String::with_capacity(16);
+        for byte in bytes.iter().take(8) {
+            use std::fmt::Write as _;
+            let _ = write!(rendered, "{byte:02x}");
+        }
+        CompactString::from(rendered)
+    }
+
     fn lookup_key(&self, name: &str) -> [u8; 32] {
         let subkey = blake3::keyed_hash(self.key.as_bytes(), LOOKUP_KEY_DOMAIN);
         blake3::keyed_hash(subkey.as_bytes(), name.as_bytes()).into()
@@ -1162,7 +1200,7 @@ impl Vault {
             }
         };
         log.append(LogEntryKind::VaultMutation {
-            credential_name: CompactString::from(name),
+            credential_ref: self.audit_ref(name),
             operation: CompactString::from(operation),
         })
         .context(TamperLogSnafu)?;

@@ -67,12 +67,22 @@ fn vault_mutations_append_intact_tamper_log() {
         let (entry, _hash) = koinon::tamper_log::decode_entry(&data[offset..]).unwrap();
         match entry.kind {
             LogEntryKind::VaultMutation {
-                credential_name,
+                credential_ref,
                 operation: logged_operation,
             } => {
+                // WHY not compared against `name`: the log records a derived
+                // reference, never the name (#378). What must hold is that the
+                // reference is opaque and stable — the two properties that let
+                // an operator follow one credential's history without the file
+                // telling a reader what any credential is called.
+                assert_ne!(
+                    credential_ref, name,
+                    "entry {idx} must not carry the plaintext name"
+                );
                 assert_eq!(
-                    credential_name, name,
-                    "entry {idx} credential_name mismatch"
+                    credential_ref.len(),
+                    16,
+                    "entry {idx} reference must be the fixed-width derived form"
                 );
                 assert_eq!(
                     logged_operation, operation,
@@ -82,6 +92,61 @@ fn vault_mutations_append_intact_tamper_log() {
             other => panic!("entry {idx}: expected VaultMutation, got {other:?}"),
         }
     }
+
+    // Stability and distinctness, which is the whole reason the reference is
+    // derived rather than random: the three entries for one credential share a
+    // reference, and the other credential's differs.
+    let refs: Vec<String> = (0..5)
+        .map(|idx| {
+            let offset = entry_offset(&data, idx);
+            let (entry, _) = koinon::tamper_log::decode_entry(&data[offset..]).unwrap();
+            match entry.kind {
+                LogEntryKind::VaultMutation { credential_ref, .. } => credential_ref.to_string(),
+                other => panic!("entry {idx}: expected VaultMutation, got {other:?}"),
+            }
+        })
+        .collect();
+    assert_eq!(refs[0], refs[1], "one credential must keep one reference");
+    assert_eq!(refs[1], refs[2], "one credential must keep one reference");
+    assert_eq!(refs[3], refs[4], "one credential must keep one reference");
+    assert_ne!(
+        refs[0], refs[3],
+        "different credentials must not collide onto one reference"
+    );
+}
+
+/// The audit log must not reveal what the credentials are called.
+///
+/// The sibling of `on_disk_fjall_contents_do_not_reveal_credential_name`,
+/// which #215 added for the keyspace. Until #378 the tamper log kept writing
+/// names in cleartext, so the two stores disagreed about the same threat —
+/// filesystem access without the passphrase — and the log was the weaker one.
+#[test]
+fn the_audit_log_does_not_reveal_credential_names() {
+    let dir = tempfile::tempdir().unwrap();
+    let vault_path = dir.path().join("named-vault");
+    let vault = Vault::create(&vault_path, TEST_PASSPHRASE).unwrap();
+
+    vault
+        .add("incident-radio-key", CredentialType::RadioKey, b"secret")
+        .unwrap();
+    vault.rotate("incident-radio-key", b"secret-2").unwrap();
+
+    let data = std::fs::read(vault.tamper_log_path()).unwrap();
+    assert!(
+        !data
+            .windows(b"incident-radio-key".len())
+            .any(|w| w == b"incident-radio-key"),
+        "the credential name must not appear anywhere in the log bytes"
+    );
+
+    // The acceptance partner: the operation names ARE still there, so the
+    // assertion above is reporting a protected name rather than a log that
+    // failed to record anything.
+    assert!(
+        data.windows(b"rotate".len()).any(|w| w == b"rotate"),
+        "the operation must still be recorded in cleartext"
+    );
 }
 
 #[test]

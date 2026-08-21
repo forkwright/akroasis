@@ -52,17 +52,30 @@ pub enum LogEntryKind {
     },
     /// A credential vault entry lifecycle mutation was committed.
     VaultMutation {
-        /// Human-readable credential name affected by the mutation.
-        credential_name: CompactString,
+        /// Opaque reference to the credential the mutation affected.
+        ///
+        /// NOT a name. The writer derives this from the credential's name
+        /// under a secret it holds, so the same credential yields the same
+        /// reference across entries — enough to follow one credential's
+        /// history through the log — while a reader without that secret learns
+        /// nothing about what any of them are called
+        /// (forkwright/akroasis#378).
+        ///
+        /// This type does not derive the reference; it only carries it. What
+        /// the derivation is, and therefore who can reverse it, belongs to the
+        /// writer.
+        credential_ref: CompactString,
         /// Mutation operation, e.g. `"add"`, `"rotate"`, `"revoke"`, or `"remove"`.
         operation: CompactString,
     },
 }
 
 // WHY: manual Debug instead of #[derive(Debug)] — `VaultMutation` carries a
-// credential name. It is a label, not the credential's secret value, but
-// Debug output lands in logs; redact it so a vault-mutation log entry never
-// prints a credential name verbatim (RUST/no-debug-derive-on-public-types).
+// credential reference. It is derived rather than plaintext (#378), so this
+// redaction is no longer the only thing standing between a credential name and
+// a log file; it stays because a stable per-credential identifier is still a
+// correlation handle, and Debug output travels further than the audit log does
+// (RUST/no-debug-derive-on-public-types).
 impl std::fmt::Debug for LogEntryKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -113,11 +126,11 @@ impl std::fmt::Debug for LogEntryKind {
                 .field("target", target)
                 .finish(),
             Self::VaultMutation {
-                credential_name: _,
+                credential_ref: _,
                 operation,
             } => f
                 .debug_struct("VaultMutation")
-                .field("credential_name", &"<redacted>")
+                .field("credential_ref", &"<redacted>")
                 .field("operation", operation)
                 .finish(),
         }
