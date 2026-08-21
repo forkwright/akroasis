@@ -228,6 +228,21 @@ pub(super) fn stream_verify(
 /// new file, or one whose seal cannot be trusted — either way the stream
 /// will simply fail to verify against a wrong seed rather than silently
 /// accepting the wrong content).
+/// Streams `path` and returns the hash the chain actually ends at.
+///
+/// Exists so provenance can be checked against where the chain *is* rather
+/// than where a seal claims it is — the seal is the thing under examination,
+/// so taking the terminal hash from it would let the record answer the
+/// question being asked of it.
+pub(super) fn stream_terminal_hash(
+    path: &Path,
+    chain_key: &ChainKey,
+    sealed: seal::SealState,
+) -> Result<[u8; 32], TamperLogError> {
+    let start_hash = resolve_start_hash(sealed, chain_key);
+    Ok(stream_verify(path, chain_key, start_hash)?.terminal_hash)
+}
+
 pub(super) fn resolve_start_hash(sealed: seal::SealState, chain_key: &ChainKey) -> [u8; 32] {
     match sealed {
         seal::SealState::Valid {

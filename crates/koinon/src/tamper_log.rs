@@ -80,9 +80,49 @@ mod segments;
 
 use rotation::rotation_path;
 
-pub use seal::{CHAIN_KEY_LEN, ChainKey};
+pub use seal::{
+    CHAIN_KEY_LEN, ChainKey, KEY_ID_LEN, TIP_SIGNATURE_LEN, TipProvenance, TipSigner, TipStatus,
+    TipVerifier,
+};
 pub use segments::{SegmentChainStatus, verify_segment_chain};
 pub use verify::{ChainStatus, VerificationResult, verify_chain};
+
+/// Checks which installation produced the log at `path`, against `verifier`.
+///
+/// Verifies the hash chain first and reports provenance only for a log whose
+/// chain is sound. A provenance answer over an unverified chain would be a
+/// claim about bytes nobody has checked — the signature would confirm that an
+/// installation signed *some* tip while the entries beneath it went unexamined.
+///
+/// Returns [`TipStatus::NoSeal`] when the chain itself does not verify, since
+/// the caller's own chain check is the report that matters there.
+///
+/// # Errors
+///
+/// Returns [`TamperLogError::Io`] if the log cannot be read.
+pub fn verify_tip_provenance(
+    path: impl AsRef<Path>,
+    chain_key: &ChainKey,
+    verifier: &dyn TipVerifier,
+) -> Result<TipStatus, TamperLogError> {
+    let path = path.as_ref();
+    let result = verify_chain(path, chain_key)?;
+
+    // WHY only these two statuses: `Intact` and `Unsealed` are the states a
+    // legitimate writer can leave (akroasis#285). Every other status means the
+    // chain is broken or truncated, and provenance over a broken chain is not
+    // a weaker answer — it is a misleading one.
+    if !matches!(
+        result.status,
+        ChainStatus::Intact | ChainStatus::Unsealed { .. }
+    ) {
+        return Ok(TipStatus::NoSeal);
+    }
+
+    let sealed = seal::read_seal(path, chain_key);
+    let terminal = verify::stream_terminal_hash(path, chain_key, sealed)?;
+    Ok(seal::check_tip(sealed, verifier, &terminal))
+}
 
 /// Maximum allowed entry payload size (16 MiB).
 ///
@@ -344,6 +384,12 @@ pub struct TamperLog {
     bytes_written: u64,
     max_file_bytes: u64,
     chain_key: ChainKey,
+    /// Installation signer, when this handle was opened with one.
+    ///
+    /// `None` leaves every seal unsigned, which is what a log written before
+    /// provenance existed — or by a writer with no identity — must keep
+    /// producing. See [`Self::open_signed`].
+    signer: Option<Box<dyn seal::TipSigner + Send + Sync>>,
     // WHY: held for its Drop impl, which releases the OS advisory lock —
     // never read, only kept alive. Mirrors kryphos::Vault's `_lock` field.
     _lock: File,
@@ -380,6 +426,30 @@ impl TamperLog {
         Self::open_with_config(path, chain_key, &TamperLogConfig::default())
     }
 
+    /// Opens a log whose seals will carry `signer`'s installation provenance.
+    ///
+    /// Every seal this handle writes commits the signer to the log's terminal
+    /// hash, so a later reader holding only the matching verifying key can
+    /// establish which installation produced the chain — without the chain key
+    /// and without the vault passphrase (akroasis#284).
+    ///
+    /// WHY a separate constructor rather than a parameter on [`Self::open`]:
+    /// an unsigned log is a legitimate, supported state — every log written
+    /// before provenance existed is one — so requiring a signer everywhere
+    /// would force every caller to supply an identity it may not have, to say
+    /// something it does not mean.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::open`].
+    pub fn open_signed(
+        path: impl AsRef<Path>,
+        chain_key: ChainKey,
+        signer: Box<dyn seal::TipSigner + Send + Sync>,
+    ) -> Result<Self, TamperLogError> {
+        Self::open_inner(path, chain_key, &TamperLogConfig::default(), Some(signer))
+    }
+
     /// Opens or creates a log file at `path` with the supplied tuning.
     ///
     /// Equivalent to [`Self::open`] but reads all behavioral knobs from
@@ -398,6 +468,16 @@ impl TamperLog {
         path: impl AsRef<Path>,
         chain_key: ChainKey,
         config: &TamperLogConfig,
+    ) -> Result<Self, TamperLogError> {
+        Self::open_inner(path, chain_key, config, None)
+    }
+
+    /// The one open path; the public constructors differ only in their signer.
+    fn open_inner(
+        path: impl AsRef<Path>,
+        chain_key: ChainKey,
+        config: &TamperLogConfig,
+        signer: Option<Box<dyn seal::TipSigner + Send + Sync>>,
     ) -> Result<Self, TamperLogError> {
         let path = path.as_ref().to_owned();
 
@@ -458,6 +538,7 @@ impl TamperLog {
             bytes_written,
             max_file_bytes: config.max_file_bytes,
             chain_key,
+            signer,
             _lock: held_lock,
         };
         log.refresh_seal()?;
@@ -536,11 +617,26 @@ impl TamperLog {
 
     /// Rewrites the sidecar seal to authenticate the log's current state.
     fn refresh_seal(&self) -> Result<(), TamperLogError> {
+        // WHY the tip rather than each entry: the chain already binds every
+        // entry to this terminal hash, so a signature over the tip is a claim
+        // about all of them. Signing records individually would put the
+        // signature inside the bytes the chain hash covers, which is circular
+        // (akroasis#284).
+        let provenance = self.signer.as_ref().map(|signer| {
+            let payload = seal::tip_payload(&self.prev_hash);
+            seal::TipProvenance {
+                key_id: signer.key_id(),
+                terminal_hash: self.prev_hash,
+                signature: signer.sign_tip(&payload),
+            }
+        });
+
         seal::write_seal(
             &self.path,
             &self.chain_key,
             self.sequence,
             &self.segment_start_hash,
+            provenance.as_ref(),
         )
     }
 
