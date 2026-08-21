@@ -130,18 +130,25 @@ impl SemainoPipeline {
         );
 
         // Spawn broadcast drain task: reads the caller's broadcast receiver and
-        // fans the signals to (a) the aggregator and (b) the grid feed channel.
+        // feeds the single ordered queue the main loop consumes.
+        //
+        // WHY(#224) it no longer feeds the aggregator too: fanning one input
+        // down two unsynchronized channels let an aggregate for signal N reach
+        // the main loop while signals earlier than N were still queued for the
+        // grid, so detection ran against a grid missing co-located domains it
+        // had already been told about. The aggregator is now fed by the main
+        // loop, after ingestion, which is what orders the two.
+        //
+        // This task still exists so the caller's broadcast is drained promptly
+        // regardless of how long alert handling takes; collapsing it into the
+        // main loop would make a slow alert path cause dropped signals.
         let fan_task = tokio::spawn(
             async move {
                 let mut rx = rx;
                 loop {
                     match rx.recv().await {
                         Ok(signal) => {
-                            // Fan to aggregator (send error means the aggregator exited).
-                            if let Err(error) = inner_tx.send(signal.clone()) {
-                                tracing::trace!(%error, "aggregator channel closed, dropping fanned signal");
-                            }
-                            // Fan to grid channel (ignore send error — pipeline exited).
+                            // Ignore send error — the pipeline exited.
                             if signal_tx.send(signal).await.is_err() {
                                 break;
                             }
@@ -158,24 +165,21 @@ impl SemainoPipeline {
                         }
                     }
                 }
-                // Dropping inner_tx closes the aggregator's broadcast receiver,
-                // causing the aggregator task to exit.
             }
             .instrument(tracing::info_span!("semaino.fan")),
         );
 
-        // Main loop: interleave grid ingestion and alert processing.
+        // Main loop: one ordered ingest-then-score path, interleaved with
+        // alert processing.
         //
-        // WHY(#224): this used to be `biased`, always polling the aggregated
-        // (anomaly) branch first. Under a sustained burst of notable
-        // signals that unconditionally starves the grid-ingest branch,
-        // blinding convergence detection precisely during the flood the
-        // pipeline exists to catch. Fair (unbiased) polling removes that
-        // starvation. The other half of #224 -- a triggering signal's own
-        // data missing from the grid at the moment it is evaluated -- is
-        // handled unconditionally in `handle_aggregated` below, so
-        // correctness here no longer depends on which branch scheduling
-        // favors.
+        // WHY(#224) the ordering is here rather than in the fan: a signal is
+        // ingested into the grid and only then forwarded to the aggregator, so
+        // an aggregate can exist for signal N only after N and every signal
+        // before it are already in the grid. Detection therefore never runs
+        // against a grid missing a co-located domain the pipeline has already
+        // received. Two unsynchronized channels could not give that ordering at
+        // any polling priority, which is why the earlier `biased` removal
+        // improved starvation without settling this.
         let mut signal_rx = signal_rx;
         loop {
             tokio::select! {
@@ -200,6 +204,16 @@ impl SemainoPipeline {
                             if let Ok(ts) = koinon::Timestamp::from_unix_millis(evict_before_ms) {
                                 self.grid.evict(ts);
                             }
+
+                            // Forward to the aggregator only now. This single
+                            // line is the ordering guarantee (#224); moving it
+                            // above the ingest reinstates the race.
+                            if let Err(error) = inner_tx.send(s) {
+                                tracing::trace!(
+                                    %error,
+                                    "aggregator channel closed, dropping signal"
+                                );
+                            }
                         }
                         None => {
                             // signal_rx closed — broadcast drain task exited.
@@ -210,11 +224,19 @@ impl SemainoPipeline {
             }
         }
 
+        // SAFETY(#224): the main loop owns the aggregator's only input sender,
+        // so it must be dropped here. Without this the aggregator never sees
+        // its receiver close, never drops agg_tx, and the drain below never
+        // returns None — the loop would not terminate. The fan task used to
+        // own this sender and drop it on exit; moving the send into the main
+        // loop moved that obligation with it.
+        drop(inner_tx);
+
         // WHY(#232): this comment used to sit above a bare `drop(agg_rx)`,
         // which promised a drain and performed a discard. The window is real:
         // the loop above breaks as soon as signal_rx is closed and empty, and
-        // the fan task feeds inner_tx before signal_tx, so the aggregator can
-        // still be scoring queued signals at that point and emit afterwards.
+        // signals forwarded to the aggregator just before that can still be
+        // mid-scoring, emitting afterwards.
         //
         // NOTE: measured, not assumed — no scenario tried (warm-up depth,
         // escalating outliers, immediate close, multi-threaded runtime) ever
@@ -224,10 +246,9 @@ impl SemainoPipeline {
         // hardening that makes the comment true, not a fix for an observed
         // loss.
         //
-        // INVARIANT: this terminates. signal_rx closing means the fan task
-        // exited and dropped inner_tx; that closes the aggregator's receiver,
-        // so it returns and drops agg_tx — the only sender — and recv()
-        // yields None once the buffered alerts are drained.
+        // INVARIANT: this terminates, given the drop above. That closes the
+        // aggregator's receiver, so it returns and drops agg_tx — the only
+        // sender — and recv() yields None once the buffered alerts are drained.
         while let Some(aggregated) = agg_rx.recv().await {
             self.handle_aggregated(&aggregated);
         }
@@ -295,7 +316,7 @@ mod tests {
 
     use koinon::{
         AnomalyScore, Coordinates, Frequency, GeoSignal, Power, Timestamp,
-        signal::{RfDetail, SignalKind},
+        signal::{GpsDetail, MeshDetail, RfDetail, SignalKind},
     };
     use tokio::sync::broadcast;
 
@@ -323,6 +344,95 @@ mod tests {
             Timestamp::now(),
             None,
         )
+    }
+
+    /// WHY(#224): the literal `Done when` — N co-located multi-domain signals
+    /// followed by an anomaly, observed deterministically regardless of task
+    /// scheduling. Everything enters through the public broadcast input and
+    /// nothing is pre-ingested, so this exercises the real ordering rather than
+    /// calling `handle_aggregated` directly as the earlier test does.
+    ///
+    /// The discriminator is severity. An `Anomalous` score classifies `Critical`
+    /// only with three converged domains and `High` otherwise, so a grid missing
+    /// the two co-located domains at the moment the anomaly is evaluated shows
+    /// up as `High`. Under the previous two-channel fan those two could still be
+    /// queued for the grid while the aggregate arrived; ingest-before-forward
+    /// makes that impossible rather than unlikely.
+    #[tokio::test]
+    async fn co_located_domains_are_in_the_grid_before_the_anomaly_that_follows_them() {
+        let loc = Coordinates::new(51.5, -0.1, None).expect("valid coordinates");
+        let (tx, rx) = broadcast::channel::<GeoSignal>(256);
+        let mut pipeline = SemainoPipeline::new(&SemainoConfig {
+            suppression_window_secs: 0,
+            min_convergence_domains: 3,
+            ..SemainoConfig::default()
+        });
+        let sink = CollectingSink::default();
+        let sink_data = Arc::clone(&sink.0);
+        pipeline.add_sink(sink);
+
+        let rf_at = |power_dbm: f64| {
+            GeoSignal::new(
+                SignalKind::Rf(RfDetail::Transmission {
+                    frequency: Frequency::mhz(146),
+                    power: Power::dbm(power_dbm),
+                    modulation: "FM".into(),
+                    bandwidth: Frequency::khz(25),
+                }),
+                Timestamp::now(),
+                Some(loc),
+            )
+        };
+
+        // Ten identical readings drive the RF baseline to zero variance, which
+        // is what makes the outlier below score Anomalous deterministically
+        // rather than depending on a threshold.
+        for _ in 0..10 {
+            tx.send(rf_at(-30.0)).expect("send warm-up");
+        }
+
+        // Two more domains at the same coordinates. Neither produces an
+        // aggregate of its own — the mesh baseline is cold and a GPS fix with no
+        // altitude yields no feature at all — so they contribute to the grid
+        // without adding alert noise.
+        tx.send(GeoSignal::new(
+            SignalKind::Mesh(MeshDetail::NodeSeen {
+                node_id: 1,
+                snr: 5.0,
+                hop_count: 1,
+            }),
+            Timestamp::now(),
+            Some(loc),
+        ))
+        .expect("send mesh");
+        tx.send(GeoSignal::new(
+            SignalKind::Gps(GpsDetail::Fix {
+                satellites: 9,
+                hdop: 0.8,
+                speed_mps: None,
+            }),
+            Timestamp::now(),
+            Some(loc),
+        ))
+        .expect("send gps");
+
+        // The anomaly. It arrives last, so both domains above precede it.
+        tx.send(rf_at(-10.0)).expect("send outlier");
+        drop(tx);
+
+        pipeline.run(rx).await;
+
+        let severities: Vec<_> = {
+            let alerts = sink_data.lock().expect("sink lock");
+            alerts.iter().map(|a| a.severity.clone()).collect()
+        };
+        assert_eq!(
+            severities,
+            vec![koinon::signal::AlertSeverity::Critical],
+            "one alert, Critical: three domains converged at the anomaly's own \
+             cell. High would mean the mesh and GPS signals were not yet in the \
+             grid when the anomaly was evaluated (#224)"
+        );
     }
 
     #[tokio::test]
