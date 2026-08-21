@@ -24,7 +24,7 @@ use crate::connection::MeshConnection;
 use crate::error::HandshakeFailedSnafu;
 use crate::node_db::{MeshNode, NodeDb, NodePosition, UserInfo};
 use crate::proto::{Channel, ToRadio, from_radio, to_radio};
-use crate::types::NodeNum;
+use crate::types::{MAX_CHANNELS, MAX_LIVE_NODES, NodeNum};
 
 // Historical default (10 s) now lives in [`HandshakeConfig::default`].
 
@@ -105,13 +105,38 @@ pub async fn handshake_with_config(
                 Some(from_radio::PayloadVariant::NodeInfo(ni)) => {
                     let node = node_info_to_mesh_node(&ni);
                     tracing::trace!(node_num = node.num.0, "received NodeInfo");
-                    known_nodes.push(node.clone());
+                    // WHY(#229) bounded: everything in this loop is supplied by
+                    // the peer, and the handshake's own timeout limits how long
+                    // it may talk, not how much it may say. `MAX_LIVE_NODES`
+                    // already exists as the shared ceiling for unauthenticated
+                    // node identities (#204); `NodeDb` honours it and this local
+                    // accumulation did not.
+                    if known_nodes.len() < MAX_LIVE_NODES {
+                        known_nodes.push(node.clone());
+                        if known_nodes.len() == MAX_LIVE_NODES {
+                            tracing::warn!(
+                                limit = MAX_LIVE_NODES,
+                                "handshake node list reached its ceiling; \
+                                 further NodeInfo will be ignored"
+                            );
+                        }
+                    }
                     node_db.insert(node);
                 }
 
                 Some(from_radio::PayloadVariant::Channel(ch)) => {
                     tracing::trace!(index = ch.index, "received Channel");
-                    channels.push(ch);
+                    // WHY(#229): a device has at most `MAX_CHANNELS` channels.
+                    // Anything past that is a peer repeating itself, and this
+                    // vector grew for as long as it cared to.
+                    if channels.len() < usize::from(MAX_CHANNELS) {
+                        channels.push(ch);
+                    } else {
+                        tracing::warn!(
+                            limit = MAX_CHANNELS,
+                            "handshake channel list reached its ceiling; ignoring further Channel"
+                        );
+                    }
                 }
 
                 Some(from_radio::PayloadVariant::ConfigCompleteId(id)) => {
@@ -281,6 +306,117 @@ mod tests {
         async fn reconnect(&mut self) -> Result<(), Error> {
             Ok(())
         }
+    }
+
+    /// Mock that floods one payload kind before completing, standing in for a
+    /// peer that says more than a real device would.
+    struct FloodMock {
+        my_info_sent: bool,
+        remaining: usize,
+        channels: bool,
+        config_id: Option<u32>,
+    }
+
+    impl MeshConnection for FloodMock {
+        async fn send(&mut self, packet: ToRadio) -> Result<(), Error> {
+            if let Some(to_radio::PayloadVariant::WantConfigId(id)) = &packet.payload_variant {
+                self.config_id = Some(*id);
+            }
+            Ok(())
+        }
+
+        async fn recv(&mut self) -> Result<FromRadio, Error> {
+            // The handshake requires MyNodeInfo before anything else; without it
+            // it fails before reaching the accumulation this fixture exercises.
+            if !self.my_info_sent {
+                self.my_info_sent = true;
+                return Ok(FromRadio {
+                    id: 1,
+                    payload_variant: Some(from_radio::PayloadVariant::MyInfo(MyNodeInfo {
+                        my_node_num: 0xCAFE_BABE,
+                    })),
+                });
+            }
+            if self.remaining > 0 {
+                self.remaining -= 1;
+                let variant = if self.channels {
+                    from_radio::PayloadVariant::Channel(Channel { index: 0 })
+                } else {
+                    #[expect(
+                        clippy::cast_possible_truncation,
+                        reason = "test fixture: remaining is a small counter"
+                    )]
+                    from_radio::PayloadVariant::NodeInfo(NodeInfo {
+                        num: self.remaining as u32,
+                        ..Default::default()
+                    })
+                };
+                return Ok(FromRadio {
+                    id: 9,
+                    payload_variant: Some(variant),
+                });
+            }
+            Ok(FromRadio {
+                id: 10,
+                payload_variant: Some(from_radio::PayloadVariant::ConfigCompleteId(
+                    self.config_id.unwrap_or(0),
+                )),
+            })
+        }
+
+        fn is_connected(&self) -> bool {
+            true
+        }
+
+        async fn reconnect(&mut self) -> Result<(), Error> {
+            Ok(())
+        }
+    }
+
+    /// WHY(#229): every value in the handshake loop is supplied by the peer, and
+    /// the handshake's timeout bounds how long it may talk rather than how much
+    /// it may say. A device has at most `MAX_CHANNELS` channels; anything past
+    /// that is a peer repeating itself into an unbounded vector.
+    #[tokio::test]
+    async fn a_channel_flood_cannot_grow_past_the_protocol_maximum() {
+        let mut conn = FloodMock {
+            my_info_sent: false,
+            remaining: usize::from(MAX_CHANNELS) * 20,
+            channels: true,
+            config_id: None,
+        };
+        let mut db = NodeDb::new();
+
+        #[expect(clippy::unwrap_used, reason = "test-only")]
+        let result = handshake(&mut conn, &mut db).await.unwrap();
+
+        assert_eq!(
+            result.channels.len(),
+            usize::from(MAX_CHANNELS),
+            "the channel list must stop at the protocol maximum"
+        );
+    }
+
+    /// Anti-vacuity: an ordinary handshake must still collect what it is sent,
+    /// or the cap above would pass against a loop that collects nothing.
+    #[tokio::test]
+    async fn an_ordinary_channel_count_is_collected_in_full() {
+        let mut conn = FloodMock {
+            my_info_sent: false,
+            remaining: 3,
+            channels: true,
+            config_id: None,
+        };
+        let mut db = NodeDb::new();
+
+        #[expect(clippy::unwrap_used, reason = "test-only")]
+        let result = handshake(&mut conn, &mut db).await.unwrap();
+
+        assert_eq!(
+            result.channels.len(),
+            3,
+            "three channels sent, three collected"
+        );
     }
 
     /// Mock that stalls forever in `recv()`  -  used to test timeout behaviour.
