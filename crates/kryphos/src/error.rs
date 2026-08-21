@@ -196,4 +196,13 @@ pub enum CryptoError {
         /// Actual byte count.
         actual: usize,
     },
+
+    /// The provided salt has the wrong length.
+    #[snafu(display("invalid salt length: expected {expected}, got {actual}"))]
+    InvalidSaltLength {
+        /// Expected byte count.
+        expected: usize,
+        /// Actual byte count.
+        actual: usize,
+    },
 }
