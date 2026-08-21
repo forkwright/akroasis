@@ -176,6 +176,47 @@ impl fmt::Display for VerifyingKey {
     }
 }
 
+/// Domain separator for the short installation key identifier.
+///
+/// Keyed-hashing the verifying key rather than truncating it means a log left
+/// on disk names its origin without publishing key material, and the id cannot
+/// be reversed into a key by anyone who does not already hold one to compare.
+const KEY_ID_DOMAIN: &[u8] = b"kryphos/installation/key-id/v1";
+
+/// Computes the stable short identifier for a verifying key.
+fn installation_key_id(verifying: &VerifyingKey) -> [u8; koinon::KEY_ID_LEN] {
+    let digest = blake3::keyed_hash(&blake3::hash(KEY_ID_DOMAIN).into(), verifying.as_bytes());
+    let mut id = [0u8; koinon::KEY_ID_LEN];
+    id.copy_from_slice(
+        digest
+            .as_bytes()
+            .get(..koinon::KEY_ID_LEN)
+            .unwrap_or(&[0u8; koinon::KEY_ID_LEN]),
+    );
+    id
+}
+
+impl koinon::TipSigner for InstallationIdentity {
+    fn key_id(&self) -> [u8; koinon::KEY_ID_LEN] {
+        installation_key_id(&self.verifying_key())
+    }
+
+    fn sign_tip(&self, payload: &[u8]) -> [u8; koinon::TIP_SIGNATURE_LEN] {
+        self.sign(payload).to_bytes()
+    }
+}
+
+impl koinon::TipVerifier for VerifyingKey {
+    fn key_id(&self) -> [u8; koinon::KEY_ID_LEN] {
+        installation_key_id(self)
+    }
+
+    fn verify_tip(&self, payload: &[u8], signature: &[u8; koinon::TIP_SIGNATURE_LEN]) -> bool {
+        let signature = ed25519_dalek::Signature::from_bytes(signature);
+        self.verify(payload, &signature).is_ok()
+    }
+}
+
 /// Ed25519 keypair representing a unique installation.
 ///
 /// Used to sign tamper log entries, proving they originated from
