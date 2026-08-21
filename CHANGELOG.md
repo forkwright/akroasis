@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.1](https://github.com/forkwright/akroasis/compare/v0.4.0...v0.4.1) (2026-08-21)
+
+
+### Bug Fixes
+
+* **semaino:** order ingestion before scoring on one path ([#426](https://github.com/forkwright/akroasis/issues/426)) ([2e0dd26](https://github.com/forkwright/akroasis/commit/2e0dd26dedf36fc91e82d23db5ec198b1a15eb67)), closes [#224](https://github.com/forkwright/akroasis/issues/224)
+
 ## [0.4.0](https://github.com/forkwright/akroasis/compare/v0.3.0...v0.4.0) (2026-08-21)
 
 
