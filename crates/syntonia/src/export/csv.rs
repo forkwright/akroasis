@@ -300,8 +300,8 @@ mod tests {
             };
 
             let mut csv = Vec::new();
-            export_chirp_csv(&plan, &mut csv).expect("export");
-            let (reimported, _warnings) = import_chirp_csv_reader(csv.as_slice()).expect("import");
+            export_chirp_csv(&plan, &mut csv).unwrap();
+            let (reimported, _warnings) = import_chirp_csv_reader(csv.as_slice()).unwrap();
 
             assert_eq!(
                 reimported.channels.first().map(|c| c.name.as_str()),
