@@ -185,9 +185,8 @@ mod tests {
     #[tokio::test]
     async fn a_rejected_port_is_a_400_that_does_not_echo_the_supplied_path() {
         let probe = "/dev/../root/.ssh/id_ed25519";
-        let error = validated_port(Some(probe.to_owned()))
-            .err()
-            .expect("a traversal path must be rejected");
+        let error =
+            validated_port(Some(probe.to_owned())).expect_err("a traversal path must be rejected");
 
         let response = error.into_response();
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
