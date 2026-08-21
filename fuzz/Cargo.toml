@@ -4,6 +4,8 @@
 # --workspace` and the gate never try to build it, and `members = ["crates/*"]`
 # in the root manifest already excludes this directory.
 
+[workspace]
+
 [package]
 name = "kerykeion-fuzz"
 version = "0.0.0"
@@ -11,18 +13,6 @@ edition = "2024"
 rust-version = "1.85"
 license = "AGPL-3.0-only"
 publish = false
-
-[package.metadata]
-cargo-fuzz = true
-
-[dependencies]
-bytes = "1"
-libfuzzer-sys = "0.4"
-prost = "0.14.3"
-tokio-util = { version = "0.7.18", features = ["codec"] }
-
-[dependencies.kerykeion]
-path = "../crates/kerykeion"
 
 [[bin]]
 name = "frame_decode"
@@ -45,4 +35,12 @@ test = false
 doc = false
 bench = false
 
-[workspace]
+[dependencies]
+bytes = "1"
+kerykeion = { path = "../crates/kerykeion" }
+libfuzzer-sys = "0.4"
+prost = "0.14.3"
+tokio-util = { version = "0.7.18", features = ["codec"] }
+
+[package.metadata]
+cargo-fuzz = true

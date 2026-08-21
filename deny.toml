@@ -34,6 +34,20 @@ allow = [
 ]
 confidence-threshold = 0.8
 
+# WHY an exception rather than adding NCSA to `allow` above: libfuzzer-sys is
+# `(MIT OR Apache-2.0) AND NCSA` because it wraps LLVM's libFuzzer, which
+# predates LLVM's relicensing. NCSA is permissive, OSI-approved, FSF
+# Free/Libre and compatible with this workspace's AGPL-3.0 — but it is
+# compatible for THIS dependency, and a global allow would silently accept it
+# from any future crate in the runtime graph as well. The exception keeps the
+# grant attached to the crate that needs it.
+#
+# It applies to the detached `fuzz/` workspace only; nothing in the shipped
+# runtime graph depends on libfuzzer-sys (forkwright/akroasis#95).
+[[licenses.exceptions]]
+name = "libfuzzer-sys"
+allow = ["NCSA"]
+
 [bans]
 multiple-versions = "warn"
 wildcards = "allow"
