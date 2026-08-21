@@ -1,0 +1,53 @@
+# Which files in this crate DERIVE from an upstream, and which merely
+# INTEROPERATE with one's file formats.
+#
+# WHY this file exists rather than a paragraph somewhere: a grep for an
+# upstream's name cannot tell those two apart, and the distinction decides
+# whether a copyleft obligation reaches the file. Searching this crate for
+# "CHIRP" returns hits in both classes; without a ledger, every audit has to
+# re-derive which are which by reading them, and every audit can reach a
+# different answer. `tests/provenance.rs` turns this file into a check.
+#
+# The check is bidirectional on purpose. A file that mentions an upstream and
+# appears in neither list fails — that is the case worth catching, a newly
+# added derived file nobody classified. A listed path that no longer mentions
+# the upstream also fails, so the ledger cannot quietly rot into fiction.
+
+[[upstream]]
+name = "CHIRP"
+license = "GPL-3.0-or-later"
+holders = [
+    "Dan Smith <dsmith@danplanet.com>",
+    "Wade Simmons <wade@wades.im>",
+]
+# The specific upstream files this crate's derived code came from, not the
+# project as a whole — the drivers carry their own headers.
+source = "chirp/drivers/{yaesu_clone,ftm3200d,ftm7250d}.py"
+# Read from the distributed artifact, not from a project web page: chirp
+# 20250926's `dist-info/licenses/COPYING` is GPLv3, and each driver above
+# grants "either version 3 of the License, or (at your option) any later
+# version". Re-verify against the artifact, never from memory.
+verified_against = "chirp 20250926 dist-info/licenses/COPYING"
+# Akroasis is AGPL-3.0, which satisfies this: GPLv3 §13 permits combining a
+# covered work with an AGPLv3 work, and the combination takes the AGPL's terms.
+satisfied_by = "AGPL-3.0"
+
+# Content derives from the upstream. The obligation reaches these.
+derived = [
+    "src/yaesu/mod.rs",
+    "src/yaesu/variant.rs",
+    "src/yaesu/codec.rs",
+]
+
+# These read or write the upstream's FILE FORMATS, or remark on what its
+# files contain. Implementing a format is interop, and a format is not the
+# upstream's copyrightable expression, so no obligation reaches these — but
+# they name it, so a search finds them.
+interop = [
+    "src/lib.rs",
+    "src/csv_formula.rs",
+    "src/export/csv.rs",
+    "src/import/csv.rs",
+    "src/import/img.rs",
+    "src/baofeng/variant.rs",
+]
