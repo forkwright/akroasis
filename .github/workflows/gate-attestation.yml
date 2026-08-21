@@ -103,7 +103,12 @@ permissions:
 
 jobs:
   gate:
-    uses: forkwright/.github/.github/workflows/hybrid-gate.yml@main
+    # WHY(#376) pinned: a branch ref is moved by whoever pushes to forkwright/.github,
+    # so an unpinned call changes what this repo's gate runs with no commit here to
+    # review or blame. It moved between #376 being filed and being fixed, which is the
+    # behaviour rather than a hypothetical. Dependabot tracks the github-actions
+    # ecosystem for this repo and bumps the pin.
+    uses: forkwright/.github/.github/workflows/hybrid-gate.yml@d74efb1d2d87ec86717dad5d42d468f6e3cf7994 # main
     with:
       fmt_cmd: "cargo fmt --all -- --check"
       check_cmd: "cargo check --workspace --all-targets --features syntonia/hardware-serial --jobs 8 --keep-going"
