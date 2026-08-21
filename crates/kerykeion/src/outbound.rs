@@ -82,6 +82,7 @@ pub struct OutboundQueue {
     pending: VecDeque<PendingMessage>,
     inflight: HashMap<PacketId, InflightMessage>,
     max_inflight: usize,
+    max_pending: usize,
     max_retries: u8,
 }
 
@@ -99,6 +100,7 @@ impl OutboundQueue {
             pending: VecDeque::new(),
             inflight: HashMap::new(),
             max_inflight: config.max_inflight,
+            max_pending: config.max_pending,
             max_retries: config.max_retries,
         }
     }
@@ -110,6 +112,7 @@ impl OutboundQueue {
             pending: VecDeque::new(),
             inflight: HashMap::new(),
             max_inflight,
+            max_pending: OutboundConfig::default().max_pending,
             max_retries: OutboundConfig::default().max_retries,
         }
     }
@@ -126,14 +129,38 @@ impl OutboundQueue {
         self.max_retries
     }
 
+    /// Room left in the pending queue.
+    #[must_use]
+    pub fn remaining_capacity(&self) -> usize {
+        self.max_pending.saturating_sub(self.pending.len())
+    }
+
     /// Insert a message by priority (higher priority first).
-    pub fn enqueue(&mut self, msg: PendingMessage) {
+    ///
+    /// # Errors
+    ///
+    /// Returns the message back when the pending queue is at
+    /// [`OutboundConfig::max_pending`]. WHY(#229) it is handed back rather than
+    /// dropped: the two callers want different things — one reports the refusal
+    /// to whoever asked to send, the other returns the message to
+    /// store-and-forward — and neither can do that with a message this queue
+    /// has already discarded.
+    ///
+    /// WHY boxed: a [`PendingMessage`] carries a whole packet, and an `Err`
+    /// variant that large is paid for by every `Result` in the call chain
+    /// rather than only on the refusal. The allocation happens on the path that
+    /// is already the exception.
+    pub fn enqueue(&mut self, msg: PendingMessage) -> Result<(), Box<PendingMessage>> {
+        if self.pending.len() >= self.max_pending {
+            return Err(Box::new(msg));
+        }
         let insert_pos = self
             .pending
             .iter()
             .position(|existing| i32::from(existing.priority) < i32::from(msg.priority))
             .unwrap_or(self.pending.len());
         self.pending.insert(insert_pos, msg);
+        Ok(())
     }
 
     /// Pop the highest-priority message that hasn't expired.
@@ -235,14 +262,18 @@ impl OutboundQueue {
         // INVARIANT: `created`/`ttl` are the ORIGINAL enqueue time and configured
         // TTL, carried forward unchanged so the message expires at its originally
         // configured deadline regardless of how many retries it goes through.
+        // WHY(#229) the refusal is returned rather than ignored: this function's
+        // contract is "will it be retried", and a full queue means it will not.
+        // Reporting `true` after failing to requeue would promise a delivery
+        // attempt that never happens.
         self.enqueue(PendingMessage {
             packet: msg.packet,
             created: msg.created,
             ttl: msg.ttl,
             priority,
             retries: msg.retries,
-        });
-        true
+        })
+        .is_ok()
     }
 
     /// Remove messages past TTL FROM both pending and inflight.
@@ -275,6 +306,18 @@ impl Default for OutboundQueue {
 mod tests {
     use super::*;
 
+    /// Enqueue in a test, asserting the queue accepted it.
+    ///
+    /// WHY assert rather than discard: `enqueue` returns a `Result` now, and
+    /// `let _ =` at fourteen call sites would hide a regression that makes the
+    /// queue refuse everything.
+    fn enq(q: &mut OutboundQueue, msg: PendingMessage) {
+        assert!(
+            q.enqueue(msg).is_ok(),
+            "the queue should accept this message"
+        );
+    }
+
     const DEFAULT_ACK_TIMEOUT: Duration = Duration::from_secs(30);
 
     fn make_packet(id: u32, priority: Priority) -> MeshPacket {
@@ -305,12 +348,66 @@ mod tests {
         }
     }
 
+    /// WHY(#229): `max_inflight` bounded only what awaits an ACK. The pending
+    /// queue behind it had no bound, so anything enqueuing faster than the radio
+    /// drains grew memory without limit.
+    #[test]
+    fn the_pending_queue_refuses_past_its_bound() {
+        let mut q = OutboundQueue::with_config(&OutboundConfig {
+            max_pending: 4,
+            ..OutboundConfig::default()
+        });
+
+        for id in 0..4 {
+            enq(&mut q, make_pending(id, Priority::Default));
+        }
+        assert_eq!(
+            q.remaining_capacity(),
+            0,
+            "four messages fill a bound of four"
+        );
+
+        let refused = q.enqueue(make_pending(99, Priority::Default));
+        assert!(refused.is_err(), "the fifth must be refused, not accepted");
+    }
+
+    /// The refused message is handed back rather than dropped, which is what
+    /// lets a caller report it or return it to store-and-forward.
+    #[test]
+    fn a_refused_message_is_returned_to_its_caller() {
+        let mut q = OutboundQueue::with_config(&OutboundConfig {
+            max_pending: 1,
+            ..OutboundConfig::default()
+        });
+        enq(&mut q, make_pending(1, Priority::Default));
+
+        let returned = q.enqueue(make_pending(7, Priority::Default)).err();
+        assert_eq!(
+            returned.map(|msg| msg.packet.id),
+            Some(7),
+            "the caller must get back the message it offered"
+        );
+    }
+
+    /// Anti-vacuity: a queue within its bound must still accept, or the two
+    /// cases above would pass against a queue that refuses everything.
+    #[test]
+    fn a_queue_within_its_bound_still_accepts() {
+        let mut q = OutboundQueue::with_config(&OutboundConfig::default());
+        assert!(q.remaining_capacity() > 0);
+        enq(&mut q, make_pending(1, Priority::Default));
+        assert_eq!(
+            q.remaining_capacity(),
+            OutboundConfig::default().max_pending - 1
+        );
+    }
+
     #[test]
     fn enqueue_orders_by_priority() {
         let mut q = OutboundQueue::new();
-        q.enqueue(make_pending(1, Priority::Background));
-        q.enqueue(make_pending(2, Priority::Reliable));
-        q.enqueue(make_pending(3, Priority::Default));
+        enq(&mut q, make_pending(1, Priority::Background));
+        enq(&mut q, make_pending(2, Priority::Reliable));
+        enq(&mut q, make_pending(3, Priority::Default));
 
         #[expect(clippy::unwrap_used, reason = "test-only: queue has 3 items")]
         let first = q.next_to_send().unwrap();
@@ -328,20 +425,26 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn expired_messages_skipped() {
         let mut q = OutboundQueue::new();
-        q.enqueue(PendingMessage {
-            packet: make_packet(1, Priority::Default),
-            created: Instant::now(),
-            ttl: Duration::from_secs(1),
-            priority: Priority::Default,
-            retries: 0,
-        });
-        q.enqueue(PendingMessage {
-            packet: make_packet(2, Priority::Default),
-            created: Instant::now(),
-            ttl: Duration::from_secs(3600),
-            priority: Priority::Default,
-            retries: 0,
-        });
+        enq(
+            &mut q,
+            PendingMessage {
+                packet: make_packet(1, Priority::Default),
+                created: Instant::now(),
+                ttl: Duration::from_secs(1),
+                priority: Priority::Default,
+                retries: 0,
+            },
+        );
+        enq(
+            &mut q,
+            PendingMessage {
+                packet: make_packet(2, Priority::Default),
+                created: Instant::now(),
+                ttl: Duration::from_secs(3600),
+                priority: Priority::Default,
+                retries: 0,
+            },
+        );
 
         // Advance past the first message's TTL.
         tokio::time::advance(Duration::from_secs(2)).await;
@@ -404,13 +507,16 @@ mod tests {
         // TTL; a short-lived message must still expire at its ORIGINAL
         // deadline after being retried.
         let mut q = OutboundQueue::new();
-        q.enqueue(PendingMessage {
-            packet: make_packet(1, Priority::Default),
-            created: Instant::now(),
-            ttl: Duration::from_secs(60),
-            priority: Priority::Default,
-            retries: 0,
-        });
+        enq(
+            &mut q,
+            PendingMessage {
+                packet: make_packet(1, Priority::Default),
+                created: Instant::now(),
+                ttl: Duration::from_secs(60),
+                priority: Priority::Default,
+                retries: 0,
+            },
+        );
 
         #[expect(clippy::unwrap_used, reason = "test-only: queue has 1 item")]
         let msg = q.next_to_send().unwrap();
@@ -461,9 +567,9 @@ mod tests {
     #[test]
     fn max_inflight_limits_sends() {
         let mut q = OutboundQueue::with_max_inflight(2);
-        q.enqueue(make_pending(1, Priority::Default));
-        q.enqueue(make_pending(2, Priority::Default));
-        q.enqueue(make_pending(3, Priority::Default));
+        enq(&mut q, make_pending(1, Priority::Default));
+        enq(&mut q, make_pending(2, Priority::Default));
+        enq(&mut q, make_pending(3, Priority::Default));
 
         // Pop and track two as inflight.
         for _ in 0..2 {
@@ -491,7 +597,7 @@ mod tests {
             priority: Priority::Default,
             retries: 0,
         });
-        q.enqueue(make_pending(2, Priority::Default));
+        enq(&mut q, make_pending(2, Priority::Default));
 
         q.drain_expired();
         assert_eq!(q.pending_count(), 1, "expired message should be removed");
@@ -527,8 +633,8 @@ mod tests {
             ..OutboundConfig::default()
         };
         let mut q = OutboundQueue::with_config(&cfg);
-        q.enqueue(make_pending(1, Priority::Default));
-        q.enqueue(make_pending(2, Priority::Default));
+        enq(&mut q, make_pending(1, Priority::Default));
+        enq(&mut q, make_pending(2, Priority::Default));
 
         #[expect(clippy::unwrap_used, reason = "test-only")]
         let msg = q.next_to_send().unwrap();
@@ -542,8 +648,8 @@ mod tests {
     #[test]
     fn alert_priority_sent_before_default() {
         let mut q = OutboundQueue::new();
-        q.enqueue(make_pending(1, Priority::Default));
-        q.enqueue(make_pending(2, Priority::Ack));
+        enq(&mut q, make_pending(1, Priority::Default));
+        enq(&mut q, make_pending(2, Priority::Ack));
 
         #[expect(clippy::unwrap_used, reason = "test-only: queue has items")]
         let first = q.next_to_send().unwrap();

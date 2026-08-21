@@ -281,6 +281,13 @@ impl BridgeConfig {
 pub struct OutboundConfig {
     /// Maximum number of concurrent inflight (awaiting-ACK) messages.
     pub max_inflight: usize,
+    /// Maximum number of messages waiting to be sent.
+    ///
+    /// WHY(#229): `max_inflight` bounds only what is awaiting an ACK. The
+    /// pending queue behind it had no bound at all, so anything that enqueues
+    /// faster than the radio drains — a chatty caller, or a store-and-forward
+    /// backlog arriving at once — grew memory without limit.
+    pub max_pending: usize,
     /// Maximum retry attempts per message before declaring delivery failure.
     pub max_retries: u8,
     /// Default ACK timeout for inflight messages, in seconds.
@@ -301,6 +308,10 @@ impl Default for OutboundConfig {
     fn default() -> Self {
         Self {
             max_inflight: 8,
+            // WHY this size: well above any burst the radio can clear in a
+            // session, and small enough that a saturated queue is bounded
+            // memory rather than a leak.
+            max_pending: 1024,
             max_retries: 5,
             ack_timeout_secs: 30,
             store_forward_ttl_secs: 3600,
@@ -692,6 +703,7 @@ stale_node_timeout_secs = 7200
             },
             outbound: OutboundConfig {
                 max_inflight: 2,
+                max_pending: 3,
                 max_retries: 1,
                 ack_timeout_secs: 7,
                 store_forward_ttl_secs: 11,

@@ -13,6 +13,7 @@ use prost::Message as _;
 
 use crate::config::OutboundConfig;
 use crate::delivery::{DeliveryFailure, DeliveryTracker};
+use crate::error::QueueFullSnafu;
 use crate::outbound::{OutboundQueue, PendingMessage};
 use crate::proto::MeshPacket;
 use crate::proto::mesh_packet::{PayloadVariant, Priority};
@@ -147,13 +148,22 @@ impl MeshRouter {
         let dest = packet.to;
 
         if reachable {
-            self.outbound.enqueue(PendingMessage {
-                packet,
-                created: tokio::time::Instant::now(),
-                ttl: Duration::from_secs(options.ttl_secs),
-                priority: options.priority,
-                retries: 0,
-            });
+            // WHY(#229) the refusal is reported: the caller asked to send. A
+            // full queue that silently swallowed the message would look
+            // identical to one that accepted it.
+            if self
+                .outbound
+                .enqueue(PendingMessage {
+                    packet,
+                    created: tokio::time::Instant::now(),
+                    ttl: Duration::from_secs(options.ttl_secs),
+                    priority: options.priority,
+                    retries: 0,
+                })
+                .is_err()
+            {
+                return QueueFullSnafu { dest }.fail();
+            }
         } else {
             let portnum = match &packet.payload_variant {
                 Some(PayloadVariant::Decoded(data)) => data.portnum,
@@ -262,7 +272,15 @@ impl MeshRouter {
     /// drives this from packet receipt (verified: only `MeshRouter`'s own
     /// tests call it); keep it that way.
     pub fn node_came_online(&mut self, dest: NodeNum) {
-        let stored = self.store_forward.drain_for(dest);
+        // WHY(#229) only as many as will fit are drained: `drain_for` removes
+        // everything it returns, so enqueuing until the queue refuses would
+        // destroy the remainder. Taking what fits and returning the rest to
+        // store-and-forward means a saturated outbound queue delays delivery
+        // rather than losing it.
+        let mut stored = self.store_forward.drain_for(dest);
+        let capacity = self.outbound.remaining_capacity();
+        let deferred = stored.split_off(stored.len().min(capacity));
+
         for msg in stored {
             let priority = Priority::try_from(msg.priority).unwrap_or(Priority::Default);
             // WARNING: packet_bytes is only ever written by `send` on this
@@ -271,13 +289,29 @@ impl MeshRouter {
             let Ok(packet) = MeshPacket::decode(msg.packet_bytes.as_slice()) else {
                 continue;
             };
-            self.outbound.enqueue(PendingMessage {
-                packet,
-                created: tokio::time::Instant::now(),
-                ttl: Duration::from_secs(msg.ttl_secs),
-                priority,
-                retries: 0,
-            });
+            if self
+                .outbound
+                .enqueue(PendingMessage {
+                    packet,
+                    created: tokio::time::Instant::now(),
+                    ttl: Duration::from_secs(msg.ttl_secs),
+                    priority,
+                    retries: 0,
+                })
+                .is_err()
+            {
+                tracing::warn!(
+                    dest = dest.0,
+                    "outbound queue filled mid-drain; remaining messages stay stored"
+                );
+                break;
+            }
+        }
+
+        for msg in deferred {
+            if let Err(error) = self.store_forward.store(dest, msg) {
+                tracing::warn!(dest = dest.0, %error, "could not re-store a deferred message");
+            }
         }
     }
 
