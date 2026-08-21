@@ -1,14 +1,14 @@
 //! Vault CLI — credential storage, retrieval, and lifecycle management.
 
 use std::io::{self, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use clap::Subcommand;
 use comfy_table::{Cell, Table};
 use snafu::{ResultExt, Snafu};
 use zeroize::Zeroizing;
 
-use kryphos::{CredentialType, EntryInfo, InstallationIdentity, Vault, VaultError};
+use kryphos::{CredentialType, EntryInfo, Vault, VaultError};
 
 /// Default vault path: `~/.local/share/akroasis/vault`.
 fn default_vault_path() -> PathBuf {
@@ -201,10 +201,7 @@ pub fn dispatch(cmd: &VaultCommand, out: &mut dyn Write) -> Result<(), VaultCliE
         VaultCommand::Get { name } => run_get(name, out),
         VaultCommand::Rotate { name } => run_rotate(name, out),
         VaultCommand::Revoke { name } => run_revoke(name, out),
-        VaultCommand::Identity { json } => {
-            run_identity(*json, out)?;
-            Ok(())
-        }
+        VaultCommand::Identity { json } => run_identity(&default_vault_path(), *json, out),
     }
 }
 
@@ -375,7 +372,9 @@ struct ListEntryReport {
 struct IdentityReport {
     schema_version: u8,
     command: &'static str,
-    public_key: String,
+    /// `null` when the vault predates installation identity — distinct from
+    /// an empty string, which would read as a key that is present and blank.
+    public_key: Option<String>,
 }
 
 fn write_list_json_report(entries: &[EntryInfo], out: &mut dyn Write) -> Result<(), VaultCliError> {
@@ -408,22 +407,43 @@ fn write_list_json_report(entries: &[EntryInfo], out: &mut dyn Write) -> Result<
     Ok(())
 }
 
-fn run_identity(json: bool, out: &mut dyn Write) -> Result<(), VaultCliError> {
-    let identity = InstallationIdentity::generate();
-    let pubkey = identity.verifying_key();
+/// Reports the vault's persisted installation identity.
+///
+/// WHY this reads rather than generates: an identity command that mints a
+/// fresh key on every invocation answers a different question each time it is
+/// asked, so it cannot identify an installation — which is the only thing it
+/// is for (forkwright/akroasis#284).
+///
+/// Needs no passphrase. The verifying key is stored unsealed precisely so
+/// that checking provenance does not require the secret.
+fn run_identity(path: &Path, json: bool, out: &mut dyn Write) -> Result<(), VaultCliError> {
+    let public_key = Vault::installation_public_key(path)
+        .context(VaultSnafu)?
+        .map(|key| key.to_string());
 
     if json {
         let report = IdentityReport {
             schema_version: VAULT_IDENTITY_JSON_SCHEMA,
             command: "vault identity",
-            public_key: pubkey.to_string(),
+            public_key: public_key.clone(),
         };
         serde_json::to_writer_pretty(&mut *out, &report).context(JsonReportSnafu)?;
         writeln!(out).context(IoSnafu)?;
         return Ok(());
     }
 
-    writeln!(out, "{pubkey}").context(IoSnafu)?;
+    match public_key {
+        Some(key) => writeln!(out, "{key}").context(IoSnafu)?,
+        // WHY a message rather than an error or a freshly minted key: a vault
+        // created before installation identity existed genuinely has none, and
+        // both alternatives misreport that — an error implies breakage, and a
+        // generated key implies an answer.
+        None => writeln!(
+            out,
+            "no installation identity recorded (vault predates installation identity)"
+        )
+        .context(IoSnafu)?,
+    }
     Ok(())
 }
 
@@ -780,21 +800,13 @@ mod tests {
     }
 
     #[test]
-    fn vault_identity_generates_valid_fingerprint() {
-        let identity = InstallationIdentity::generate();
-        let pubkey = identity.verifying_key();
-        let hex = pubkey.to_string();
-        assert_eq!(hex.len(), 64, "hex fingerprint must be 64 characters");
-        assert!(
-            hex.chars().all(|c| c.is_ascii_hexdigit()),
-            "fingerprint must be hex"
-        );
-    }
-
-    #[test]
     fn run_identity_outputs_pubkey() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("vault");
+        drop(Vault::create(&path, b"correct horse battery staple").unwrap());
+
         let mut out = Vec::new();
-        run_identity(false, &mut out).unwrap();
+        run_identity(&path, false, &mut out).unwrap();
         let s = String::from_utf8(out).unwrap();
         let trimmed = s.trim();
         assert_eq!(trimmed.len(), 64, "hex fingerprint must be 64 characters");
@@ -804,10 +816,68 @@ mod tests {
         );
     }
 
+    /// The defect this command had: it minted a key per invocation, so it
+    /// reported a different installation every time it was asked which
+    /// installation this is.
+    #[test]
+    fn run_identity_reports_the_same_key_on_every_invocation() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("vault");
+        drop(Vault::create(&path, b"correct horse battery staple").unwrap());
+
+        let mut first = Vec::new();
+        run_identity(&path, false, &mut first).unwrap();
+        let mut second = Vec::new();
+        run_identity(&path, false, &mut second).unwrap();
+
+        assert_eq!(
+            first, second,
+            "the installation identity must not change between invocations"
+        );
+    }
+
+    /// A vault written before this field existed has no identity, and the
+    /// command must say so rather than erroring or inventing one.
+    #[test]
+    fn run_identity_reports_absence_for_a_vault_without_an_identity() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("vault");
+        drop(Vault::create(&path, b"correct horse battery staple").unwrap());
+
+        // Strip the identity fields, reproducing a pre-#284 header.
+        let header_path = path.join("header.json");
+        let mut header: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&header_path).unwrap()).unwrap();
+        let obj = header.as_object_mut().unwrap();
+        obj.remove("installation_public_key");
+        obj.remove("sealed_signing_key");
+        std::fs::write(&header_path, serde_json::to_vec(&header).unwrap()).unwrap();
+
+        let mut out = Vec::new();
+        run_identity(&path, false, &mut out).unwrap();
+        let s = String::from_utf8(out).unwrap();
+        assert!(
+            s.contains("no installation identity recorded"),
+            "must report absence plainly, got {s:?}"
+        );
+
+        let mut json_out = Vec::new();
+        run_identity(&path, true, &mut json_out).unwrap();
+        let report: serde_json::Value = serde_json::from_slice(&json_out).unwrap();
+        assert!(
+            report["public_key"].is_null(),
+            "absence must serialize as null, not an empty string"
+        );
+    }
+
     #[test]
     fn run_identity_json_outputs_machine_readable_report() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("vault");
+        drop(Vault::create(&path, b"correct horse battery staple").unwrap());
+
         let mut out = Vec::new();
-        run_identity(true, &mut out).unwrap();
+        run_identity(&path, true, &mut out).unwrap();
 
         let report: serde_json::Value = serde_json::from_slice(&out).unwrap();
         assert_eq!(report["schema_version"], 1);

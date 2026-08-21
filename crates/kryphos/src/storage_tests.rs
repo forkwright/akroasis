@@ -752,6 +752,171 @@ fn a_wrong_passphrase_still_reports_itself() {
     );
 }
 
+// -----------------------------------------------------------------------
+// #284: durable installation identity
+// -----------------------------------------------------------------------
+
+/// Strips the identity fields from a header, reproducing a vault created
+/// before installation identity existed.
+fn strip_identity_fields(vault_path: &std::path::Path) {
+    let header_path = vault_path.join("header.json");
+    let mut header: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&header_path).unwrap()).unwrap();
+    let object = header.as_object_mut().unwrap();
+    object.remove("installation_public_key");
+    object.remove("sealed_signing_key");
+    std::fs::write(&header_path, serde_json::to_vec(&header).unwrap()).unwrap();
+}
+
+/// The clause this is for: identities survive restarts and repeated
+/// invocations. A vault that minted one per open would pass any single-read
+/// test, so the assertion has to span a close.
+#[test]
+fn the_installation_identity_survives_close_and_reopen() {
+    let dir = tempfile::tempdir().unwrap();
+    let vault_path = dir.path().join("test-vault");
+
+    let vault = Vault::create(&vault_path, TEST_PASSPHRASE).unwrap();
+    let at_create = vault.installation_identity().unwrap().unwrap();
+    let created = at_create.public_key_bytes();
+    drop(vault);
+
+    let reopened = Vault::open(&vault_path, TEST_PASSPHRASE).unwrap();
+    let after = reopened.installation_identity().unwrap().unwrap();
+
+    assert_eq!(
+        created,
+        after.public_key_bytes(),
+        "the identity must be the same installation across a restart"
+    );
+
+    // And the signing half must be usable, not merely present: a recovered
+    // identity that cannot sign is not an identity.
+    let message = b"provenance";
+    let signature = after.sign(message);
+    assert!(
+        at_create.verify(message, &signature).is_ok(),
+        "the reopened signing key must produce signatures the original verifies"
+    );
+}
+
+/// The reason the verifying key is stored unsealed: provenance that only the
+/// passphrase-holder can check is not provenance.
+#[test]
+fn the_public_key_reads_without_a_passphrase_and_without_the_lock() {
+    let dir = tempfile::tempdir().unwrap();
+    let vault_path = dir.path().join("test-vault");
+
+    let vault = Vault::create(&vault_path, TEST_PASSPHRASE).unwrap();
+    let expected = vault
+        .installation_identity()
+        .unwrap()
+        .unwrap()
+        .public_key_bytes();
+
+    // Deliberately WITHOUT dropping the vault: the directory lock is still
+    // held, and this read must not need it either.
+    let read = Vault::installation_public_key(&vault_path)
+        .unwrap()
+        .unwrap();
+
+    assert_eq!(
+        read.as_bytes(),
+        &expected,
+        "the recorded verifying key must be readable with no passphrase and no lock"
+    );
+}
+
+/// The two identity fields are written together and must stay a pair. An
+/// unsealed key swapped for another installation's would otherwise be what
+/// every verifier reads, while signatures checked against a different key
+/// entirely — the substitution this identity exists to make detectable.
+#[test]
+fn a_substituted_public_key_is_rejected() {
+    let dir = tempfile::tempdir().unwrap();
+    let vault_path = dir.path().join("test-vault");
+    let vault = Vault::create(&vault_path, TEST_PASSPHRASE).unwrap();
+
+    assert!(
+        vault.installation_identity().is_ok(),
+        "precondition: the untampered pair resolves"
+    );
+
+    let header_path = vault_path.join("header.json");
+    let mut header: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&header_path).unwrap()).unwrap();
+    let foreign = InstallationIdentity::generate().public_key_bytes().to_vec();
+    header.as_object_mut().unwrap().insert(
+        String::from("installation_public_key"),
+        serde_json::to_value(foreign).unwrap(),
+    );
+    std::fs::write(&header_path, serde_json::to_vec(&header).unwrap()).unwrap();
+
+    let result = vault.installation_identity();
+    assert!(
+        matches!(result, Err(VaultError::InvalidHeader { .. })),
+        "a verifying key that does not match the sealed signing key must be \
+         refused, got {result:?}"
+    );
+}
+
+/// The two identity fields are written together and never apart, so exactly
+/// one present is a state only an editor of the header can produce. Reading
+/// it as absence would let anyone able to strip the sealed key silently
+/// disable signing while the verifying key still reports an identity.
+#[test]
+fn a_half_present_identity_is_refused_rather_than_read_as_absent() {
+    for strip in ["sealed_signing_key", "installation_public_key"] {
+        let dir = tempfile::tempdir().unwrap();
+        let vault_path = dir.path().join("test-vault");
+        drop(Vault::create(&vault_path, TEST_PASSPHRASE).unwrap());
+
+        let header_path = vault_path.join("header.json");
+        let mut header: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&header_path).unwrap()).unwrap();
+        header.as_object_mut().unwrap().remove(strip);
+        std::fs::write(&header_path, serde_json::to_vec(&header).unwrap()).unwrap();
+
+        let vault = Vault::open(&vault_path, TEST_PASSPHRASE).unwrap();
+        let result = vault.installation_identity();
+        assert!(
+            matches!(result, Err(VaultError::InvalidHeader { .. })),
+            "stripping only `{strip}` must be refused, not reported as no identity \
+             at all — got {result:?}"
+        );
+    }
+}
+
+/// A vault predating this field has no identity. Both accessors must report
+/// that as absence rather than erroring or inventing one.
+#[test]
+fn a_vault_without_an_identity_reports_none_rather_than_failing() {
+    let dir = tempfile::tempdir().unwrap();
+    let vault_path = dir.path().join("test-vault");
+    drop(Vault::create(&vault_path, TEST_PASSPHRASE).unwrap());
+    strip_identity_fields(&vault_path);
+
+    assert!(
+        Vault::installation_public_key(&vault_path)
+            .unwrap()
+            .is_none(),
+        "an absent verifying key is None, not an error"
+    );
+
+    let vault = Vault::open(&vault_path, TEST_PASSPHRASE).unwrap();
+    assert!(
+        vault.installation_identity().unwrap().is_none(),
+        "an absent sealed signing key is None, not an error"
+    );
+
+    // The vault itself must remain fully usable — absence of an identity is
+    // not a degraded state for anything else.
+    vault
+        .add("still-works", CredentialType::ApiKey, b"secret")
+        .unwrap();
+    assert!(vault.get("still-works").is_ok());
+}
+
 /// WHY(#231): `get` gated on `Revoked` with an equality check, so an entry in
 /// any other non-active status handed back its secret — `Expired` among them.
 /// No public operation sets `Expired` yet, which is exactly why the gap went
