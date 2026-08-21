@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.4.2](https://github.com/forkwright/akroasis/compare/v0.4.1...v0.4.2) (2026-08-21)
+
+
+### Bug Fixes
+
+* **kerykeion:** accept only the PSK shapes the protocol defines ([#436](https://github.com/forkwright/akroasis/issues/436)) ([c04d9a2](https://github.com/forkwright/akroasis/commit/c04d9a27854c4fb3c5ce713acc009d023a4bd8af))
+* **kerykeion:** bound the outbound pending queue ([#438](https://github.com/forkwright/akroasis/issues/438)) ([35a5d74](https://github.com/forkwright/akroasis/commit/35a5d744a768dfab90ff94d2ec1e9d865b3c4a13))
+* **kerykeion:** bound the wire fields that were trusted to bound themselves ([#435](https://github.com/forkwright/akroasis/issues/435)) ([e7b4f45](https://github.com/forkwright/akroasis/commit/e7b4f451a68159b5ce0dbc5741c15d89e8086c7e))
+* **kerykeion:** bound what a peer can accumulate during the handshake ([#437](https://github.com/forkwright/akroasis/issues/437)) ([04c22d7](https://github.com/forkwright/akroasis/commit/04c22d74a0500c5e09c45543cbcd420edf24fdc3))
+* **kryphos:** derive the vault key from the parameters the vault recorded ([#434](https://github.com/forkwright/akroasis/issues/434)) ([203d75f](https://github.com/forkwright/akroasis/commit/203d75f64f2a9f8b6f55dfa1f9e5f9db32fd7c5d)), closes [#231](https://github.com/forkwright/akroasis/issues/231)
+* **kryphos:** reject a bad vault salt instead of panicking on it ([#432](https://github.com/forkwright/akroasis/issues/432)) ([486c78f](https://github.com/forkwright/akroasis/commit/486c78ffccf26a5d8b5044a3f46aaea5a89127ed))
+* **kryphos:** report what actually failed, not the nearest familiar error ([#439](https://github.com/forkwright/akroasis/issues/439)) ([de44d50](https://github.com/forkwright/akroasis/commit/de44d50e662afdb8ee20fa5aa5b1110b8f72ade7))
+* **semaino:** make the signal path lossless end to end ([#429](https://github.com/forkwright/akroasis/issues/429)) ([f6249d5](https://github.com/forkwright/akroasis/commit/f6249d5e91db0708a03cb49cc6e51925053588ba)), closes [#232](https://github.com/forkwright/akroasis/issues/232)
+* **syntonia:** neutralize spreadsheet formulas in exported channel names ([#433](https://github.com/forkwright/akroasis/issues/433)) ([41a41d6](https://github.com/forkwright/akroasis/commit/41a41d6d2a2cd69e704d9a066ae175a3480c5003))
+
 ## [0.4.1](https://github.com/forkwright/akroasis/compare/v0.4.0...v0.4.1) (2026-08-21)
 
 
