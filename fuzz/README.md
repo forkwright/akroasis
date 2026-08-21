@@ -15,6 +15,14 @@ cargo +nightly fuzz run frame_decode -- -max_total_time=60   # bounded, as CI ru
 cargo +nightly fuzz list
 ```
 
+If `cargo-fuzz` was installed as a musl binary, pass the host triple explicitly — it takes its
+default build target from the triple it was built for, not from the machine it runs on, and a
+sanitizer cannot link against a static libc:
+
+```sh
+cargo +nightly fuzz run --target x86_64-unknown-linux-gnu frame_decode
+```
+
 A crash writes its reproducer to `fuzz/artifacts/<target>/`. Re-run one with:
 
 ```sh
