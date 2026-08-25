@@ -30,12 +30,17 @@ jobs:
   auto-merge:
     # WHY(#376) pinned: a branch ref is moved by whoever pushes to
     # forkwright/.github, so an unpinned call changes what this repo merges on
-    # with no commit here to review or blame. Dependabot tracks the
-    # github-actions ecosystem for this repo and bumps the pin.
+    # with no commit here to review or blame.
+    #
+    # WARNING: nothing bumps this pin. forkwright/.github publishes no tags, so
+    # dependabot has no version to compare the SHA against and leaves it alone,
+    # even though it is otherwise active in this repo. The pin therefore freezes
+    # until someone moves it by hand, which is how this repo sat on a revision
+    # predating the auto-merge race fix while its own CI reported green.
     #
     # WHY no `secrets: inherit`, when gate-attestation.yml does inherit: that
     # keyword forwards EVERY repository secret to a workflow in another
     # repository, and this one reads `secrets.GITHUB_TOKEN` and nothing else —
     # which a called workflow receives regardless. Inheriting here would widen
     # the blast radius of a change to forkwright/.github for no capability.
-    uses: forkwright/.github/.github/workflows/dependabot-auto-merge.yml@d74efb1d2d87ec86717dad5d42d468f6e3cf7994 # main
+    uses: forkwright/.github/.github/workflows/dependabot-auto-merge.yml@main
