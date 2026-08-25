@@ -1,0 +1,66 @@
+
+
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "0 14 * * 3" # Wednesday 08:00 CST
+
+# PROJECT: explicit top-level default deny; job-level permissions grant only what's needed
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze-actions:
+    name: Analyze (actions)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      security-events: write
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false # PROJECT: security hardening — never expose token to steps
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@dd677812177e0c29f9c970a6c58d8607ae1bfefd # v4
+        with:
+          languages: actions
+          queries: +security-extended
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@dd677812177e0c29f9c970a6c58d8607ae1bfefd # v4
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@dd677812177e0c29f9c970a6c58d8607ae1bfefd # v4
+        with:
+          category: /language:actions
+
+  analyze-rust:
+    name: Analyze (rust)
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      security-events: write
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false # PROJECT: security hardening — never expose token to steps
+      - name: Set up Rust toolchain
+        uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@dd677812177e0c29f9c970a6c58d8607ae1bfefd # v4
+        with:
+          languages: rust
+          queries: +security-extended
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@dd677812177e0c29f9c970a6c58d8607ae1bfefd # v4
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@dd677812177e0c29f9c970a6c58d8607ae1bfefd # v4
+        with:
+          category: /language:rust
