@@ -103,12 +103,21 @@ permissions:
 
 jobs:
   gate:
-    # WHY(#376) pinned: a branch ref is moved by whoever pushes to forkwright/.github,
-    # so an unpinned call changes what this repo's gate runs with no commit here to
-    # review or blame. It moved between #376 being filed and being fixed, which is the
-    # behaviour rather than a hypothetical. Dependabot tracks the github-actions
-    # ecosystem for this repo and bumps the pin.
-    uses: forkwright/.github/.github/workflows/hybrid-gate.yml@d74efb1d2d87ec86717dad5d42d468f6e3cf7994 # main
+    # WHY @main, not pinned (#376 revisited): #376's concern was real -- an
+    # unpinned call lets forkwright/.github change what this repo's gate runs
+    # with no commit here to review or blame. But this comment's own claim that
+    # "dependabot tracks the github-actions ecosystem and bumps the pin" was
+    # wrong: forkwright/.github publishes no tags, so dependabot has nothing to
+    # compare the SHA against and never touched it -- the pin froze instead of
+    # staying reviewed. Measured cost: this file sat on d74efb1d, a revision
+    # predating a fix for a race in hybrid-gate.yml itself, while this comment
+    # kept asserting the pin was maintained. forkwright/.github is first-party --
+    # same org, same trust boundary -- not the third-party supply-chain case a
+    # SHA pin defends against, and the ci-substrate SPEC settles the convention:
+    # triggers/permissions/inputs live in the caller, logic is delegated,
+    # callers pin @main. A floating ref can't go stale, which beats any manual
+    # refresh process for keeping a pin fresh.
+    uses: forkwright/.github/.github/workflows/hybrid-gate.yml@main
     with:
       fmt_cmd: "cargo fmt --all -- --check"
       check_cmd: "cargo check --workspace --all-targets --features syntonia/hardware-serial --jobs 8 --keep-going"

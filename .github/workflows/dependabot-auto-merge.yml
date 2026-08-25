@@ -28,15 +28,17 @@ concurrency:
 
 jobs:
   auto-merge:
-    # WHY(#376) pinned: a branch ref is moved by whoever pushes to
-    # forkwright/.github, so an unpinned call changes what this repo merges on
-    # with no commit here to review or blame.
-    #
-    # WARNING: nothing bumps this pin. forkwright/.github publishes no tags, so
-    # dependabot has no version to compare the SHA against and leaves it alone,
-    # even though it is otherwise active in this repo. The pin therefore freezes
-    # until someone moves it by hand, which is how this repo sat on a revision
-    # predating the auto-merge race fix while its own CI reported green.
+    # WHY @main, not pinned: #376 pinned this on the same reasoning as
+    # gate-attestation.yml -- an unpinned call lets forkwright/.github change
+    # what this repo merges on with no commit here to review or blame. The
+    # pin's mitigation was meant to be dependabot bumping it, but
+    # forkwright/.github publishes no tags, so dependabot never touched it --
+    # the pin froze instead of staying reviewed, and this repo sat on a
+    # revision predating the auto-merge race fix while its own CI reported
+    # green. forkwright/.github is first-party -- same org, same trust
+    # boundary -- not the third-party supply-chain case a SHA pin defends
+    # against, and a floating ref can't go stale the way a hand-refreshed one
+    # did.
     #
     # WHY no `secrets: inherit`, when gate-attestation.yml does inherit: that
     # keyword forwards EVERY repository secret to a workflow in another
