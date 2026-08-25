@@ -1,3 +1,13 @@
+# WHY an exact release rather than the floating `stable` channel: CI otherwise
+# resolves whatever stable shipped that day, so a green run proves nothing about
+# the next one and a compiler regression arrives unannounced. aletheia records
+# the same reasoning against forkwright/aletheia#4945, and five fleet repos
+# already pin this exact version.
+#
+# This file is the SSOT for toolchain identity here: workflow steps fall through
+# to it rather than repeating `toolchain: stable` in their own `with:` blocks.
+# fuzz.yml is the one deliberate exception -- it pins nightly, which cargo-fuzz
+# requires.
 [toolchain]
-channel = "stable"
+channel = "1.97.1"
 components = ["rustfmt", "clippy"]
