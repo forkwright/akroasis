@@ -8,8 +8,8 @@ relational engine and its page-at-rest encryption. Akroasis owns only the
 reference-library domain-envelope policy above that engine.
 
 The historical filename remains so existing issue and review links still
-resolve. This note records the corrected authority boundary; it is not an
-implementation of #132.
+resolve. This living note maintains the corrected authority boundary. It is not
+an implementation of #132.
 
 ## Current State
 
@@ -63,8 +63,12 @@ only while the preview contract explicitly permits that behavior.
   separate credential-vault domain.
 - Do not copy Pinax page-encryption policy into Akroasis or treat page
   encryption as recipient distribution.
-- Do not call Sphragis `hazmat` or raw KEM operations. The reviewed profile API
-  is the only permitted recipient-wrapping boundary.
+- Do not call Sphragis `hazmat` or raw KEM operations. Its versioned profile API
+  is the only permitted recipient-wrapping boundary. Sphragis exposes its PQ
+  profile as an unaudited, default-inert preview.
+  [`forkwright/sphragis#43`](https://github.com/forkwright/sphragis/issues/43)
+  owns qualified review and release promotion. Akroasis #395 owns the exact
+  consumer handoff.
 
 ## Review gates
 
