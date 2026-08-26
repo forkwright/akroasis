@@ -1,10 +1,27 @@
-# Reference Store Layout
+# Reference Library Layout
 
-Akroasis owns the long-term offline reference store through `pinax`, the planned
-knowledge layer. The repository does not ship an `instance/` tree today; this
-document defines the target layout and migration policy so the existing
-`theke/_reference` staging area can move only after the source inventory is
-visible and checksummed.
+Akroasis owns the long-term offline reference-library application and its
+domain policy. The standalone
+[`forkwright/pinax`](https://github.com/forkwright/pinax) project exclusively
+owns relational persistence; this repository must not grow a `crates/pinax` or
+a second local Pinax identity. The application layer remains deliberately
+unnamed until it passes the fleet naming gate.
+
+The repository does not ship an `instance/` tree today. This document defines
+the target layout and migration policy so the existing `theke/_reference`
+staging area can move only after the source inventory is visible and
+checksummed. A transactional Pinax integration waits for the standalone
+engine's multi-record transaction and typed-schema contracts; the final
+async-native shape also waits for its async API rather than shipping a
+temporary blocking adapter.
+
+The encryption authorities are distinct. Pinax owns encryption of its database
+pages at rest. Akroasis owns the domain-envelope policy for reference content,
+including which payloads require envelopes and how content-key epochs map to
+the application model. Sphragis supplies recipient distribution for those
+content keys through its reviewed profile API; it does not replace Pinax page
+encryption, and Pinax page encryption does not replace recipient-scoped
+envelopes. Issue #395 tracks the integration and promotion gates.
 
 ## Canonical path
 
@@ -121,6 +138,8 @@ Before moving content out of the current staging area:
 
 ## Current repo state
 
-As of this design note, akroasis only documents the planned `pinax` knowledge
-layer. There is no checked-in `instance/` directory, no `crates/pinax`, and no
-verified local copy of the source `theke/_reference` tree in this worktree.
+As of this design note, akroasis only documents the planned reference-library
+application. There is no checked-in `instance/` directory, no local
+persistence crate, and no verified copy of the source `theke/_reference` tree
+in this worktree. Akroasis issue #395 owns the producer-readiness and Sphragis
+handoff gates for the first durable implementation.

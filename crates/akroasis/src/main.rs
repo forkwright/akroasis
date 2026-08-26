@@ -117,7 +117,11 @@ fn dispatch(command: &Command, out: &mut dyn std::io::Write) -> Result<(), Error
             writeln!(out, "chorografia — navigation (not yet implemented)").context(IoSnafu)?;
         }
         Command::Know => {
-            writeln!(out, "pinax — knowledge repository (not yet implemented)").context(IoSnafu)?;
+            writeln!(
+                out,
+                "reference-library application (name pending; not yet implemented)"
+            )
+            .context(IoSnafu)?;
         }
         Command::Vault(args) => {
             vault::dispatch(&args.command, out).context(VaultSnafu)?;

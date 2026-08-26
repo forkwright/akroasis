@@ -61,7 +61,13 @@
 | Crate | Greek | Over | L3 Essential Nature |
 |-------|-------|------|---------------------|
 | **chorografia** | χωρογραφία | "geographic model" | Writing the land - geographic modeling, RF propagation, infrastructure dependency graph, cascade analysis, vehicle/foot navigation, military planning, space weather, terrain, offline map rendering. Ptolemy's term for detailed regional description - intimate knowledge of a specific place. |
-| **pinax** | πίναξ | "knowledge repository" | The register, the catalog. Offline knowledge repository - maps, frequency databases, protocol specs, equipment manuals, emergency procedures, vulnerability databases. Callimachus created the Pinakes to make Alexandria's knowledge *findable*. Not a pile of scrolls - a system. The pinax made knowledge usable. |
+
+The reference-library application is intentionally unnamed. **Pinax** remains
+reserved for the standalone fleet relational engine at `forkwright/pinax`;
+using the same identity for an Akroasis application crate would collapse engine
+and domain authority. The original register/catalog resonance remains strong,
+but the mesh collision is decisive. A distinct application name must pass the
+Gnomon gate when the consumer is ready to exist.
 
 ### Interface layer
 
@@ -80,7 +86,7 @@
 - **Skopos → Semaino** - The scout reports to the sign reader. Collection feeds analysis.
 - **Dektis → Semaino** - The receiver feeds the sign reader. Hardware reception → intelligence.
 - **Ichneutes → Praxis** - Analysis produces understanding. Praxis converts understanding to action.
-- **Pinax ↔ Chorografia** - The register holds the data (maps, terrain, specs). The model computes against it (propagation, routing, cascade).
+- **Reference library ↔ Chorografia** - The library holds the data (maps, terrain, specs). The model computes against it (propagation, routing, cascade).
 
 ---
 
@@ -90,4 +96,4 @@
 |------|---------|-------------|
 | **Pheme** (Φήμη) | Rumor, report, reputation | System is about listening, not hearsay. Pheme unconceals gossip, not attentive reception. |
 | **Phrourion** (φρούριον) | Watchtower, garrison | Too defensive/military. Merged into Akroasis - the system actively listens, manages, communicates. |
-| **Mouseion** (Μουσεῖον) | Seat of the Muses | Already used by another project (Aletheia). Replaced by Pinax. |
+| **Mouseion** (Μουσεῖον) | Seat of the Muses | Already used by another project (Aletheia); the application identity remains open. |

@@ -28,8 +28,9 @@ type = "authored"
 evergreen = false
 description = "Registry of akroasis crate names and the concept each one owns."
 
-# WHY not evergreen: describes a store owned through a crate that is still planned, so it states an
-# intended arrangement rather than one a reader can currently observe.
+# WHY not evergreen: describes an application and Pinax integration that are
+# still planned, so it states an intended arrangement rather than one a reader
+# can currently observe.
 [[doc]]
 path = "docs/reference-store.md"
 type = "authored"
@@ -40,7 +41,7 @@ description = "Layout of the long-term offline reference store and its ownership
 path = "docs/fjall-column-encryption.md"
 type = "decision-record"
 evergreen = true
-description = "Where the encryption boundary sits for fjall-backed columns, and what is left declarative."
+description = "Corrected Pinax/Akroasis authority boundary for reference-library encryption."
 decided = "2026-08-17"
 
 [[doc]]

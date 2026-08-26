@@ -20,15 +20,16 @@ Phase index lives in the kanon repo roadmap. Wave status is reflected in merged 
 |---------|-------------|
 | [Aletheia](https://github.com/forkwright/aletheia) | Akroasis plugs into Aletheia as a thesauros domain pack (Phase 14). Standalone otherwise. |
 | [Harmonia](https://github.com/forkwright/harmonia) | Sibling project: same toolchain and patterns, different domain. |
+| [Pinax](https://github.com/forkwright/pinax) | Standalone relational engine for the planned reference-library application; Akroasis does not own a local Pinax crate. |
 
 ## References
 
 | Document | Purpose |
 |----------|---------|
 | `ARCHITECTURE.md` | Crate map, layer structure, key decisions |
-| `fjall-column-encryption.md` | Future declarative encrypted-field boundary for fjall-backed stores |
+| `fjall-column-encryption.md` | Historical #132 premise and current reference-library encryption authority boundary |
 | `pq-content-key-wrapping.md` | Future PQ content-key wrapping boundary and implementation gates |
-| `reference-store.md` | Target `/instance/reference/` layout for the planned pinax knowledge store |
+| `reference-store.md` | Target `/instance/reference/` layout and standalone-Pinax authority boundary |
 | `../standards/GNOMON.md` | Greek naming methodology |
 | `lexicon.md` | Domain terms and name registry |
 | `../standards/STANDARDS.md` | Universal coding standards |
