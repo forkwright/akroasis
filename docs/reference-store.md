@@ -18,10 +18,11 @@ temporary blocking adapter.
 The encryption authorities are distinct. Pinax owns encryption of its database
 pages at rest. Akroasis owns the domain-envelope policy for reference content,
 including which payloads require envelopes and how content-key epochs map to
-the application model. Sphragis supplies recipient distribution for those
-content keys through its reviewed profile API; it does not replace Pinax page
-encryption, and Pinax page encryption does not replace recipient-scoped
-envelopes. Issue #395 tracks the integration and promotion gates.
+the application model. Sphragis is the producer for recipient distribution.
+Its versioned profile API exposes an unaudited, default-inert PQ preview.
+Sphragis does not replace Pinax page encryption, and Pinax page encryption does
+not replace recipient-scoped envelopes. Issue #395 tracks the integration and
+exact-handoff gates.
 
 ## Canonical path
 

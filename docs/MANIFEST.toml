@@ -39,17 +39,15 @@ description = "Layout of the long-term offline reference store and its ownership
 
 [[doc]]
 path = "docs/fjall-column-encryption.md"
-type = "decision-record"
+type = "authored"
 evergreen = true
 description = "Corrected Pinax/Akroasis authority boundary for reference-library encryption."
-decided = "2026-08-17"
 
 [[doc]]
 path = "docs/pq-content-key-wrapping.md"
-type = "decision-record"
+type = "authored"
 evergreen = true
-description = "Post-quantum content-key wrapping for multi-device key distribution."
-decided = "2026-08-17"
+description = "Living Sphragis boundary and promotion gates for future content-key distribution."
 
 # WHY authored and not generated: it is a hand-written example config a reader copies from, not output
 # any command reproduces — a generate_cmd here would be a claim nobody could run.
