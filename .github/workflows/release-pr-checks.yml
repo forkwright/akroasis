@@ -1,0 +1,47 @@
+# WHY this file carries almost nothing: the healer is a fleet reusable in
+# forkwright/.github. How a stuck release PR gets unstuck lives there, so this repo
+# declares only that it wants it. A local copy is the drift the reusable exists to end
+# -- aletheia carried the only implementation for months while 17 repos silently had
+# none, and nothing inside those repos could reveal the gap.
+#
+# WHY @main and not a SHA: forkwright/.github publishes no tags, so dependabot cannot
+# bump a SHA pin against it. The pin does not hold a reviewed version -- it freezes,
+# silently, while the reusable moves on. A first-party repo in the same trust boundary
+# is not the third-party supply-chain case a SHA pin defends against.
+name: Release PR checks
+
+on:
+  # WHY workflow_run and not a schedule alone: release-please FORCE-PUSHES the release
+  # branch on every push to main, and each new head arrives with its runs held again.
+  # An hourly sweep cannot win that race -- by the time it ticks, the head it examined
+  # no longer exists. This fires when Release Please finishes, so the healer runs
+  # against the head just created, once per regeneration.
+  #
+  # workflow_run executes in the default branch's context with repository permissions
+  # and is NOT subject to the approval gate that holds the release PR's own runs, which
+  # is what makes it usable here.
+  workflow_run:
+    workflows: ["Release Please"]
+    types: [completed]
+  # Backstop, not the primary path: the only trigger that still fires if Release Please
+  # itself fails, is disabled, or is renamed out from under the line above.
+  schedule:
+    # NOTE: hourly at :17, off the top of the hour where the daily security and weekly
+    # CodeQL crons sit.
+    - cron: "17 * * * *"
+  workflow_dispatch:
+
+# WARNING: these permissions are a CAP on the reusable, not a default it may exceed.
+# A called workflow can only DOWNGRADE the caller's token, never upgrade it, so a
+# caller declaring the usual `contents: read` would leave the healer unable to approve
+# anything -- and its only symptom would be a release PR that stayed stuck. `actions:
+# write` approves the held runs; `pull-requests: read` finds the release PR and its
+# head SHA. Nothing here writes to a PR.
+permissions:
+  actions: write
+  contents: read
+  pull-requests: read
+
+jobs:
+  heal:
+    uses: forkwright/.github/.github/workflows/release-pr-checks.yml@main
