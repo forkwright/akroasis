@@ -33,7 +33,7 @@ Capability domains span radio, mesh, SDR, proximity, network defense, OSINT, off
 | **Signal Intelligence** | ichneutes | ◻ |  -  | Future entity correlation, focal point synthesis, threat scoring, and forensic timeline reconstruction across all domains. |
 | **Automation** | praxis | ◻ |  -  | Future event-driven triggers, named playbooks, PACE communications, and operational state machines. |
 | **Navigation** | chorografia | ◻ | ◻ | Future RF propagation modeling, infrastructure graphs, offline OSM navigation, and space weather HF prediction. |
-| **Knowledge** | pinax | ◻ |  -  | Future offline repository for frequency databases, protocol specs, equipment manuals, topo maps, and indexed references. Target instance layout is documented in [docs/reference-store.md](docs/reference-store.md). |
+| **Knowledge** | reference library (application name pending) | ◻ |  -  | Future offline library for frequency databases, protocol specs, equipment manuals, topo maps, and indexed references. Akroasis owns the application/domain layer; standalone [Pinax](https://github.com/forkwright/pinax) owns relational persistence. Target instance layout is documented in [docs/reference-store.md](docs/reference-store.md). |
 | **Privacy** | lethe | ◻ | ◻ | Future VPN/proxy management, anonymization, IMSI catcher detection, and OPSEC scoring. The etymological complement to [Aletheia](https://github.com/forkwright/aletheia). |
 | **Interface** | opsis | ◻ |  -  | Operator surfaces are planned desktop-first via theatron. The shipped `akroasis-server` library provides routes intended for future desktop and agent clients; no server binary or desktop ships yet. #118 resolved. |
 
@@ -63,7 +63,7 @@ Capability domains span radio, mesh, SDR, proximity, network defense, OSINT, off
           │                  │         │ (geo, nav, RF    │
           │ kryphos          │         │  propagation)    │
           │ (crypto, keys,   │         │                  │
-          │  credentials)    │         │ pinax            │
+          │  credentials)    │         │ reference library│
           │                  │         │ (offline maps,   │
           │ lethe            │         │  specs, manuals) │
           │ (privacy, VPN,   │         └──────────────────┘
@@ -99,7 +99,7 @@ Every collection crate is expected to produce typed `GeoSignal` objects defined 
 | SDR | Planned: an operator-owned RTL-SDR V4 driver over `rusb` and an owned async DSP engine will land with `dektis` |
 | IDS/IPS | Planned: Suricata and Zeek orchestration will land with `aspis` |
 | Maps | Planned: OSM vector tiles and SRTM elevation will land with `chorografia` |
-| Search | Planned: full-text indexing will land with `pinax` |
+| Search | Planned: full-text indexing belongs to the reference-library application over standalone Pinax persistence |
 | Interfaces | Schema-versioned JSON is the canonical programmatic contract. CLI: `akroasis radio import --json`, `radio detect --json`, `radio export --json`, `mesh {status,nodes,topology} --json`, `vault list --json`, `vault identity --json`. HTTP: the `akroasis-server` library defines `/api/v1/radio/detect` and `/api/v1/mesh/{status,nodes,topology}` routes with the same JSON schemas, but no server binary or in-repo client ships. Interactive secret vault commands and planned placeholder domains remain TTY-only until their service surfaces ship. Desktop remains planned via theatron. |
 | License | AGPL-3.0-only |
 
@@ -119,7 +119,7 @@ Akroasis reads these environment variables at runtime; unset variables fall back
 
 - [standards/README.md](standards/README.md): Pointer to the canonical Kanon standards
 - [docs/lexicon.md](docs/lexicon.md): Project name registry
-- [docs/reference-store.md](docs/reference-store.md): Target `/instance/reference/` layout for the planned pinax knowledge store
+- [docs/reference-store.md](docs/reference-store.md): Target `/instance/reference/` layout and standalone-Pinax authority boundary
 
 ## Status
 

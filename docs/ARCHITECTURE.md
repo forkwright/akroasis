@@ -33,10 +33,17 @@ Foundation:     stoicheion (vocabulary), tekmerion (evidence), kryphos (encrypti
 | **ichneutes** | Analysis | Entity correlation, focal points, threat scoring, intelligence synthesis |
 | **praxis** | Orchestration | Automation engine, playbooks, event triggers, state machines |
 | **chorografia** | Model | Geographic model, RF propagation, navigation, terrain |
-| **pinax** | Knowledge | Offline knowledge repository, frequency databases, maps; see `reference-store.md` for target instance layout |
 | **opsis** | Interface | Operator surfaces: desktop-first via theatron (akroasis-desktop), consumed through the `akroasis-server` HTTP API. #118 resolved. |
 | **akroasis** | Binary | CLI entrypoint, subcommand routing, and library interface for akroasis-server |
 | **akroasis-server** | Interface | Canonical durable programmatic surface: typed axum HTTP backend (`/api/v1/*`) called by akroasis-desktop and agent clients. Mirrors schema-versioned CLI `--json` report contracts for shipped non-interactive surfaces. |
+
+The planned reference-library application has not earned an application or
+crate name. Akroasis owns its domain model and envelope policy; standalone
+[`forkwright/pinax`](https://github.com/forkwright/pinax) exclusively owns the
+relational engine, including transactions, typed schemas, and page-at-rest
+encryption. A local `pinax` crate would be a second authority, not an
+application layer. Sphragis recipient wrapping is separate from Pinax page
+encryption.
 
 ## Key decisions
 
@@ -62,5 +69,5 @@ Foundation:     stoicheion (vocabulary), tekmerion (evidence), kryphos (encrypti
 - Planning docs (scope, roadmap, vision, research): live in the kanon repo
 - Naming: `../standards/GNOMON.md`, `lexicon.md`
 - Reference store layout: `reference-store.md`
-- Fjall column encryption boundary: `fjall-column-encryption.md`
+- Reference-library encryption authority boundary: `fjall-column-encryption.md`
 - PQ content-key wrapping boundary: `pq-content-key-wrapping.md`

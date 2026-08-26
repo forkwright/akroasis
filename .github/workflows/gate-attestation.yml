@@ -51,9 +51,6 @@
 # carries its own rust-toolchain.toml (channel "stable"), auto-detected by
 # actions-rust-lang/setup-rust-toolchain inside the reusable workflow.
 #
-# needs_fleet_repo_token false: the sole git dependency (sphragis) is a
-# public forkwright repo with no observed anonymous-fetch rate-limit
-# flakiness -- matches the reusable workflow's own conservative default.
 name: Gate Attestation
 
 on:
