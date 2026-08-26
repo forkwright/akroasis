@@ -37,16 +37,19 @@ type = "authored"
 evergreen = false
 description = "Layout of the long-term offline reference store and its ownership boundary."
 
+# WHY not evergreen: both living boundary documents report current
+# implementation, adoption, and promotion state that changes as the underlying
+# work advances.
 [[doc]]
 path = "docs/fjall-column-encryption.md"
 type = "authored"
-evergreen = true
+evergreen = false
 description = "Corrected Pinax/Akroasis authority boundary for reference-library encryption."
 
 [[doc]]
 path = "docs/pq-content-key-wrapping.md"
 type = "authored"
-evergreen = true
+evergreen = false
 description = "Living Sphragis boundary and promotion gates for future content-key distribution."
 
 # WHY authored and not generated: it is a hand-written example config a reader copies from, not output

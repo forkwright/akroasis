@@ -46,5 +46,10 @@ Sphragis checkout at the exact immutable revision recorded by the consumer, or
 use Sphragis CI for that same revision:
 
 ```sh
-cargo test --features preview-pq
+cargo test --features preview-pq,hazmat
 ```
+
+Here `hazmat` is enabled only in the producer checkout so Sphragis's
+conformance-test primitive surface is reachable. It does not change the
+consumer boundary above: an Akroasis dependency must not enable `hazmat`, and
+Akroasis code must not call that surface.
