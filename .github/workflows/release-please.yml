@@ -5,8 +5,13 @@ on:
     branches: [main]
   workflow_dispatch: {}
 
+# WHY id-token + attestations: required for the source-attestation job below,
+# which runs downstream of the release tag this job creates. Binary
+# artifacts are attested separately in release.yml.
 permissions:
+  attestations: write
   contents: write
+  id-token: write
   pull-requests: write
 
 concurrency:
@@ -21,3 +26,81 @@ jobs:
     uses: forkwright/.github/.github/workflows/release-please.yml@main
     secrets:
       RELEASE_PLEASE_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+
+  # WHY: SLSA provenance + signed SBOM for the release source archive at
+  # release-creation time, matching the provenance release.yml already
+  # produces for binaries. This job runs on the push-to-main trigger above,
+  # so it fires without the manual
+  # workflow_dispatch that release.yml's binary build still needs (see that
+  # file's WHY comment) -- source archive + SBOM attach automatically even
+  # when nobody runs the binary dispatch.
+  attest-release-source:
+    needs: [release-please]
+    if: needs.release-please.outputs.release_created == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      attestations: write
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ needs.release-please.outputs.tag_name }}
+
+      - name: Stage source archive
+        id: source
+        env:
+          TAG_NAME: ${{ needs.release-please.outputs.tag_name }}
+        run: |
+          archive="akroasis-${TAG_NAME}.tar.gz"
+          git archive --format=tar.gz --output "$archive" HEAD
+          echo "archive=$archive" >> "$GITHUB_OUTPUT"
+
+      - name: Generate CycloneDX SBOM
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0
+        with:
+          artifact-name: ${{ steps.source.outputs.archive }}.cdx.json
+          format: cyclonedx-json
+          output-file: ${{ steps.source.outputs.archive }}.cdx.json
+          upload-artifact: false
+          upload-release-assets: false
+
+      - name: Generate checksum
+        run: sha256sum "${{ steps.source.outputs.archive }}" > "${{ steps.source.outputs.archive }}.sha256"
+
+      - name: Attest source provenance
+        id: attest-provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: ${{ steps.source.outputs.archive }}
+
+      - name: Attest CycloneDX SBOM
+        id: attest-sbom
+        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
+        with:
+          subject-path: ${{ steps.source.outputs.archive }}
+          sbom-path: ${{ steps.source.outputs.archive }}.cdx.json
+
+      # WHY: step outputs are passed through env vars, not interpolated into
+      # the run block, so the shell never embeds untrusted ${{ }} expansion
+      # (GitHub Actions expression-injection hardening, matching release.yml).
+      - name: Upload release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ needs.release-please.outputs.tag_name }}
+          ARCHIVE: ${{ steps.source.outputs.archive }}
+          PROVENANCE_BUNDLE: ${{ steps.attest-provenance.outputs.bundle-path }}
+          SBOM_BUNDLE: ${{ steps.attest-sbom.outputs.bundle-path }}
+        run: |
+          cp "$PROVENANCE_BUNDLE" "${ARCHIVE}.provenance.intoto.jsonl"
+          cp "$SBOM_BUNDLE" "${ARCHIVE}.cdx.intoto.jsonl"
+          gh release upload "$TAG_NAME" \
+            "$ARCHIVE" \
+            "${ARCHIVE}.sha256" \
+            "${ARCHIVE}.cdx.json" \
+            "${ARCHIVE}.provenance.intoto.jsonl" \
+            "${ARCHIVE}.cdx.intoto.jsonl" \
+            --clobber
