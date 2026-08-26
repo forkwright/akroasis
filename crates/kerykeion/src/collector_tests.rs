@@ -1,8 +1,6 @@
 //! Tests for [`super`]; split out to keep the parent file under the
 //! RUST/file-too-long 800-line threshold.
 
-use tracing::Instrument as _;
-
 use super::*;
 use crate::SendOptions;
 use crate::config::{ConnectionConfig, MeshConfig, StoreForwardConfig, TopologyConfig};
