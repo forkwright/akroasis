@@ -1,8 +1,15 @@
+# WHY workflow_dispatch: release-please creates tags using the default
+# GITHUB_TOKEN, and GitHub's own recursion guard means a push authored by
+# that token can never trigger further workflow runs -- tag-push alone can
+# never fire this workflow. Dispatch on the tag ref (`gh workflow run
+# release.yml --ref <tag>`) is the manual path until the tag push carries a
+# different token, and doubles as the re-run mechanism for any release.
 name: Release
 
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
 
 permissions:
   attestations: write
