@@ -1,4 +1,4 @@
-//! Integration smoke tests for the `koinon` public API.
+//! Integration smoke tests for the `stoicheion` public API.
 //!
 //! Unit tests live alongside each module in `src/*.rs`. These tests exist so
 //! that the library exposes a public test binary (required by
