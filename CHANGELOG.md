@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.6.2](https://github.com/forkwright/akroasis/compare/v0.6.1...v0.6.2) (2026-09-03)
+
+
+### Bug Fixes
+
+* **akroasis:** correct Pinax authority boundary ([#476](https://github.com/forkwright/akroasis/issues/476)) ([0a6cc23](https://github.com/forkwright/akroasis/commit/0a6cc2316fede4fff1a19662ebeda00c43743920))
+* **ci:** name the major each pinned action sha actually is ([#464](https://github.com/forkwright/akroasis/issues/464)) ([5306eb2](https://github.com/forkwright/akroasis/commit/5306eb267d6b69a016c171c87fee26c4b51775ad))
+* **kerykeion:** drop the redundant Instrument import from collector_tests ([#471](https://github.com/forkwright/akroasis/issues/471)) ([2b2e0ee](https://github.com/forkwright/akroasis/commit/2b2e0eeb00278e14e942a18ccad343460942d688))
+
 ## [0.6.1](https://github.com/forkwright/akroasis/compare/v0.6.0...v0.6.1) (2026-08-21)
 
 
