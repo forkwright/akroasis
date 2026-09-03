@@ -62,7 +62,7 @@ figment = { version = "0.10", features = ["toml", "env"] }
 # Crypto
 chacha20poly1305 = "0.10"
 ed25519-dalek = { version = "2", features = ["serde", "rand_core"] }
-argon2 = { version = "0.5", features = ["zeroize"] }
+argon2 = { version = "0.6", features = ["zeroize"] }
 zeroize = { version = "1", features = ["derive"] }
 rand_core = { version = "0.6", features = ["getrandom"] }
 subtle = "2"
