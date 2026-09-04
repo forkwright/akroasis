@@ -50,7 +50,7 @@ jobs:
         with:
           toolchain: nightly
 
-      - uses: taiki-e/install-action@1ed6d7be6168f6c9046541087ff549b6bc581fdf
+      - uses: taiki-e/install-action@0758d235715de2f3551eacc980d9ae8fce9342c3
         with:
           tool: cargo-fuzz
 
