@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.3](https://github.com/forkwright/akroasis/compare/v0.6.2...v0.6.3) (2026-09-12)
+
+
+### Bug Fixes
+
+* **deps:** bump serialport 4.10.0 -&gt; 4.10.1 (yanked) ([#502](https://github.com/forkwright/akroasis/issues/502)) ([0fc2c43](https://github.com/forkwright/akroasis/commit/0fc2c432919c46c741f9d0c4fbee2b21a08446a8)), closes [#501](https://github.com/forkwright/akroasis/issues/501)
+
 ## [0.6.2](https://github.com/forkwright/akroasis/compare/v0.6.1...v0.6.2) (2026-09-03)
 
 
