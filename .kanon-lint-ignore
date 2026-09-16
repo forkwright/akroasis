@@ -1,7 +1,7 @@
 # WHY: Feature branches for #118/#122 were developed directly in the main worktree
-# from metis while menos (the canonical compute host with dispatch-wt infrastructure)
-# is offline for firmware recovery. The sub-worktree convention is the normal path;
-# this exception acknowledges the recovery-window deviation. Tracked to remove once
-# menos returns and dispatch-wt is restored.
-# NOTE: All subsequent PR work should go through ~/dev/worktrees/akroasis/<branch>.
+# during a window when the usual sub-worktree tooling was unavailable. The
+# sub-worktree convention is the normal path; this exception acknowledges the
+# deviation. Tracked to remove once the sub-worktree path is restored.
+# NOTE: All subsequent PR work should go through a per-branch worktree rather
+# than the main checkout.
 ORCHESTRATION/main-worktree-commit-prohibited:Cargo.toml

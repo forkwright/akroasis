@@ -5,12 +5,15 @@
 # Forge CI pipeline for forkwright/akroasis.
 #
 # Mirrors the hardcoded default Rust gate (fmt → check → clippy → nextest
-# → lint) but pins per-stage build + test concurrency to 8. Without this
-# cap, cargo defaults to num_cpus (64 on this Threadripper) and parallel
-# rustc + nextest processes peak well over 100GB of RSS — enough to OOM
-# menos when any other fleet work is running. 8 is the budget that keeps
-# a single CI run under ~25GB peak, low enough that serial drains don't
-# OOM even with aletheia.service and the dispatch fleet resident.
+# → lint) but pins per-stage build + test concurrency to 8. The 8 is a memory
+# bar, not a speed setting: this workspace's rustc and nextest processes are
+# RSS-heavy, so peak memory tracks the job count. Unpinned, that count follows
+# cargo's num_cpus default — a property of whichever machine runs CI rather
+# than of this build — and the peak rises with it. At 8 a single run holds
+# under ~25GB, and that margin is what lets CI run without starving whatever
+# else the build host is already serving, including the next queued run when
+# several drain back to back. Raise the number and the peak leaves that
+# envelope; delete the line and there is no envelope at all.
 #
 # Keep in sync with `crates/archeion/src/ci_config.rs::default_rust_gate`
 # when the upstream default changes — only the `--jobs` / `--test-threads`

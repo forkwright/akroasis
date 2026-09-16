@@ -1,6 +1,6 @@
 <!--
 scope: akroasis repo conventions (SIGINT/comms crates: stoicheion, tekmerion, kryphos)
-defers_to: ~/menos-ops/CLAUDE.md for machine topology; ~/.claude/CLAUDE.md for operator principles
+defers_to: ~/.claude/CLAUDE.md for operator principles
 tightens: per-crate CLAUDE.md files may narrow within their layer
 -->
 
@@ -10,10 +10,12 @@ Project conventions for AI coding agents working on this codebase.
 
 ## Standards
 
-Universal: `~/dev/kanon/crates/basanos/standards/STANDARDS.md`
-Rust: `~/dev/kanon/crates/basanos/standards/RUST.md`
-Shell: `~/dev/kanon/crates/basanos/standards/SHELL.md`
-Writing: `~/dev/kanon/crates/basanos/standards/WRITING.md`
+Fleet standards live in `crates/basanos/standards/` in `forkwright/kanon`:
+
+Universal: `STANDARDS.md`
+Rust: `RUST.md`
+Shell: `SHELL.md`
+Writing: `WRITING.md`
 
 ## Structure
 
@@ -36,7 +38,7 @@ cargo clippy --workspace               # Lint (zero warnings)
 - **Async:** Tokio
 - **Lints:** `#[expect(lint, reason = "...")]` over `#[allow]`
 - **Visibility:** `pub(crate)` by default
-- **Naming:** Greek names per `~/dev/kanon/crates/basanos/standards/GNOMON.md`, registry at [docs/lexicon.md](docs/lexicon.md)
+- **Naming:** Greek names per `crates/basanos/standards/GNOMON.md` in `forkwright/kanon`, registry at [docs/lexicon.md](docs/lexicon.md)
 
 ## Before submitting
 

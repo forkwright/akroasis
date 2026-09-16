@@ -8,12 +8,11 @@ a second local Pinax identity. The application layer remains deliberately
 unnamed until it passes the fleet naming gate.
 
 The repository does not ship an `instance/` tree today. This document defines
-the target layout and migration policy so the existing `theke/_reference`
-staging area can move only after the source inventory is visible and
-checksummed. A transactional Pinax integration waits for the standalone
-engine's multi-record transaction and typed-schema contracts; the final
-async-native shape also waits for its async API rather than shipping a
-temporary blocking adapter.
+the target layout and migration policy so the existing staging area can move
+only after the source inventory is visible and checksummed. A transactional
+Pinax integration waits for the standalone engine's multi-record transaction
+and typed-schema contracts; the final async-native shape also waits for its
+async API rather than shipping a temporary blocking adapter.
 
 The encryption authorities are distinct. Pinax owns encryption of its database
 pages at rest. Akroasis owns the domain-envelope policy for reference content,
@@ -74,8 +73,8 @@ Initial supported content classes:
 
 Per-crate docs stay in the crate or `docs/`. Operational reference payloads,
 large manuals, docsets, and preserved external corpora live in the instance
-reference store. Theke may link to this store, but it should not own akroasis
-reference data after migration.
+reference store. The staging library may link to this store, but it should not
+own akroasis reference data after migration.
 
 ## Manifests
 
@@ -119,7 +118,7 @@ symlink at `~/akroasis/instance/reference` and keep all internal paths relative
 to that canonical root.
 
 Do not scatter per-content symlinks across `/`, `/data`, `/storage`, and
-removable menos drives. Mount or link the store root once, then let manifests
+removable drives. Mount or link the store root once, then let manifests
 describe the content inside it.
 
 ## Migration gates
@@ -141,6 +140,6 @@ Before moving content out of the current staging area:
 
 As of this design note, akroasis only documents the planned reference-library
 application. There is no checked-in `instance/` directory, no local
-persistence crate, and no verified copy of the source `theke/_reference` tree
-in this worktree. Akroasis issue #395 owns the producer-readiness and Sphragis
+persistence crate, and no verified copy of the source staging tree in this
+worktree. Akroasis issue #395 owns the producer-readiness and Sphragis
 handoff gates for the first durable implementation.
