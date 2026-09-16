@@ -36,9 +36,9 @@ Communications sovereignty and RF intelligence platform. Rust workspace, single 
 
 ## Where to add things
 
-- New crate: `crates/<greek-name>/`, register in root `Cargo.toml` members, follow `~/dev/kanon/crates/basanos/standards/GNOMON.md` for naming, add entry to `docs/lexicon.md`
+- New crate: `crates/<greek-name>/`, register in root `Cargo.toml` members, follow `crates/basanos/standards/GNOMON.md` in `forkwright/kanon` for naming, add entry to `docs/lexicon.md`
 - New signal type: extend `GeoSignal` enum in `stoicheion`; downstream crates match exhaustively
-- New standard or convention: propose it in `~/dev/kanon/crates/basanos/standards/`; cross-link from this repo's `standards/README.md`
+- New standard or convention: propose it in `crates/basanos/standards/` in `forkwright/kanon`; cross-link from this repo's `standards/README.md`
 
 ## Boundaries
 
@@ -50,7 +50,7 @@ Communications sovereignty and RF intelligence platform. Rust workspace, single 
 <!--
 scope: akroasis repo cross-tool agent guide (Claude Code, Kimi, Codex, Cursor, Windsurf, Copilot)
 generated_by: kanon docs sync
-defers_to: CLAUDE.md for Claude Code-specific behavior; ~/menos-ops/CLAUDE.md for machine + service topology
+defers_to: CLAUDE.md for Claude Code-specific behavior; host and service topology lives outside this repository
 tightens: workflow/AGENTS-mcp-tools.md catalog routing; crates/basanos/standards/AGENT-DOCS.md authoring rules
 -->
 
